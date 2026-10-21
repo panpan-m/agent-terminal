@@ -42,6 +42,16 @@ class InvalidConfig(SerialError):
     code = "INVALID_ARGUMENT"
 
 
+class WriteTimeout(SerialError):
+    """A write timed out after ``written`` bytes; the port is still usable."""
+
+    code = "TIMEOUT"
+
+    def __init__(self, message: str, *, written: int = 0, details: dict | None = None) -> None:
+        super().__init__(message, details=details)
+        self.written = written
+
+
 @dataclass(slots=True)
 class SerialConfig:
     port: str

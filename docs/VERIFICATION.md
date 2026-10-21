@@ -4,10 +4,14 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **84 passed** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **85 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **40 / 40 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
+| **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
+
+The skipped test is the HIL "open a real COM port" case while the live
+debugging server holds `COM5` exclusively (expected; it passed in the earlier run).
 
 ## Environment
 
@@ -106,12 +110,30 @@ This clears the plan's **P0 Windows ttyd go/no-go**.
 * **packaged `tio-mcp.exe`** speaks stdio MCP to the packaged server and returns
   `serial_status` structured content.
 
+### 5. Live hardware run (`scripts/live_debug.py`, 46 checks)
+
+A real Raspberry Pi serial console was attached through a Raspberry Pi Debug
+Probe (`2E8A:000C`, CMSIS-DAP + CDC-ACM UART) on `COM5` — target:
+`Debian GNU/Linux 13 raspberry ttyAMA10`, 115200 8N1, prompt `raspberry login:`.
+
+Everything was exercised against the live port: open/close/reopen, control
+lines, text/hex/chunked writes, cursor reads, `serial_command` with
+`expect="login:"` matching the real prompt in 15 ms, all six MCP tools through
+the packaged `tio-mcp.exe`, control-owner and permission arbitration, ttyd
+entries (HTTP + raw WebSocket), baud change/reopen, transcript/audit, and the
+DTR/RTS reset sequence.
+
+Details, including the DTR-gating behaviour of the probe and the three product
+fixes it forced, are in [`live-debug-report.md`](./live-debug-report.md).
+Screenshot: [`08-live-console`](screenshots/08-live-console.png).
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
 |---|---|---|
 | Linux and Windows installers install/uninstall/autostart | ⚠️ partially verified | Windows: PyInstaller build + service scripts + Inno script (Inno not executed on this machine: toolchain absent). Linux: unit files/install script written, not executed here. |
 | UI selects port/baud and opens a session | ✅ | browser CDP check "session created from the dialog is listed and open" |
+| Real device end to end | ✅ | live run 46/46 on a Raspberry Pi serial console through a Debug Probe (MCP, ttyd, arbitration, config, reset) |
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
@@ -136,6 +158,13 @@ This clears the plan's **P0 Windows ttyd go/no-go**.
    rejected with `INVALID_ARGUMENT`.
 5. **Build output crashed on GBK consoles** (`⇄` in a CLI description, non-UTF-8
    stdout); descriptions are ASCII and the CLI/shim force UTF-8 stdio.
+6. **A write timeout tore down the session** (found on live hardware): a stalled
+   USB write raised `Disconnected` and triggered a reconnect. Now a
+   `WriteTimeout` reports the bytes actually written and keeps the port open;
+   a 0-byte write is an explicit `TIMEOUT` error instead of a successful write.
+7. **Reset left DTR low, which stalls some probes' TX pipe.** The reset sequence
+   now restores the pre-reset line state (Raspberry Pi Debug Probe stops
+   draining USB while DTR is low; writes recovered immediately on DTR high).
 
 ## How to reproduce
 
@@ -157,8 +186,11 @@ npm --prefix frontend ci ; npm --prefix frontend run build
 # 5. packaged binaries (after packaging/pyinstaller/build.ps1)
 .venv\Scripts\python scripts\verify_packaged.py
 
+# 6. live hardware (device attached, server running with a session)
+.venv\Scripts\python scripts\live_debug.py --session board
+
 # or everything in one go
-powershell -ExecutionPolicy Bypass -File scripts\verify_all.ps1
+powershell -ExecutionPolicy Bypass -File scripts\verify_release.ps1
 ```
 
 ## Not verified (explicit)
@@ -168,7 +200,11 @@ powershell -ExecutionPolicy Bypass -File scripts\verify_all.ps1
   is import-checked and unit-covered where platform-independent.
 * RS-485, mark/space parity, arbitrary baud on real drivers: implemented in the
   POSIX backend, requires hardware to confirm.
-* Real USB-UART board (FTDI/CP210x/CH340) and its DTR/RTS reset behaviour.
+* FTDI/CP210x/CH340 adapter matrix and per-driver DTR/RTS reset behaviour. One
+  real device was tested end to end — a Raspberry Pi Debug Probe (`2E8A:000C`)
+  with a Raspberry Pi console — but that does not cover other bridge chips.
+* Logging into the target OS over serial (needs the board's credentials); the
+  serial prompt itself was matched and exercised.
 * Inno Setup executable, Authenticode signing, Windows Service registration on a
   clean machine, Linux `.deb`/`.rpm` packages.
 * 24 h soak and multi-hour high-baud throughput.

@@ -43,7 +43,7 @@ from .errors import (
 )
 from .errors import BUFFER_GAP as BUFFER_GAP_CODE
 from .ring import ReadSlice, RingBuffer
-from .serial import Disconnected, SerialError, SerialHandle, make_backend
+from .serial import Disconnected, SerialError, SerialHandle, WriteTimeout, make_backend
 from .transcript import AuditLog, TranscriptRegistry, TranscriptWriter, now_iso
 
 BUSY = "BUSY"
@@ -475,7 +475,17 @@ class Session:
         delay_ms: int = 0,
     ) -> int:
         with self.writing(source, need):
-            return self._write_raw(data, source, chunk_size=chunk_size, delay_ms=delay_ms)
+            written = self._write_raw(data, source, chunk_size=chunk_size, delay_ms=delay_ms)
+        if written == 0 and data:
+            # A stalled USB-UART (e.g. a bridge that stops draining while DTR is
+            # low) accepts nothing; that is a timeout, not a successful write.
+            raise ToolFailure(
+                "TIMEOUT",
+                "device accepted 0 bytes (write stalled); check its control lines",
+                {"session_id": self.id, "requested": len(data)},
+                retryable=True,
+            )
+        return written
 
     def _write_raw(self, data: bytes, source: str, *, chunk_size: int = 0, delay_ms: int = 0) -> int:
         handle = self.handle
@@ -487,6 +497,12 @@ class Session:
         for piece in pieces:
             try:
                 written = self.manager.backend.write(handle, piece, 2000)
+            except WriteTimeout as exc:
+                total += exc.written
+                self.transcript.event(
+                    "tx_timeout", requested=len(piece), written=exc.written, source=source
+                )
+                break
             except Disconnected as exc:
                 self._on_disconnect(str(exc))
                 raise ToolFailure(DISCONNECTED, str(exc), {"session_id": self.id}) from exc
@@ -654,7 +670,14 @@ class Session:
                 raise ToolFailure(exc.code, exc.message) from exc
 
     def apply_reset_sequence(self) -> dict[str, Any]:
-        """Admin-only reset: apply the configured DTR/RTS sequence."""
+        """Admin-only reset: pulse the configured DTR/RTS sequence.
+
+        The pre-reset line state is restored afterwards.  Some USB-UART
+        bridges (e.g. the Raspberry Pi Debug Probe) stop draining their TX pipe
+        while DTR is deasserted; leaving the last reset step's state in place
+        would make later writes time out.  Use the line controls to hold a
+        state deliberately.
+        """
         if self.state is not SessionState.OPEN:
             raise ToolFailure(DISCONNECTED, "session must be open before resetting", {"session_id": self.id})
         steps = self.cfg.reset_sequence or [
@@ -663,6 +686,11 @@ class Session:
             ResetStep(dtr=False, rts=False, delay_ms=50),
         ]
         start_cursor = self.ring.head
+        before = None
+        try:
+            before = self.manager.backend.get_lines(self.handle)
+        except SerialError:
+            before = None
         with self.writing("admin", "write", timeout_s=5.0):
             for step in steps:
                 try:
@@ -670,9 +698,14 @@ class Session:
                 except SerialError as exc:
                     raise ToolFailure(exc.code, exc.message) from exc
                 time.sleep(max(0, step.delay_ms) / 1000.0)
-        self.transcript.event("reset", cursor=start_cursor)
+            if before is not None:
+                try:
+                    self.manager.backend.set_lines(self.handle, before.dtr, before.rts)
+                except SerialError:
+                    pass
+        self.transcript.event("reset", cursor=start_cursor, restored=before.to_dict() if before else None)
         self.manager.audit.write("session.reset", session=self.id, cursor=start_cursor)
-        return {"reset_cursor": start_cursor, "steps": len(steps)}
+        return {"reset_cursor": start_cursor, "steps": len(steps), "restored": before.to_dict() if before else None}
 
     def pulse(self, line: str, active: bool, duration_ms: int) -> None:
         if self.handle is None:

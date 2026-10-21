@@ -182,6 +182,11 @@ class PermissionsBody(BaseModel):
     permissions: list[str]
 
 
+class LinesBody(BaseModel):
+    dtr: bool | None = None
+    rts: bool | None = None
+
+
 class WriteBody(BaseModel):
     text: str | None = None
     hex: str | None = None
@@ -457,6 +462,15 @@ def create_app(config: Config) -> FastAPI:
     async def set_permissions(session_id: str, body: PermissionsBody, rec: AdminSession = Depends(csrf_guard)):
         perms = manager.set_permissions(session_id, body.permissions)
         return {"agent_permissions": perms}
+
+    @app.post("/api/sessions/{session_id}/lines")
+    async def set_lines(session_id: str, body: LinesBody, rec: AdminSession = Depends(csrf_guard)):
+        sess = manager.get(session_id)
+        if body.dtr is None and body.rts is None:
+            raise ToolFailure("INVALID_ARGUMENT", "provide dtr and/or rts")
+        lines = await asyncio.to_thread(sess.set_lines, body.dtr, body.rts)
+        manager.audit.write("session.lines", session=session_id, dtr=body.dtr, rts=body.rts)
+        return lines
 
     @app.post("/api/sessions/{session_id}/write")
     async def write_now(session_id: str, body: WriteBody, rec: AdminSession = Depends(csrf_guard)):

@@ -32,6 +32,7 @@ from .base import (
     SerialHandle,
     SerialStats,
     Unsupported,
+    WriteTimeout,
 )
 
 _PARITY = {
@@ -154,14 +155,20 @@ class WindowsBackend:
 
     def write(self, handle: SerialHandle, data: bytes, timeout_ms: int) -> int:
         ser: serial.Serial = handle.impl  # type: ignore[assignment]
+        total = 0
+        chunk = 4096
         try:
-            written = ser.write(data)
+            while total < len(data):
+                total += ser.write(data[total : total + chunk])
         except serial.SerialTimeoutException as exc:
-            raise Disconnected(f"write timeout: {exc}") from exc
+            # Partial write is not a disconnect: report what went out so the
+            # caller can decide (plan 7.3: never pretend the write succeeded).
+            self._bump(handle, tx=total)
+            raise WriteTimeout(f"write timed out after {total} bytes", written=total) from exc
         except serial.SerialException as exc:
             raise Disconnected(str(exc)) from exc
-        self._bump(handle, tx=written)
-        return int(written)
+        self._bump(handle, tx=total)
+        return int(total)
 
     def configure(self, handle: SerialHandle, cfg: SerialConfig) -> None:
         ser: serial.Serial = handle.impl  # type: ignore[assignment]

@@ -166,11 +166,49 @@ def test_exported_status_has_contract_fields(manager: SessionManager):
 def test_reset_sequence_is_recorded(manager: SessionManager):
     sess = manager.get("board-a")
     sess.open()
+    initial = sess.lines()
     out = sess.apply_reset_sequence()
     dev = manager.backend.simulator.device("board-a")
     assert out["steps"] == 3
-    assert len(dev.lines) == 3
+    # three configured steps + one restore of the pre-reset line state
+    assert len(dev.lines) == 4
     assert (dev.lines[0].dtr, dev.lines[0].rts) == (False, True)
     assert (dev.lines[1].dtr, dev.lines[1].rts) == (True, False)
     assert (dev.lines[2].dtr, dev.lines[2].rts) == (False, False)
+    assert (dev.lines[3].dtr, dev.lines[3].rts) == (initial["dtr"], initial["rts"])
     assert out["reset_cursor"] >= 0
+
+
+def test_write_timeout_is_partial_and_keeps_the_session(manager: SessionManager, monkeypatch):
+    from tio_server.serial import WriteTimeout
+
+    sess = manager.get("board-a")
+    sess.open()
+    assert wait_until(lambda: sess.ring.head > 0)
+
+    def timed_out(handle, data, timeout_ms):
+        raise WriteTimeout("write timed out after 2 bytes", written=2)
+
+    monkeypatch.setattr(manager.backend, "write", timed_out)
+    written = sess.write_bytes(b"abcdef", source="human")
+    assert written == 2
+    assert sess.state is SessionState.OPEN
+    assert sess.last_error is None
+    events = sess.transcript.tail(10)
+    assert any(event.get("event") == "tx_timeout" for event in events)
+
+
+def test_zero_byte_write_is_a_timeout(manager: SessionManager, monkeypatch):
+    from tio_server.serial import WriteTimeout
+
+    sess = manager.get("board-a")
+    sess.open()
+
+    def nothing(handle, data, timeout_ms):
+        raise WriteTimeout("write timed out after 0 bytes", written=0)
+
+    monkeypatch.setattr(manager.backend, "write", nothing)
+    with pytest.raises(ToolFailure) as exc:
+        sess.write_bytes(b"x", source="human")
+    assert exc.value.code == "TIMEOUT"
+    assert sess.state is SessionState.OPEN

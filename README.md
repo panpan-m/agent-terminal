@@ -7,9 +7,11 @@ owns the serial port, humans use a React admin UI (built with
 port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **84 tests**, **40/40 end-to-end checks**,
-> **13/13 real ttyd checks**, **11/11 packaged-binary checks** — see
-> [`docs/VERIFICATION.md`](./docs/VERIFICATION.md).
+> Verified on Windows 10: **85 tests**, **40/40 end-to-end checks**,
+> **13/13 real ttyd checks**, **11/11 packaged-binary checks**, and
+> **46/46 live-hardware checks** against a Raspberry Pi serial console — see
+> [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) and
+> [`docs/live-debug-report.md`](./docs/live-debug-report.md).
 
 ![Sessions page](docs/screenshots/02-sessions.png)
 
@@ -72,6 +74,7 @@ Human   ──HTTP────▶ / (React + assistant-ui) ───────
 * [`docs/ttyd.md`](./docs/ttyd.md) — browser terminal wiring
 * [`docs/architecture.md`](./docs/architecture.md) — modules, decisions, ADRs
 * [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) — how this build was verified
+* [`docs/live-debug-report.md`](./docs/live-debug-report.md) — real Raspberry Pi over a Debug Probe
 
 ## License
 

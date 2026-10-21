@@ -17,6 +17,7 @@ from .base import (
     SerialHandle,
     SerialStats,
     Unsupported,
+    WriteTimeout,
 )
 
 
@@ -101,5 +102,6 @@ __all__ = [
     "SerialStats",
     "SimulatorBackend",
     "Unsupported",
+    "WriteTimeout",
     "make_backend",
 ]

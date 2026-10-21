@@ -1792,18 +1792,20 @@ ttyd.exe -p 7682 -i 127.0.0.1 -O -W -c operator:change-me -m 2 `
 
 | 套件 | 结果 |
 |---|---|
-| pytest（单元/集成/协议/安全/HIL） | 84 passed |
+| pytest（单元/集成/协议/安全/HIL） | 85 passed（1 skipped：真机占用端口时 HIL 跳过） |
 | 端到端（真实服务进程 + MCP + 串口收發 + 重连 + 浏览器 UI） | 40/40 |
 | ttyd（真实 Windows ConPTY） | 13/13 —— P0 go/no-go 通过，含会话创建自动拉起/删除自动停止 |
 | PyInstaller 产物（server + tio-mcp） | 11/11 |
+| 真机（Raspberry Pi Debug Probe + Raspberry Pi 串口控制台） | 46/46 —— 见 `docs/live-debug-report.md` |
 
 **未验证项**（需相应环境）：Linux 运行时与 systemd 实测、RS-485/任意波特率的真实硬件、
 真实 USB-UART 板卡与 DTR/RTS 复位行为、Inno Setup/代码签名、24h soak。
 
 ### 23.4 建议的下一步
 
-1. 在 Linux 主机 + 真实 USB-UART 上跑 `scripts/verify_e2e.py` 与
-   `scripts/ttyd_check.py`，补齐平台矩阵。
-2. 用 `iscc` 构建并签名 Windows 安装包，在干净机器上验证服务注册/卸载。
-3. 加 24h soak 与 3 Mbaud 压测，必要时启用 native backend 逃生口。
-4. 若需要 tio CLI 同时接入同一串口，再启动 P6 的虚拟串口方案。
+1. 在 Linux 主机上跑 `scripts/verify_e2e.py` 与 `scripts/ttyd_check.py`，补齐平台矩阵；
+   若要在 Linux 上接真实串口，补 `dialout` 与 udev 规则。
+2. 用板子的登录凭据继续真机串口 shell 调试（`serial_command` + `expect` 已有真实 prompt 匹配验证）。
+3. 用 `iscc` 构建并签名 Windows 安装包，在干净机器上验证服务注册/卸载。
+4. 加 24h soak 与 3 Mbaud 压测，必要时启用 native backend 逃生口。
+5. 若需要 tio CLI 同时接入同一串口，再启动 P6 的虚拟串口方案。
