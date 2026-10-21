@@ -7,9 +7,9 @@ owns the serial port, humans use a React admin UI (built with
 port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **85 tests**, **40/40 end-to-end checks**,
+> Verified on Windows 10: **90 tests**, **40/40 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
-> **46/46 live-hardware checks** and **19/19 agent-path MCP checks** against a
+> **46/46 live-hardware checks** and **23/23 agent-path MCP checks** against a
 > Raspberry Pi 5 shell — see [`docs/VERIFICATION.md`](./docs/VERIFICATION.md),
 > [`docs/live-debug-report.md`](./docs/live-debug-report.md) and
 > [`docs/dsh.md`](./docs/dsh.md).

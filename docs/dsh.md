@@ -61,24 +61,34 @@ app did not spawn the shim; restarting is the supported path.
 | `mcp__tio__serial_sessions` | find the session id (`board`) |
 | `mcp__tio__serial_status` | port, state, owner, counters, lines |
 | `mcp__tio__serial_read` | cursor/tail reads, text or hex |
-| `mcp__tio__serial_command` | one command + wait for a prompt/pattern |
+| `mcp__tio__serial_command` | one command + wait for a prompt/pattern, or `capture_exit: true` for a generic POSIX end marker and exit code |
 | `mcp__tio__serial_write` | raw bytes |
 | `mcp__tio__serial_expect` | wait for a pattern without writing |
 
 There is deliberately no open/close/configure tool: the operator owns the port.
 Writes need `control_owner=agent` (hand over in the UI or via the admin API).
 
+For shell boards, `capture_exit: true` is the portable way to know a command
+finished — it appends a POSIX marker and returns `exit_code`:
+
+```json
+{"session_id": "board", "command": "make -j4", "capture_exit": true, "timeout_ms": 60000}
+```
+
+Works on bash/dash/ash/busybox/ksh/zsh; non-POSIX firmware should use `expect`.
+
 ## Verified client path
 
 `scripts/live_shell_debug.py` drives the packaged `tio-mcp.exe` through the
 official MCP SDK stdio client — the same client `dsh-mcp-client` uses — and ran
-19/19 checks against a Raspberry Pi 5 root shell:
+23/23 checks against a Raspberry Pi 5 root shell:
 
 ```
 serial_status        -> board / COM5 / open
 serial_command       -> uname -a, /etc/os-release, /proc/cpuinfo, uptime,
                         free -m, df -h /, ip -br addr, systemctl --failed,
                         dmesg | tail
+capture_exit         -> exit codes 0 and 2, 1 s sleep, heredoc
 serial_read(cursor)  -> gap=false, head advances
 serial_command       -> no-match pattern times out cleanly
 serial_write         -> WRITE_DISABLED after removing the permission

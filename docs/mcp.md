@@ -27,7 +27,7 @@ server keeps transport sessions; the *serial* session is always selected by the
 | `serial_status` | yes | state, config, counters, cursors, control lines, owner |
 | `serial_read` | yes | buffered RX by absolute cursor or tail |
 | `serial_write` | no | raw bytes (text or hex) with optional newline/chunking |
-| `serial_command` | no | write one line and collect the response (expect literal/regex/glob) |
+| `serial_command` | no | write one line and collect the response (expect, or a POSIX end marker with exit code) |
 | `serial_expect` | yes | wait for a pattern without writing |
 
 There is deliberately **no** `serial_open`, `serial_close` or
@@ -55,9 +55,40 @@ screen"). A timeout is not an error: `isError=false`, `timed_out=true`.
 Writes `command + newline` (default `lf`), then collects from the cursor just
 before the write until `expect` matches, the stream is quiet for `settle_ms`, or
 `timeout_ms` expires. Returns `rx_text`, `matched`, `match`, `groups`,
-`next_cursor`, `timed_out`, `elapsed_ms`, `truncated`. Matching modes:
-`literal` (bytes-safe, case optional), `regex` (RE2-like `regex` module with a
-500 ms match timeout and a 512-char pattern cap) and `glob`.
+`next_cursor`, `timed_out`, `elapsed_ms`, `truncated`, `completion`, and
+`exit_code` (when `capture_exit=true`). Matching modes: `literal` (bytes-safe,
+case optional), `regex` (RE2-like `regex` module with a 500 ms match timeout and
+a 512-char pattern cap) and `glob`.
+
+### Universal end-of-command marker (`capture_exit`)
+
+`capture_exit: true` makes the call return **when the remote command really
+finishes**, without knowing the board's prompt. The server appends a POSIX
+marker line:
+
+```sh
+<your command>
+rc=$?; a=__TIO_; b=<random>; echo ${a}${b}:$rc
+```
+
+and waits for `__TIO_<random>:<exit>`. Why this is not board-specific:
+
+* plain POSIX shell syntax — bash, dash, ash, busybox `sh`, ksh, zsh;
+* the marker is split across two variables, so the **echoed command line never
+  contains the joined marker** (no false match from terminal echo);
+* `rc=$?` captures the real exit status before anything else runs;
+* no dependency on `PS1`, hostname, locale, colours or `printf`;
+* multi-line commands and heredocs work (the marker is appended on a new line).
+
+The result adds `completion: "marker"` and `exit_code`, keeping
+`rx_text` / `next_cursor` / `timed_out` / `truncated`. If the marker does not
+arrive (non-POSIX firmware, or the command is still running), the call ends with
+`completion: "timeout"` and the partial output.
+
+Devices without a POSIX shell (U-Boot, RTOS, bare-metal monitors) cannot run the
+marker: use `expect` (prompt or completion string), the quiet period, or
+`serial_expect` there. The marker is generic across POSIX boards, not tailored
+to one host.
 
 ### Errors
 

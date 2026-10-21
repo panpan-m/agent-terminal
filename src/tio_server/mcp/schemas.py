@@ -101,6 +101,14 @@ class CommandResultModel(BaseModel):
     timed_out: bool
     elapsed_ms: int
     truncated: bool = False
+    completion: str = Field(
+        default="quiet",
+        description="How the call ended: marker | expect | quiet | timeout.",
+    )
+    exit_code: int | None = Field(
+        default=None,
+        description="Remote command exit status when capture_exit was used.",
+    )
 
 
 class ExpectResult(BaseModel):

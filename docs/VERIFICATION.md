@@ -4,12 +4,12 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **85 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **90 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **40 / 40 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
-| **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **19 / 19 checks** | `artifacts/live-shell/report.json` |
+| **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **23 / 23 checks** | `artifacts/live-shell/report.json` |
 
 The skipped test is the HIL "open a real COM port" case while the live
 debugging server holds `COM5` exclusively (expected; it passed in the earlier run).
@@ -27,7 +27,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 85 passed + 1 skipped)
+### 1. Test suite (`pytest`, 90 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -128,7 +128,7 @@ Details, including the DTR-gating behaviour of the probe and the three product
 fixes it forced, are in [`live-debug-report.md`](./live-debug-report.md).
 Screenshot: [`08-live-console`](screenshots/08-live-console.png).
 
-### 6. Agent path over MCP stdio (`scripts/live_shell_debug.py`, 19 checks)
+### 6. Agent path over MCP stdio (`scripts/live_shell_debug.py`, 23 checks)
 
 The packaged `tio-mcp.exe` was driven through the **official MCP SDK stdio
 client** — the same client `@deepseek-ai/dsh-mcp-client` uses — against a
@@ -136,7 +136,9 @@ Raspberry Pi 5 root shell over the same serial port. It ran `uname -a`,
 `/etc/os-release`, `/proc/cpuinfo`, `uptime`, `free -m`, `df -h /`,
 `ip -br addr`, `systemctl --failed` and `dmesg | tail`, then exercised cursor
 continuity, a no-match timeout, permission removal (`WRITE_DISABLED`) and
-control handover/return. 19/19 checks passed.
+control handover/return. `capture_exit: true` (generic POSIX end marker) returned
+exit codes `0`/`2`, handled a 1 s command and a heredoc, and never matched the
+console echo. 23/23 checks passed.
 
 The DSH integration row is documented in [`dsh.md`](./dsh.md); a newly inserted
 plugin row is only composed after the DSH app restarts.
@@ -147,7 +149,7 @@ plugin row is only composed after the DSH app restarts.
 |---|---|---|
 | Linux and Windows installers install/uninstall/autostart | ⚠️ partially verified | Windows: PyInstaller build + service scripts + Inno script (Inno not executed on this machine: toolchain absent). Linux: unit files/install script written, not executed here. |
 | UI selects port/baud and opens a session | ✅ | browser CDP check "session created from the dialog is listed and open" |
-| Real device end to end | ✅ | live run 46/46 + agent-path MCP run 19/19 on a Raspberry Pi 5 shell through a Debug Probe |
+| Real device end to end | ✅ | live run 46/46 + agent-path MCP run 23/23 on a Raspberry Pi 5 shell through a Debug Probe |
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |

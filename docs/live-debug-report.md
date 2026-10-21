@@ -46,7 +46,7 @@ below.
 
 `scripts/live_shell_debug.py` speaks to the packaged `tio-mcp.exe` through the
 official MCP SDK stdio client — exactly what `@deepseek-ai/dsh-mcp-client`
-spawns — and ran **19/19** checks against the root shell:
+spawns — and ran **23/23** checks against the root shell:
 
 | Check | Result |
 |---|---|
@@ -61,6 +61,9 @@ spawns — and ran **19/19** checks against the root shell:
 | `systemctl --failed` | `0 loaded units listed` |
 | `dmesg \| tail` | BCM54213PE PHY, brcmfmac `_send_action_frame` warning |
 | cursor read after burst | `gap=false`, head advanced |
+| `capture_exit` success / failure | exit `0`, exit `2` (real `ls` failure) |
+| `capture_exit` slow command | `sleep 1` returned after 1031 ms, exit `0` |
+| `capture_exit` heredoc | multi-line input intact, exit `0` |
 | no-match command | `timed_out=true`, no error |
 | permission removal | `WRITE_DISABLED` |
 | control handover/return | agent wrote, then control returned to `human` |

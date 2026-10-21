@@ -169,6 +169,51 @@ async def main() -> int:
                     f"elapsed={timeout.get('elapsed_ms')}ms",
                 )
 
+                # generic POSIX end marker: no prompt knowledge, works on any
+                # bash/dash/ash/busybox shell, returns the remote exit code
+                marker_cases = [
+                    ("success", "echo marker-ok", 0, 0),
+                    ("failure", "ls /no-such-path-tio", 2, 0),
+                    ("slow", "sleep 1; echo done", 0, 900),
+                ]
+                for label, command, expected_code, min_ms in marker_cases:
+                    result = structured(
+                        await session.call_tool(
+                            "serial_command",
+                            {
+                                "session_id": args.session,
+                                "command": command,
+                                "capture_exit": True,
+                                "timeout_ms": 10000,
+                            },
+                        )
+                    )
+                    check(
+                        f"capture_exit {label}: exit={expected_code}",
+                        result.get("matched") is True
+                        and result.get("exit_code") == expected_code
+                        and result.get("completion") == "marker"
+                        and result.get("elapsed_ms", 0) >= min_ms,
+                        f"exit={result.get('exit_code')} elapsed={result.get('elapsed_ms')}ms",
+                    )
+
+                heredoc = structured(
+                    await session.call_tool(
+                        "serial_command",
+                        {
+                            "session_id": args.session,
+                            "command": "cat <<'EOF'\nhello-heredoc\nEOF",
+                            "capture_exit": True,
+                            "timeout_ms": 5000,
+                        },
+                    )
+                )
+                check(
+                    "capture_exit keeps a heredoc intact",
+                    heredoc.get("exit_code") == 0 and "hello-heredoc" in (heredoc.get("rx_text") or ""),
+                    f"exit={heredoc.get('exit_code')}",
+                )
+
                 # permission arbitration on the real shell
                 admin.put(
                     f"/api/sessions/{args.session}/permissions",
