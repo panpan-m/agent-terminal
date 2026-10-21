@@ -214,6 +214,19 @@ def create_app(config: Config) -> FastAPI:
     ttyd = TtydSupervisor(config, manager.audit)
     started_at = time.time()
 
+    def session_payload(sess) -> dict:
+        data = sess.status()
+        data["terminal"] = ttyd.info(sess.id)
+        return data
+
+    def ensure_ttyd(session_id: str) -> None:
+        if not config.ttyd.enabled or not ttyd.available:
+            return
+        try:
+            ttyd.start_for(session_id)
+        except Exception as exc:  # ttyd is optional; never fail the API for it
+            logger.warning("ttyd start failed for %s: %s", session_id, exc)
+
     mcp_server = build_mcp_server(manager, config)
     allowed_hosts = [config.server.bind, f"{config.server.bind}:{config.server.port}"]
     for host in ("localhost", "127.0.0.1", "[::1]"):
@@ -384,11 +397,11 @@ def create_app(config: Config) -> FastAPI:
     # ----------------------------------------------------------------- sessions
     @app.get("/api/sessions")
     async def list_sessions(rec: AdminSession = Depends(admin_session)):
-        return {"sessions": [sess.status() for sess in manager.sessions.values()]}
+        return {"sessions": [session_payload(sess) for sess in manager.sessions.values()]}
 
     @app.get("/api/sessions/{session_id}")
     async def get_session(session_id: str, rec: AdminSession = Depends(admin_session)):
-        return manager.get(session_id).status()
+        return session_payload(manager.get(session_id))
 
     @app.post("/api/sessions", status_code=201)
     async def create_session(body: SessionBody, rec: AdminSession = Depends(csrf_guard)):
@@ -397,7 +410,8 @@ def create_app(config: Config) -> FastAPI:
         sess = manager.create_session(body.to_config(body.id))
         if body.auto_open:
             await asyncio.to_thread(sess.open)
-        return sess.status()
+        await asyncio.to_thread(ensure_ttyd, sess.id)
+        return session_payload(sess)
 
     @app.put("/api/sessions/{session_id}")
     async def update_session(session_id: str, body: SessionBody, rec: AdminSession = Depends(csrf_guard)):
@@ -405,10 +419,11 @@ def create_app(config: Config) -> FastAPI:
         new_cfg = body.to_config(session_id)
         reopen = existing.is_open
         await asyncio.to_thread(manager.update_session, new_cfg, reopen=reopen)
-        return manager.get(session_id).status()
+        return session_payload(manager.get(session_id))
 
     @app.delete("/api/sessions/{session_id}")
     async def delete_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
+        await asyncio.to_thread(ttyd.stop, session_id)
         await asyncio.to_thread(manager.remove_session, session_id)
         return {"ok": True}
 
@@ -416,13 +431,14 @@ def create_app(config: Config) -> FastAPI:
     async def open_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
         sess = manager.get(session_id)
         await asyncio.to_thread(sess.open)
-        return sess.status()
+        await asyncio.to_thread(ensure_ttyd, session_id)
+        return session_payload(sess)
 
     @app.post("/api/sessions/{session_id}/close")
     async def close_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
         sess = manager.get(session_id)
         await asyncio.to_thread(sess.close)
-        return sess.status()
+        return session_payload(sess)
 
     @app.post("/api/sessions/{session_id}/reset")
     async def reset_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
@@ -430,7 +446,7 @@ def create_app(config: Config) -> FastAPI:
         if not sess.is_open:
             await asyncio.to_thread(sess.open)
         result = await asyncio.to_thread(sess.apply_reset_sequence)
-        return {**result, "status": sess.status()}
+        return {**result, "status": session_payload(sess)}
 
     @app.put("/api/sessions/{session_id}/control")
     async def set_control(session_id: str, body: ControlBody, rec: AdminSession = Depends(csrf_guard)):
@@ -514,10 +530,8 @@ def create_app(config: Config) -> FastAPI:
     @app.post("/api/ttyd/{session_id}/{mode}/start")
     async def ttyd_start(session_id: str, mode: str, rec: AdminSession = Depends(csrf_guard)):
         manager.get(session_id)
-        ports = ttyd.allocate_ports(list(manager.sessions))
-        view, control = ports[session_id]
-        proc = ttyd.start(session_id, "rw" if mode == "control" else "ro", control if mode == "control" else view)
-        return {"port": proc.port, "pid": proc.process.pid}
+        info = await asyncio.to_thread(ttyd.start_for, session_id)
+        return {"terminal": info}
 
     @app.post("/api/ttyd/{session_id}/{mode}/stop")
     async def ttyd_stop(session_id: str, mode: str, rec: AdminSession = Depends(csrf_guard)):

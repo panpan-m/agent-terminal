@@ -3,6 +3,7 @@ import {
   Cable,
   ChevronRight,
   CircleSlash,
+  Monitor,
   Plus,
   Power,
   RotateCcw,
@@ -229,6 +230,13 @@ function SessionCard({
         <Button size="sm" variant="secondary" onClick={onOpen} disabled={!isOpen}>
           <TerminalSquare className="h-3.5 w-3.5" /> Console <ChevronRight className="h-3 w-3" />
         </Button>
+        {session.terminal?.view_url ? (
+          <Button size="sm" variant="ghost" asChild title="open the read-only ttyd terminal">
+            <a href={session.terminal.view_url} target="_blank" rel="noreferrer">
+              <Monitor className="h-3.5 w-3.5" /> Terminal
+            </a>
+          </Button>
+        ) : null}
         <Button
           size="sm"
           variant={agentOwns ? "outline" : "primary"}

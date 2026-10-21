@@ -15,8 +15,12 @@ Browser ─HTTP/WS─▶ ttyd ─PTY/ConPTY─▶ tio-web-bridge ─WS─▶ tio
 | control | 7682 | `-W -c user:pass` | operator input, only when `control_owner=human` |
 
 `tio-server` is the supervisor: `ttyd.enabled = true` starts both entries per
-session (ports allocated 10 apart), restarts are manual, and `stop_all()` runs on
-shutdown so no orphan ttyd/bridge survives the service.
+session — at boot for configured sessions and immediately when a session is
+created through the API/UI. Deleting a session stops its entries; `stop_all()`
+runs on shutdown so no orphan ttyd/bridge survives the service. The session API
+returns `terminal.view_url` / `terminal.control_url`, which the UI turns into
+**Terminal** links. Ports are picked from `view_port_base` / `control_port_base`
+by finding free ports, so two sessions never collide.
 
 The exact command it runs (also usable by hand):
 

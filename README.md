@@ -8,7 +8,7 @@ port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
 > Verified on Windows 10: **84 tests**, **40/40 end-to-end checks**,
-> **9/9 real ttyd checks**, **11/11 packaged-binary checks** — see
+> **13/13 real ttyd checks**, **11/11 packaged-binary checks** — see
 > [`docs/VERIFICATION.md`](./docs/VERIFICATION.md).
 
 ![Sessions page](docs/screenshots/02-sessions.png)

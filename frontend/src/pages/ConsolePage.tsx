@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, Circle, Power, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Monitor, Power, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 
 import { SessionThread } from "@/components/assistant-ui/thread";
 import { Badge, StateBadge } from "@/components/ui/badge";
@@ -196,6 +196,17 @@ export function ConsolePage({
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </a>
+              {session.terminal?.view_url ? (
+                <a
+                  href={session.terminal.view_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                  title="open the browser terminal (ttyd)"
+                >
+                  <Monitor className="h-4 w-4" />
+                </a>
+              ) : null}
             </>
           ) : null}
         </div>

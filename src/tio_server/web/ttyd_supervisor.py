@@ -184,13 +184,59 @@ class TtydSupervisor:
             out[sid] = (view, control)
         return out
 
+    # ------------------------------------------------------- per-session entries
+    @staticmethod
+    def _port_available(port: int) -> bool:
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+        return True
+
+    def _allocate(self, start: int) -> int:
+        with self._lock:
+            used = {rec.port for rec in self._procs.values()}
+        for port in range(start, start + 200):
+            if port in used:
+                continue
+            if self._port_available(port):
+                return port
+        raise RuntimeError(f"no free port in {start}..{start + 200}")
+
+    def start_for(self, session_id: str) -> dict:
+        """Start (or reuse) the read-only and control entries for one session."""
+        if not self.config.ttyd.enabled:
+            raise RuntimeError("ttyd is disabled (ttyd.enabled = false)")
+        if not self.binary:
+            raise RuntimeError("ttyd binary not found")
+        cfg = self.config.ttyd
+        view = self._allocate(cfg.view_port_base)
+        control = self._allocate(cfg.control_port_base)
+        self.start(session_id, "ro", view)
+        self.start(session_id, "rw", control)
+        return self.info(session_id)
+
+    def info(self, session_id: str) -> dict:
+        """URLs of the live entries for a session (None when not started)."""
+        with self._lock:
+            out: dict[str, str | None] = {"view_url": None, "control_url": None}
+            for rec in self._procs.values():
+                if rec.session_id != session_id or not rec.alive():
+                    continue
+                if rec.mode == "ro":
+                    out["view_url"] = f"http://127.0.0.1:{rec.port}/"
+                elif rec.mode == "rw":
+                    out["control_url"] = f"http://127.0.0.1:{rec.port}/"
+            return out
+
     def ensure_for_all(self, session_ids: list[str]) -> None:
         if not self.config.ttyd.enabled or not self.binary:
             return
-        ports = self.allocate_ports(session_ids)
-        for sid, (view, control) in ports.items():
+        for sid in session_ids:
             try:
-                self.start(sid, "ro", view)
-                self.start(sid, "rw", control)
-            except OSError:
+                self.start_for(sid)
+            except (OSError, RuntimeError):
                 continue

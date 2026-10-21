@@ -49,6 +49,8 @@ export interface SessionStatus {
   auto_reconnect: boolean;
   config_revision: number;
   platform: string;
+  /** ttyd entries for this session, when the browser terminal is enabled. */
+  terminal?: { view_url: string | null; control_url: string | null };
 }
 
 export interface PortInfo {

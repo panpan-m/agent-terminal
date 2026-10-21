@@ -1,8 +1,10 @@
 """ttyd end-to-end check (Windows ConPTY): browser terminal -> bridge -> server.
 
-Starts a real server + a real ttyd process whose child command is
-``tio-web-bridge``, then speaks ttyd's WebSocket protocol directly to prove the
-terminal transports raw bytes (banner, typed command, response).
+The server is configured with ``ttyd.enabled = true``; its supervisor starts the
+read-only and control entries for every session, creates the bridge command and
+passes the basic-auth credential.  This script then speaks ttyd's WebSocket
+protocol directly to prove raw bytes flow, and checks auto-start for sessions
+created through the API.
 
 Writes artifacts/ttyd/report.json and exits non-zero on failure.
 """
@@ -11,7 +13,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 import socket
 import subprocess
 import sys
@@ -43,11 +44,11 @@ def main() -> int:
 
     def check(name: str, ok: bool, detail: str = "") -> bool:
         checks.append({"name": name, "ok": bool(ok), "detail": str(detail)[:500]})
-        print(f"{'PASS' if ok else 'FAIL'}  {name}  {detail[:160]}")
+        print(f"{'PASS' if ok else 'FAIL'}  {name}  {str(detail)[:160]}")
         return ok
 
     if not TTYD.exists():
-        print(f"ttyd binary missing: {TTYD}")
+        print(f"ttyd binary missing: {TTYD} (download 1.7.7 to tools/ttyd/ttyd.exe)")
         return 2
 
     data = out / "data"
@@ -57,12 +58,15 @@ def main() -> int:
         shutil.rmtree(data)
     cfg, secrets = init_config(data)
     cfg.security.allow_dev_ports = True
-    cfg.sessions = [
-        SessionConfig(id="board-a", name="Board A", port="sim://board-a", auto_open=True)
-    ]
+    cfg.sessions = [SessionConfig(id="board-a", name="Board A", port="sim://board-a", auto_open=True)]
     server_port = free_port()
     cfg.server.port = server_port
+    cfg.ttyd.enabled = True
+    cfg.ttyd.binary = str(TTYD)
+    cfg.ttyd.view_port_base = free_port()
+    cfg.ttyd.control_port_base = cfg.ttyd.view_port_base + 1
     cfg.save()
+    control_password = (data / "ttyd-control.pass").read_text(encoding="utf-8").strip()
 
     server_log = (out / "server.log").open("wb")
     server = subprocess.Popen(
@@ -71,8 +75,6 @@ def main() -> int:
         stdout=server_log,
         stderr=server_log,
     )
-    ttyd: subprocess.Popen | None = None
-    ttyd_log = (out / "ttyd.log").open("wb")
     try:
         deadline = time.time() + 30
         while time.time() < deadline:
@@ -86,72 +88,76 @@ def main() -> int:
             return 2
         check("tio-server started", True)
 
-        client = httpx.Client(base_url=f"http://127.0.0.1:{server_port}", timeout=20)
+        client = httpx.Client(base_url=f"http://127.0.0.1:{server_port}", timeout=30)
         login = client.post(
             "/api/auth/login", json={"username": "admin", "password": secrets["admin_password"]}
         ).json()
         headers = {"X-CSRF-Token": login["csrf"]}
         client.put("/api/sessions/board-a/control", json={"owner": "human"}, headers=headers)
 
-        ttyd_port = free_port()
-        bridge_cmd = [
-            PY,
-            "-m",
-            "tio_web_bridge",
-            "--url",
-            f"ws://127.0.0.1:{server_port}/ws/bridge/board-a",
-            "--mode",
-            "rw",
-            "--token-file",
-            str(cfg.bridge_token_file),
-        ]
-        ttyd = subprocess.Popen(
-            [
-                str(TTYD),
-                "-p",
-                str(ttyd_port),
-                "-i",
-                "127.0.0.1",
-                "-O",
-                "-W",
-                "-m",
-                "2",
-                *bridge_cmd,
-            ],
-            cwd=str(ROOT),
-            stdout=ttyd_log,
-            stderr=ttyd_log,
-        )
-        base = f"http://127.0.0.1:{ttyd_port}"
-        deadline = time.time() + 20
-        page = None
-        while time.time() < deadline:
-            if ttyd.poll() is not None:
-                break
-            try:
-                response = httpx.get(base + "/", timeout=1)
-                if response.status_code == 200:
-                    page = response
-                    break
-            except httpx.HTTPError:
-                time.sleep(0.2)
-        if not check("ttyd serves the terminal page", page is not None, page.text[:80] if page else (out / "ttyd.log").read_text(errors="replace")[-500:]):
+        def instances() -> list[dict]:
+            return client.get("/api/system").json()["ttyd"]["instances"]
+
+        def wait_instance(session_id: str, mode: str, present: bool = True, timeout: float = 15) -> dict | None:
+            deadline_ = time.time() + timeout
+            found = None
+            while time.time() < deadline_:
+                found = next(
+                    (
+                        instance
+                        for instance in instances()
+                        if instance["session_id"] == session_id and instance["mode"] == mode and instance["alive"]
+                    ),
+                    None,
+                )
+                if (found is not None) == present:
+                    return found
+                time.sleep(0.25)
+            return found
+
+        view = wait_instance("board-a", "ro")
+        control = wait_instance("board-a", "rw")
+        check("supervisor starts both entries for a configured session", bool(view and control), str(instances()))
+        if not view or not control:
             return 2
-        check("ttyd page mentions xterm/ttyd", "ttyd" in page.text.lower() or "xterm" in page.text.lower())
+        view_port, control_port = view["port"], control["port"]
 
-        token_response = httpx.get(base + "/token", timeout=5)
+        session_status = client.get("/api/sessions/board-a").json()
+        check(
+            "session status exposes terminal URLs",
+            session_status.get("terminal", {}).get("view_url") == f"http://127.0.0.1:{view_port}/",
+            json.dumps(session_status.get("terminal")),
+        )
+
+        page = httpx.get(f"http://127.0.0.1:{view_port}/", timeout=5)
+        check("ttyd serves the terminal page", page.status_code == 200 and "ttyd" in page.text.lower())
+
+        auth = base64.b64encode(f"operator:{control_password}".encode()).decode()
+        unauth = httpx.get(f"http://127.0.0.1:{control_port}/", timeout=5)
+        authed = httpx.get(
+            f"http://127.0.0.1:{control_port}/",
+            headers={"Authorization": f"Basic {auth}"},
+            timeout=5,
+        )
+        check("control entry requires basic auth", unauth.status_code == 401, str(unauth.status_code))
+        check("control entry accepts the operator credential", authed.status_code == 200, str(authed.status_code))
+
+        token_response = httpx.get(
+            f"http://127.0.0.1:{control_port}/token",
+            headers={"Authorization": f"Basic {auth}"},
+            timeout=5,
+        )
         token = token_response.json().get("token", "") if token_response.status_code == 200 else ""
-
         received = b""
         with connect(
-            f"ws://127.0.0.1:{ttyd_port}/ws",
+            f"ws://127.0.0.1:{control_port}/ws",
             subprotocols=["tty"],
-            origin=f"http://127.0.0.1:{ttyd_port}",
+            origin=f"http://127.0.0.1:{control_port}",
+            additional_headers={"Authorization": f"Basic {auth}"},
             open_timeout=10,
             max_size=None,
         ) as ws:
             ws.send(json.dumps({"AuthToken": token, "columns": 120, "rows": 30}).encode())
-            # Wait for the boot banner relayed from the simulated board.
             deadline = time.time() + 10
             while time.time() < deadline:
                 try:
@@ -162,7 +168,7 @@ def main() -> int:
                     break
                 if isinstance(message, str):
                     message = message.encode()
-                if message and message[0:1] == b"0":
+                if message[:1] == b"0":
                     received += message[1:]
                 if b"TioSim" in received:
                     break
@@ -179,7 +185,7 @@ def main() -> int:
                     break
                 if isinstance(message, str):
                     message = message.encode()
-                if message and message[0:1] == b"0":
+                if message[:1] == b"0":
                     received += message[1:]
                 if b"commands:" in received:
                     break
@@ -189,57 +195,33 @@ def main() -> int:
                 received[-300:].decode(errors="replace"),
             )
 
-            # Ctrl-C must be forwarded as 0x03, not terminate the bridge.
             ws.send(b"0" + b"\x03")
             time.sleep(0.4)
-            check("Ctrl-C is forwarded as a byte", ttyd.poll() is None, "ttyd still running")
+            check("Ctrl-C is forwarded as a byte", control["pid"] and control["alive"], "ttyd still running")
 
-        check("bridge process still alive after client left", ttyd.poll() is None)
+        # Creating a session through the API must bring up its entries...
+        created = client.post(
+            "/api/sessions",
+            json={"id": "board-b", "port": "sim://board-b", "auto_open": True},
+            headers=headers,
+        )
+        check("session created through the API", created.status_code == 201, str(created.status_code))
+        new_control = wait_instance("board-b", "rw")
+        check("supervisor auto-starts entries for a new session", bool(new_control), str(instances()))
+        if new_control:
+            page_b = httpx.get(f"http://127.0.0.1:{new_control['port']}/", timeout=5)
+            check("new session terminal is reachable", page_b.status_code == 200, str(page_b.status_code))
 
-        # Entry-level basic auth gate (HTTP layer).
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(ttyd.pid)], capture_output=True)
-        ttyd.wait(timeout=10)
-        auth_port = free_port()
-        ttyd = subprocess.Popen(
-            [
-                str(TTYD),
-                "-p",
-                str(auth_port),
-                "-i",
-                "127.0.0.1",
-                "-O",
-                "-W",
-                "-c",
-                "operator:secret",
-                *bridge_cmd,
-            ],
-            cwd=str(ROOT),
-            stdout=ttyd_log,
-            stderr=ttyd_log,
-        )
-        deadline = time.time() + 15
-        unauth = None
-        while time.time() < deadline:
-            try:
-                unauth = httpx.get(f"http://127.0.0.1:{auth_port}/", timeout=1)
-                break
-            except httpx.HTTPError:
-                time.sleep(0.2)
-        check("ttyd control entry requires basic auth", unauth is not None and unauth.status_code == 401, str(unauth.status_code if unauth else "no response"))
-        authed = httpx.get(
-            f"http://127.0.0.1:{auth_port}/",
-            auth=("operator", "secret"),
-            timeout=5,
-        )
-        check("ttyd control entry accepts the operator credential", authed.status_code == 200, str(authed.status_code))
+        # ...and deleting it must stop them again.
+        client.delete("/api/sessions/board-b", headers=headers)
+        gone = wait_instance("board-b", "rw", present=False, timeout=10)
+        check("deleting a session stops its ttyd entries", gone is None, str(instances()))
 
         client.close()
     finally:
-        for proc in (ttyd, server):
-            if proc is not None and proc.poll() is None:
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+        if server.poll() is None:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(server.pid)], capture_output=True)
         server_log.close()
-        ttyd_log.close()
 
     failed = [c for c in checks if not c["ok"]]
     (out / "report.json").write_text(

@@ -6,7 +6,7 @@
 |---|---|---|
 | `pytest` (unit + integration + protocol + security + HIL) | **84 passed** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **40 / 40 checks** | `artifacts/e2e/report.json` |
-| ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **9 / 9 checks** | `artifacts/ttyd/report.json` |
+| ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 
 ## Environment
@@ -75,17 +75,22 @@ Screenshots: [`01-login`](screenshots/01-login.png) ·
 [`06-logs`](screenshots/06-logs.png) ·
 [`07-system`](screenshots/07-system.png)
 
-### 3. ttyd (`scripts/ttyd_check.py`, 9 checks)
+### 3. ttyd (`scripts/ttyd_check.py`, 13 checks)
 
-Real `ttyd.exe` 1.7.7 as a child of the server, running `tio-web-bridge`:
+The server is started with `ttyd.enabled=true`; the **supervisor** (not the test)
+allocates ports, builds the bridge command and launches both entries:
 
+* entries start for a session configured at boot, and the session API exposes
+  `terminal.view_url` / `terminal.control_url`;
 * page served; `xterm`/ttyd assets present;
 * device boot banner reaches the browser terminal;
 * typed bytes reach the simulated UART and the `help` output returns (raw bytes
   through ConPTY);
 * `Ctrl-C` forwarded as `0x03` and the bridge stays alive;
 * basic-auth control entry: `401` without credentials, `200` with them;
-* bridge survives the browser disconnecting.
+* creating a session through the API auto-starts its entries and the new terminal
+  is reachable;
+* deleting the session stops those entries again.
 
 This clears the plan's **P0 Windows ttyd go/no-go**.
 
@@ -108,7 +113,7 @@ This clears the plan's **P0 Windows ttyd go/no-go**.
 | Linux and Windows installers install/uninstall/autostart | ⚠️ partially verified | Windows: PyInstaller build + service scripts + Inno script (Inno not executed on this machine: toolchain absent). Linux: unit files/install script written, not executed here. |
 | UI selects port/baud and opens a session | ✅ | browser CDP check "session created from the dialog is listed and open" |
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
-| Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 9/9 (banner, `help`, Ctrl-C, auth) |
+| Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |
 | Replug reconnects, cursor continues, gap reported | ✅ | reconnect test, gap unit tests, HIL enumeration |
