@@ -331,15 +331,24 @@ class Session:
                 sub.put(payload)
 
     # -------------------------------------------------------------- subscribers
-    def subscribe(self, replay_bytes: int = 0, maxsize: int = 1024) -> Subscriber:
+    def subscribe(
+        self, replay_bytes: int = 0, maxsize: int = 1024, cursor: int | None = None
+    ) -> Subscriber:
         sub = Subscriber(maxsize=maxsize)
+        replay = b""
+        offset = self.ring.head
+        dropped = 0
         with self._sub_lock:
-            replay = b""
-            offset = self.ring.head
-            if replay_bytes > 0:
+            if cursor is not None:
+                sl = self.ring.read(cursor=max(0, int(cursor)), max_bytes=1024 * 1024)
+                replay, offset = sl.data, sl.start
+                dropped = sl.lost_bytes if sl.gap else 0
+            elif replay_bytes > 0:
                 sl = self.ring.read(tail_bytes=replay_bytes)
                 replay, offset = sl.data, sl.start
             self._subs.append(sub)
+        if dropped:
+            sub.put({"type": "overflow", "dropped": dropped})
         if replay:
             sub.put({"type": "replay", "offset": offset, "data": replay})
         sub.put({"type": "status", "status": self.status()})
@@ -464,6 +473,18 @@ class Session:
             yield
         finally:
             self._write_lock.release()
+
+    def send_break(self, duration_ms: int = 250, *, source: str = "human") -> dict[str, Any]:
+        """Send a serial BREAK (framing break, not a data byte)."""
+        duration = max(1, min(int(duration_ms), 5000))
+        with self.writing(source, "write"):
+            handle = self.handle
+            if handle is None:
+                raise ToolFailure(DISCONNECTED, "serial device is not open", {"session_id": self.id})
+            self.manager.backend.send_break(handle, duration)
+        self.transcript.event("break", duration_ms=duration, source=source)
+        self.manager.audit.write("session.break", session=self.id, duration_ms=duration, source=source)
+        return {"session_id": self.id, "duration_ms": duration}
 
     def write_bytes(
         self,

@@ -80,13 +80,14 @@ async def main() -> int:
                 )
                 tools = await session.list_tools()
                 check(
-                    "six serial tools advertised",
+                    "seven serial tools advertised",
                     [tool.name for tool in tools.tools]
                     == [
                         "serial_sessions",
                         "serial_status",
                         "serial_read",
                         "serial_write",
+                        "serial_break",
                         "serial_command",
                         "serial_expect",
                     ],
@@ -96,6 +97,14 @@ async def main() -> int:
                 status = structured(await session.call_tool("serial_status", {"session_id": args.session}))
                 check("session is open", status.get("state") == "open", f"{status.get('port')} {status.get('state')}")
 
+                # A fresh server has an empty ring; press Enter once as the
+                # operator so the prompt is guaranteed to be in the history.
+                admin.post(
+                    f"/api/sessions/{args.session}/write",
+                    json={"text": "", "newline": "cr"},
+                    headers=headers,
+                )
+                await asyncio.sleep(0.5)
                 history = structured(
                     await session.call_tool(
                         "serial_read", {"session_id": args.session, "tail_bytes": 2000, "timeout_ms": 300}
@@ -212,6 +221,17 @@ async def main() -> int:
                     "capture_exit keeps a heredoc intact",
                     heredoc.get("exit_code") == 0 and "hello-heredoc" in (heredoc.get("rx_text") or ""),
                     f"exit={heredoc.get('exit_code')}",
+                )
+
+                serial_break = structured(
+                    await session.call_tool(
+                        "serial_break", {"session_id": args.session, "duration_ms": 100}
+                    )
+                )
+                check(
+                    "serial_break sends a framing break",
+                    serial_break.get("duration_ms") == 100,
+                    f"{serial_break}",
                 )
 
                 # permission arbitration on the real shell

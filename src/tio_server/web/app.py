@@ -203,6 +203,10 @@ class CommandBody(BaseModel):
     ignore_case: bool = False
 
 
+class BreakBody(BaseModel):
+    duration_ms: int = Field(default=250, ge=1, le=5000)
+
+
 # ------------------------------------------------------------------- app factory
 def create_app(config: Config) -> FastAPI:
     logger = setup_logging(config.log_dir, config.server.log_level)
@@ -488,6 +492,11 @@ def create_app(config: Config) -> FastAPI:
         manager.audit.write("session.lines", session=session_id, dtr=body.dtr, rts=body.rts)
         return lines
 
+    @app.post("/api/sessions/{session_id}/break")
+    async def break_now(session_id: str, body: BreakBody, rec: AdminSession = Depends(csrf_guard)):
+        sess = manager.get(session_id)
+        return await asyncio.to_thread(sess.send_break, body.duration_ms, source="human")
+
     @app.post("/api/sessions/{session_id}/write")
     async def write_now(session_id: str, body: WriteBody, rec: AdminSession = Depends(csrf_guard)):
         sess = manager.get(session_id)
@@ -532,6 +541,52 @@ def create_app(config: Config) -> FastAPI:
     async def transcript(session_id: str, limit: int = 200, rec: AdminSession = Depends(admin_session)):
         sess = manager.get(session_id)
         return {"events": sess.transcript.tail(max(1, min(limit, 2000)))}
+
+    @app.get("/api/sessions/{session_id}/export")
+    async def export_session(
+        session_id: str,
+        format: str = "txt",
+        limit: int = 5000,
+        rec: AdminSession = Depends(admin_session),
+    ):
+        """Raw byte log with per-chunk timestamps, like a native terminal capture."""
+        from collections import deque
+
+        sess = manager.get(session_id)
+        if format not in ("txt", "hex"):
+            raise ToolFailure("INVALID_ARGUMENT", "format must be txt or hex")
+        keep: deque[str] = deque(maxlen=max(1, min(int(limit), 200_000)))
+        path = sess.transcript.path
+        if path.exists():
+            with path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if event.get("dir") not in ("rx", "tx"):
+                        continue
+                    data = base64.b64decode(event.get("data_b64") or "")
+                    if format == "hex":
+                        payload = data.hex(" ")
+                    else:
+                        payload = (
+                            data.decode("utf-8", "backslashreplace")
+                            .replace("\\", "\\\\")
+                            .replace("\r", "\\r")
+                            .replace("\n", "\\n")
+                            .replace("\t", "\\t")
+                        )
+                    keep.append(
+                        f"{event.get('ts', '')}\t{event['dir'].upper()}\t"
+                        f"{event.get('source', '')}\t{event.get('offset', '')}\t{payload}"
+                    )
+        body = "\n".join(keep) + ("\n" if keep else "")
+        return Response(
+            content=body,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{session_id}-raw-{format}.log"'},
+        )
 
     @app.get("/api/audit")
     async def audit(limit: int = 200, rec: AdminSession = Depends(admin_session)):
@@ -590,7 +645,15 @@ def create_app(config: Config) -> FastAPI:
             return
         await ws.accept()
         replay = int(ws.query_params.get("replay") or config.ttyd.replay_bytes)
-        sub = sess.subscribe(replay_bytes=max(0, min(replay, 1024 * 1024)))
+        cursor_raw = ws.query_params.get("cursor")
+        try:
+            cursor = int(cursor_raw) if cursor_raw not in (None, "") else None
+        except ValueError:
+            cursor = None
+        sub = sess.subscribe(
+            replay_bytes=max(0, min(replay, 1024 * 1024)),
+            cursor=max(0, cursor) if cursor is not None else None,
+        )
         send_lock = asyncio.Lock()
 
         async def send_json(payload: dict) -> None:

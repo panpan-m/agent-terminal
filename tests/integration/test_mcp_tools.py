@@ -36,6 +36,7 @@ async def test_tools_list_contract(mcp_setup):
         "serial_status",
         "serial_read",
         "serial_write",
+        "serial_break",
         "serial_command",
         "serial_expect",
     ]
@@ -121,6 +122,21 @@ async def test_write_and_command_after_handover(mcp_setup):
     assert data["matched"] is True
     assert data["groups"] == ["1.0.0"]
     assert data["tx_bytes"] == 8  # len("version") + CR
+
+
+async def test_break_requires_control_and_reports_duration(mcp_setup):
+    mgr, mcp, _ = mcp_setup
+    mgr.get("board-a").open()
+    res = await _call(mcp, "serial_break", {})
+    assert res.is_error is True
+    assert _structured(res)["error"]["code"] == "WRITE_LOCKED"
+
+    mgr.set_control_owner("board-a", "agent")
+    res = await _call(mcp, "serial_break", {"duration_ms": 120})
+    assert res.is_error is False
+    data = _structured(res)
+    assert data["duration_ms"] == 120
+    assert data["session_id"] == "board-a"
 
 
 async def test_command_timeout_is_not_an_error(mcp_setup):

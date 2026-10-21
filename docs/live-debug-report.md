@@ -46,7 +46,7 @@ below.
 
 `scripts/live_shell_debug.py` speaks to the packaged `tio-mcp.exe` through the
 official MCP SDK stdio client — exactly what `@deepseek-ai/dsh-mcp-client`
-spawns — and ran **23/23** checks against the root shell:
+spawns — and ran **24/24** checks against the root shell:
 
 | Check | Result |
 |---|---|

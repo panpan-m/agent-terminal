@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 
@@ -279,3 +280,70 @@ def test_runtime_state_resets_on_restart(tmp_path):
         assert mgr.get("board-a").control_owner == "human"
     finally:
         mgr.stop()
+
+
+def test_break_and_raw_export(app_bundle):
+    client, cfg, secrets = app_bundle
+    csrf = login(client, secrets)
+    create_session(client, csrf)
+    client.post(
+        "/api/sessions/board-a/write",
+        json={"text": "ping", "newline": "cr"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    r = client.post(
+        "/api/sessions/board-a/break",
+        json={"duration_ms": 120},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["duration_ms"] == 120
+
+    txt = client.get("/api/sessions/board-a/export?format=txt")
+    assert txt.status_code == 200
+    assert "attachment" in txt.headers["content-disposition"]
+    assert "\tTX\t" in txt.text and "pong" in txt.text
+
+    hexed = client.get("/api/sessions/board-a/export?format=hex")
+    assert hexed.status_code == 200
+    assert "70 69 6e 67" in hexed.text  # "ping"
+    assert client.get("/api/sessions/board-a/export?format=nope").status_code == 400
+
+
+def test_console_ws_resumes_from_cursor_without_replaying(app_bundle):
+    client, cfg, secrets = app_bundle
+    csrf = login(client, secrets)
+    create_session(client, csrf)
+    cookie = "; ".join(f"{item.name}={item.value}" for item in client.cookies.jar)
+
+    with client.websocket_connect("/ws/console/board-a?replay=65536", headers={"cookie": cookie}) as ws:
+        hello = ws.receive_json()
+        assert hello["type"] == "hello"
+        replay = ws.receive_json()
+        assert replay["type"] == "replay"
+        head = replay["offset"] + len(base64.b64decode(replay["data_b64"]))
+        ws.receive_json()  # status
+
+    # New subscriber at head, before any new data: no replay of the old buffer.
+    with client.websocket_connect(f"/ws/console/board-a?cursor={head}", headers={"cookie": cookie}) as ws:
+        assert ws.receive_json()["type"] == "hello"
+        first = ws.receive_json()
+        assert first["type"] != "replay", first
+
+    client.post(
+        "/api/sessions/board-a/write",
+        json={"text": "ping", "newline": "cr"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    # Catching up from the old cursor returns only what came after it: the new
+    # reply, not the boot banner that was already on screen.
+    with client.websocket_connect(f"/ws/console/board-a?cursor={head}", headers={"cookie": cookie}) as ws:
+        ws.receive_json()  # hello
+        received = b""
+        for _ in range(20):
+            message = ws.receive_json()
+            if message["type"] in ("rx", "replay"):
+                received += base64.b64decode(message["data_b64"])
+                break
+        assert b"pong" in received
+        assert b"TioSim" not in received

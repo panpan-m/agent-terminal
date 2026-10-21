@@ -126,6 +126,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  sendBreak: (id: string, durationMs = 250) =>
+    request<{ session_id: string; duration_ms: number }>(`/api/sessions/${encodeURIComponent(id)}/break`, {
+      method: "POST",
+      body: JSON.stringify({ duration_ms: durationMs }),
+    }),
   transcript: (id: string, limit = 200) =>
     request<{ events: TranscriptEvent[] }>(
       `/api/sessions/${encodeURIComponent(id)}/transcript?limit=${limit}`,

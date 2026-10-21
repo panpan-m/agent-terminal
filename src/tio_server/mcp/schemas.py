@@ -89,6 +89,11 @@ class WriteResult(BaseModel):
     control_owner: str
 
 
+class BreakResult(BaseModel):
+    session_id: str
+    duration_ms: int
+
+
 class CommandResultModel(BaseModel):
     session_id: str
     tx_bytes: int

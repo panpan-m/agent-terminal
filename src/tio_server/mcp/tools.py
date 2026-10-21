@@ -25,6 +25,7 @@ from ..errors import INTERNAL, INVALID_ARGUMENT, ToolFailure
 from ..ring import ReadSlice
 from ..sessions import Session, SessionManager
 from .schemas import (
+    BreakResult,
     CommandResultModel,
     ExpectResult,
     LinesModel,
@@ -321,6 +322,25 @@ def build_mcp_server(manager: SessionManager, config: Config) -> MCPServer:
             tx_cursor=sess.ring.head,
             control_owner=sess.control_owner,
         )
+
+    # ---------------------------------------------------------------- break
+    @mcp.tool(
+        name="serial_break",
+        description=(
+            "Send a serial BREAK (framing break, not a data byte). Needed by U-Boot, "
+            "OpenWrt failsafe and some bootloaders. Requires agent write control."
+        ),
+        annotations=WRITING,
+    )
+    @_guard
+    async def serial_break(
+        session_id: Annotated[str | None, "Session id; optional when exactly one session exists."] = None,
+        duration_ms: Annotated[int, "BREAK duration in milliseconds (1-5000)."] = 250,
+    ) -> BreakResult:
+        manager.limiter.check()
+        sess = session_of(session_id)
+        result = sess.send_break(max(1, min(int(duration_ms), 5000)), source="agent")
+        return BreakResult(session_id=sess.id, duration_ms=result["duration_ms"])
 
     # -------------------------------------------------------------- command
     @mcp.tool(

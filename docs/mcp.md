@@ -27,6 +27,8 @@ server keeps transport sessions; the *serial* session is always selected by the
 | `serial_status` | yes | state, config, counters, cursors, control lines, owner |
 | `serial_read` | yes | buffered RX by absolute cursor or tail |
 | `serial_write` | no | raw bytes (text or hex) with optional newline/chunking |
+| `serial_write` | no | raw bytes, text or hex, optional chunking |
+| `serial_break` | no | send a serial framing BREAK (`duration_ms`, default 250) |
 | `serial_command` | no | write one line and collect the response (expect, or a POSIX end marker with exit code) |
 | `serial_expect` | yes | wait for a pattern without writing |
 
@@ -50,8 +52,14 @@ There is deliberately **no** `serial_open`, `serial_close` or
 Neither `cursor` nor `tail_bytes` returns the last 4096 bytes ("what is on
 screen"). A timeout is not an error: `isError=false`, `timed_out=true`.
 
-### `serial_command`
+### `serial_break`
 
+Sends a real **framing BREAK** (not a 0x00 byte) for `duration_ms` (1–5000,
+default 250). Needed by U-Boot, OpenWrt failsafe and some bootloaders; the
+operator button in the Terminal tab uses the same endpoint. Requires write
+control (`WRITE_LOCKED` otherwise). Return: `{session_id, duration_ms}`.
+
+### `serial_command`
 Writes `command + newline` (default `lf`), then collects from the cursor just
 before the write until `expect` matches, the stream is quiet for `settle_ms`, or
 `timeout_ms` expires. Returns `rx_text`, `matched`, `match`, `groups`,

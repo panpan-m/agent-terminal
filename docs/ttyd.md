@@ -18,6 +18,17 @@ Browser (xterm.js) ─WS /ws/console──▶ tio-server ─▶ UART
 Browser ─HTTP/WS─▶ ttyd ─PTY/ConPTY─▶ tio-web-bridge ─WS─▶ tio-server ─▶ UART
 ```
 
+## Terminal tab features
+
+* raw bytes through xterm.js, keystrokes straight to the session;
+* **search** the scrollback (`Find`, or `Ctrl+Shift+F`, `@xterm/addon-search`);
+* **BREAK** button (framing break, 250 ms; same as `serial_break`);
+* **Reconnect resumes from the last cursor** (`?cursor=`), so history is not
+  duplicated; lost bytes are reported by the server as `overflow`;
+* **Log** downloads the raw TX/RX byte log with per-chunk timestamps
+  (`/api/sessions/{id}/export?format=txt`, or `format=hex`);
+* a **Keys** panel lists browser-reserved shortcuts and alternatives.
+
 ## Why the tab is not an iframe of ttyd
 
 ttyd runs on its own loopback port and `-O` checks that the WebSocket `Origin`

@@ -233,7 +233,7 @@ class Runner:
         self.mcp_start()
         tools = self.mcp_call("tools/list").get("result", {}).get("tools", [])
         names = [tool["name"] for tool in tools]
-        self.check("MCP exposes six tools", len(names) == 6, ",".join(names))
+        self.check("MCP exposes seven tools", len(names) == 7, ",".join(names))
 
         sessions = self.tool("serial_sessions", {}).get("structuredContent", {}).get("sessions", [])
         self.check(
