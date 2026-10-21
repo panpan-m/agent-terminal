@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Verification artifacts (reports/screenshots are copied into docs/ when needed)
+artifacts/
+tools/ttyd/ttyd.exe
+
+# Runtime data
+run/
+*.log

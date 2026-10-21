@@ -1,0 +1,28 @@
+[Unit]
+Description=tio-server serial gateway
+Documentation=file:///usr/share/doc/tio-server/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tio
+Group=dialout
+StateDirectory=tio-server
+LogsDirectory=tio-server
+# Runtime config is writable by the service; /etc holds only the seed file.
+ExecStart=/opt/tio-server/tio-server run --config /var/lib/tio-server/config.toml
+Restart=always
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tio-server /var/log/tio-server
+UMask=0077
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

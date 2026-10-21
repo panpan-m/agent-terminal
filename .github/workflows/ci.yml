@@ -1,0 +1,114 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: build frontend
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - name: unit + integration + protocol + security
+        run: pytest -q
+
+      - name: end-to-end (simulated board + MCP + browser UI)
+        run: python scripts/verify_e2e.py
+
+      - name: upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.os }}
+          path: artifacts/e2e
+
+  ttyd:
+    name: ttyd browser terminal
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: fetch pinned ttyd
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force tools\ttyd | Out-Null
+          Invoke-WebRequest https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.win32.exe -OutFile tools\ttyd\ttyd.exe
+      - name: run ttyd check
+        run: python scripts/ttyd_check.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ttyd-report
+          path: artifacts/ttyd
+
+  package:
+    name: package (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -e ".[dev]"
+      - run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - name: pyinstaller (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packaging/pyinstaller/build.ps1
+
+      - name: pyinstaller (linux)
+        if: runner.os == 'Linux'
+        run: |
+          pyinstaller --noconfirm --clean --onedir --name tio-server --paths src \
+            --add-data "src/tio_server/web/static:tio_server/web/static" \
+            --collect-submodules mcp.server --collect-submodules mcp.shared \
+            --hidden-import mcp.types --collect-all uvicorn --collect-all fastapi \
+            --collect-all starlette --collect-all pydantic --collect-all websockets \
+            --collect-submodules tio_server scripts/entry_server.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tio-server-${{ matrix.os }}
+          path: dist/
