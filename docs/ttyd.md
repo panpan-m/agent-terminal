@@ -21,6 +21,9 @@ Browser ─HTTP/WS─▶ ttyd ─PTY/ConPTY─▶ tio-web-bridge ─WS─▶ tio
 ## Terminal tab features
 
 * raw bytes through xterm.js, keystrokes straight to the session;
+* a **LIVE RX** bar (received bytes, dropped count, auto-scroll, clear) and a
+  collapsible **STATUS** panel (port/state/control, rx/tx, buffer, reconnects,
+  last error, DTR/RTS/CTS/DSR/CD/RI);
 * **search** the scrollback (`Find`, or `Ctrl+Shift+F`, `@xterm/addon-search`);
 * **BREAK** button (framing break, 250 ms; same as `serial_break`);
 * **Reconnect resumes from the last cursor** (`?cursor=`), so history is not

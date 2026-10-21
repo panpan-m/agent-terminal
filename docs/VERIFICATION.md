@@ -116,7 +116,8 @@ The surrounding API behaviour is covered by pytest (93 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
-(browser-reserved shortcut help) and the cursor-resume reconnect path.
+(browser-reserved shortcut help), the **STATUS** panel, and the **LIVE RX**
+bar (received bytes, auto-scroll, clear).
 
 Screenshot: [`10-terminal-tab`](screenshots/10-terminal-tab.png).
 

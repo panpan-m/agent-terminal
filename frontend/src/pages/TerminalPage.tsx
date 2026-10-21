@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowDownToLine,
+  Circle,
   Download,
   ExternalLink,
   Keyboard,
+  PanelRight,
   RefreshCw,
   Search,
   SquareTerminal,
@@ -14,10 +17,11 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
-import { StateBadge } from "@/components/ui/badge";
+import { Badge, StateBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusPanel } from "@/components/StatusPanel";
 import { api } from "@/lib/api";
-import { b64ToBytes } from "@/lib/utils";
+import { b64ToBytes, cn, formatBytes } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
 
 /**
@@ -60,6 +64,12 @@ export function TerminalPage({
   const [keysOpen, setKeysOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [busyBreak, setBusyBreak] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [infoOpen, setInfoOpen] = useState(true);
+  const [received, setReceived] = useState(0);
+  const autoScrollRef = useRef(true);
+  const bytesRef = useRef(0);
+  autoScrollRef.current = autoScroll;
 
   sessionRef.current = session;
   const canType = Boolean(session && session.state === "open" && session.control_owner === "human");
@@ -72,6 +82,8 @@ export function TerminalPage({
     if (sessionKeyRef.current !== session.session_id) {
       sessionKeyRef.current = session.session_id;
       cursorRef.current = null;
+      bytesRef.current = 0;
+      setReceived(0);
       setDropped(0);
       setQuery("");
     }
@@ -160,6 +172,8 @@ export function TerminalPage({
           if ((message.type === "rx" || message.type === "replay") && message.data_b64) {
             const bytes = b64ToBytes(message.data_b64);
             term.write(bytes);
+            bytesRef.current += bytes.length;
+            if (autoScrollRef.current) term.scrollToBottom();
             cursorRef.current =
               typeof message.offset === "number"
                 ? message.offset + bytes.length
@@ -188,6 +202,13 @@ export function TerminalPage({
       searchRef.current = null;
     };
   }, [session?.session_id, generation]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setReceived((value) => (value === bytesRef.current ? value : bytesRef.current));
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -323,6 +344,14 @@ export function TerminalPage({
           >
             <Keyboard className="h-3.5 w-3.5" /> Keys
           </Button>
+          <Button
+            size="sm"
+            variant={infoOpen ? "outline" : "ghost"}
+            onClick={() => setInfoOpen((value) => !value)}
+            title="show the session status panel"
+          >
+            <PanelRight className="h-3.5 w-3.5" /> Info
+          </Button>
           {ttydUrl ? (
             <Button size="sm" variant="ghost" asChild title="open the full ttyd terminal in its own browser tab">
               <a href={ttydUrl} target="_blank" rel="noreferrer">
@@ -410,12 +439,67 @@ export function TerminalPage({
         </div>
       ) : null}
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div ref={hostRef} className="h-full w-full px-2 py-1" />
-        {!connected ? (
-          <div className="pointer-events-none absolute right-3 top-2 rounded bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
-            reconnecting…
-          </div>
+      <div className="flex items-center gap-2 border-b border-zinc-800/80 bg-zinc-900/30 px-4 py-1.5">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-widest text-zinc-400">
+          <Circle
+            className={cn(
+              "h-2 w-2",
+              connected ? "fill-emerald-400 text-emerald-400" : "fill-zinc-600 text-zinc-600",
+            )}
+          />
+          live rx
+        </span>
+        <Badge>{formatBytes(received)}</Badge>
+        {dropped > 0 ? <Badge tone="warn">{dropped} dropped</Badge> : null}
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setAutoScroll((value) => !value)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px]",
+              autoScroll ? "text-emerald-300" : "text-zinc-500 hover:text-zinc-300",
+            )}
+            title="toggle auto-scroll"
+          >
+            <ArrowDownToLine className="h-3 w-3" /> auto
+          </button>
+          <button
+            type="button"
+            onClick={() => termRef.current?.clear()}
+            className="rounded px-1.5 py-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+            title="clear view (does not clear the buffer)"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <div ref={hostRef} className="h-full w-full px-2 py-1" />
+          {!connected ? (
+            <div className="pointer-events-none absolute right-3 top-2 rounded bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+              reconnecting…
+            </div>
+          ) : null}
+        </div>
+
+        {infoOpen && session ? (
+          <aside className="hidden w-72 shrink-0 flex-col gap-2 overflow-y-auto border-l border-zinc-800/80 bg-zinc-950/40 p-3 md:flex">
+            <StatusPanel session={session} />
+            <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-[11px] text-zinc-500">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">session</p>
+              <p className="mt-1 text-zinc-300">{session.name}</p>
+              <p className="mt-0.5 font-mono text-[10px] text-zinc-500">
+                {session.session_id} · {session.config.baudrate} {session.config.bytesize}
+                {session.config.parity[0].toUpperCase()}
+                {session.config.stopbits} · {session.config.flow}
+              </p>
+              <p className="mt-2 text-[10px] text-zinc-500">
+                Status refreshes with the session poll (3 s). DTR/RTS/CTS/DSR/CD/RI live in the card above.
+              </p>
+            </div>
+          </aside>
         ) : null}
       </div>
 
