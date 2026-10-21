@@ -9,6 +9,7 @@
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
+| **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **19 / 19 checks** | `artifacts/live-shell/report.json` |
 
 The skipped test is the HIL "open a real COM port" case while the live
 debugging server holds `COM5` exclusively (expected; it passed in the earlier run).
@@ -26,7 +27,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 84 tests)
+### 1. Test suite (`pytest`, 85 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -127,13 +128,26 @@ Details, including the DTR-gating behaviour of the probe and the three product
 fixes it forced, are in [`live-debug-report.md`](./live-debug-report.md).
 Screenshot: [`08-live-console`](screenshots/08-live-console.png).
 
+### 6. Agent path over MCP stdio (`scripts/live_shell_debug.py`, 19 checks)
+
+The packaged `tio-mcp.exe` was driven through the **official MCP SDK stdio
+client** — the same client `@deepseek-ai/dsh-mcp-client` uses — against a
+Raspberry Pi 5 root shell over the same serial port. It ran `uname -a`,
+`/etc/os-release`, `/proc/cpuinfo`, `uptime`, `free -m`, `df -h /`,
+`ip -br addr`, `systemctl --failed` and `dmesg | tail`, then exercised cursor
+continuity, a no-match timeout, permission removal (`WRITE_DISABLED`) and
+control handover/return. 19/19 checks passed.
+
+The DSH integration row is documented in [`dsh.md`](./dsh.md); a newly inserted
+plugin row is only composed after the DSH app restarts.
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
 |---|---|---|
 | Linux and Windows installers install/uninstall/autostart | ⚠️ partially verified | Windows: PyInstaller build + service scripts + Inno script (Inno not executed on this machine: toolchain absent). Linux: unit files/install script written, not executed here. |
 | UI selects port/baud and opens a session | ✅ | browser CDP check "session created from the dialog is listed and open" |
-| Real device end to end | ✅ | live run 46/46 on a Raspberry Pi serial console through a Debug Probe (MCP, ttyd, arbitration, config, reset) |
+| Real device end to end | ✅ | live run 46/46 + agent-path MCP run 19/19 on a Raspberry Pi 5 shell through a Debug Probe |
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
@@ -189,6 +203,9 @@ npm --prefix frontend ci ; npm --prefix frontend run build
 # 6. live hardware (device attached, server running with a session)
 .venv\Scripts\python scripts\live_debug.py --session board
 
+# 7. agent path over MCP stdio against a logged-in shell
+.venv\Scripts\python scripts\live_shell_debug.py --session board
+
 # or everything in one go
 powershell -ExecutionPolicy Bypass -File scripts\verify_release.ps1
 ```
@@ -202,9 +219,11 @@ powershell -ExecutionPolicy Bypass -File scripts\verify_release.ps1
   POSIX backend, requires hardware to confirm.
 * FTDI/CP210x/CH340 adapter matrix and per-driver DTR/RTS reset behaviour. One
   real device was tested end to end — a Raspberry Pi Debug Probe (`2E8A:000C`)
-  with a Raspberry Pi console — but that does not cover other bridge chips.
-* Logging into the target OS over serial (needs the board's credentials); the
-  serial prompt itself was matched and exercised.
+  with a Raspberry Pi 5 shell — but that does not cover other bridge chips.
+* Destructive real-device operations (reboot, file writes, flashing) and
+  high-baud soak on the shared console; the live shell run used read-only commands.
+* DSH hot-loading of a newly inserted MCP plugin row (it is loaded after the app
+  restarts; the same stdio client was verified directly).
 * Inno Setup executable, Authenticode signing, Windows Service registration on a
   clean machine, Linux `.deb`/`.rpm` packages.
 * 24 h soak and multi-hour high-baud throughput.

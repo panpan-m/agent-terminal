@@ -56,3 +56,19 @@ export function bytesToB64(text: string): string {
   });
   return btoa(binary);
 }
+
+const ANSI_RE =
+  // CSI sequences, OSC titles, charset switches and simple two-byte escapes.
+  /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>78]/g;
+
+/**
+ * Best-effort terminal text for the read-only RX pane. The raw bytes are still
+ * in the ring buffer / transcript; this only makes the live view readable.
+ */
+export function cleanTerminalText(text: string): string {
+  return text
+    .replace(ANSI_RE, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+}

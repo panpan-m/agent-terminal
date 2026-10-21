@@ -12,9 +12,9 @@ screenshot: [`screenshots/08-live-console.png`](./screenshots/08-live-console.pn
 |---|---|
 | Probe | Raspberry Pi Debug Probe (CMSIS-DAP v2 + CDC-ACM UART), USB `2E8A:000C`, serial `E6633861A353172C` |
 | Windows port | `COM5`, USBSER, no by-id path |
-| Target | Raspberry Pi, `Debian GNU/Linux 13 raspberry ttyAMA10` |
-| Target console | serial getty at 115200 8N1, prompt `raspberry login:` |
-| Target IP | `192.168.124.23`, `fe80::2ecf:67ff:fe2a:93b7` |
+| Target | Raspberry Pi 5 Model B Rev 1.0, `Debian GNU/Linux 13 (trixie)`, kernel `6.18.39+rpt-rpi-2712` aarch64 |
+| Target console | serial getty at 115200 8N1; later a logged-in `root@raspberry:~#` shell |
+| Target resources | 8 GB RAM, 117 GB `/dev/mmcblk0p2`, `wlan0` `192.168.124.23` (eth0 down) |
 
 COM5 is the probe's **UART bridge**, not the Pi's own USB-CDC. A "silent" port
 therefore means the target is not printing on the probe's RX pin (or the target
@@ -36,9 +36,41 @@ is off), not a gateway failure.
 | Audit/logs | `session.open`, `session.control_owner`, `session.lines`, `ttyd.start`, transcript TX records |
 | Reset | DTR/RTS sequence applied, line state restored, writes still work afterwards |
 
-No username or password was typed: writes were bare Enter presses (`\r`) so the
-getty simply reprinted its prompt. The console history still contains three
-failed login attempts from the first exploratory run (see below).
+No username or password was typed by the test: writes were bare Enter presses
+(`\r`) so the getty simply reprinted its prompt. The console history still
+contains three failed login attempts from the first exploratory run (see below).
+The operator later logged in at the console, which allowed the agent-path run
+below.
+
+## Agent path over MCP (same client DSH uses)
+
+`scripts/live_shell_debug.py` speaks to the packaged `tio-mcp.exe` through the
+official MCP SDK stdio client — exactly what `@deepseek-ai/dsh-mcp-client`
+spawns — and ran **19/19** checks against the root shell:
+
+| Check | Result |
+|---|---|
+| MCP initialize / six tools | `tio-server 0.1.0`, `2025-11-25`, six tools |
+| prompt detection | regex `root@…:~# ` matched history |
+| `uname -a` | `Linux raspberry 6.18.39+rpt-rpi-2712 #1 SMP PREEMPT … aarch64` |
+| `/etc/os-release` | `Debian GNU/Linux 13 (trixie)` |
+| `/proc/cpuinfo` | `Raspberry Pi 5 Model B Rev 1.0` |
+| `uptime` / `free -m` | up 21 min, 3 users; 8062 MB RAM |
+| `df -h /` | `/dev/mmcblk0p2 117G 9.7G 103G 9% /` |
+| `ip -br addr` | `wlan0 UP 192.168.124.23/24`, `eth0 DOWN` |
+| `systemctl --failed` | `0 loaded units listed` |
+| `dmesg \| tail` | BCM54213PE PHY, brcmfmac `_send_action_frame` warning |
+| cursor read after burst | `gap=false`, head advanced |
+| no-match command | `timed_out=true`, no error |
+| permission removal | `WRITE_DISABLED` |
+| control handover/return | agent wrote, then control returned to `human` |
+
+Screenshot: [`screenshots/09-live-shell.png`](./screenshots/09-live-shell.png).
+
+This is also the documented DSH integration path: see
+[`dsh.md`](./dsh.md) for the `dsh-mcp-client` profile row. A new plugin row only
+loads after the DSH app restarts, so the current session used the same stdio
+client directly.
 
 ## Findings and product fixes
 
@@ -80,21 +112,15 @@ usernames (`agent-ping`, `ok`, and a ttyd keystroke), producing
 `Login incorrect`. The session history shows this; it is harmless but explains
 the `Last failed login`-style lines.
 
-## What is still blocked
+## Deliberately not done
 
-Logging in to the target needs its **username and password**. Once provided, the
-following can run over the same serial session (no code changes needed):
+The shell session was used for **read-only** commands. The run did not reboot or
+reconfigure the Pi, did not write files on it, and did not run throughput/soak
+tests (a shared console would disturb the operator). Flashing/debugging over
+SWD (CMSIS-DAP) is outside the gateway's scope: tio-server only owns the UART.
 
-```bash
-# operator console (assistant-ui) or MCP serial_command
-login: <user>
-Password: <pass>
-uname -a; ip addr; systemctl --failed; dmesg | tail
-```
-
-After login the same session can demo `serial_command` with `expect="$ "` and
-`serial_read` cursors on real shell output. Until then the login prompt itself
-is already a real, matched end-to-end signal.
+The DSH plugin row needs an app restart to appear as `mcp__tio__*`; that is a
+property of DSH's profile composition, not of this server.
 
 ## How to reproduce
 

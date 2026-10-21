@@ -8,10 +8,11 @@ port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
 > Verified on Windows 10: **85 tests**, **40/40 end-to-end checks**,
-> **13/13 real ttyd checks**, **11/11 packaged-binary checks**, and
-> **46/46 live-hardware checks** against a Raspberry Pi serial console — see
-> [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) and
-> [`docs/live-debug-report.md`](./docs/live-debug-report.md).
+> **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
+> **46/46 live-hardware checks** and **19/19 agent-path MCP checks** against a
+> Raspberry Pi 5 shell — see [`docs/VERIFICATION.md`](./docs/VERIFICATION.md),
+> [`docs/live-debug-report.md`](./docs/live-debug-report.md) and
+> [`docs/dsh.md`](./docs/dsh.md).
 
 ![Sessions page](docs/screenshots/02-sessions.png)
 
@@ -75,6 +76,7 @@ Human   ──HTTP────▶ / (React + assistant-ui) ───────
 * [`docs/architecture.md`](./docs/architecture.md) — modules, decisions, ADRs
 * [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) — how this build was verified
 * [`docs/live-debug-report.md`](./docs/live-debug-report.md) — real Raspberry Pi over a Debug Probe
+* [`docs/dsh.md`](./docs/dsh.md) — registering the gateway as a DSH MCP server
 
 ## License
 

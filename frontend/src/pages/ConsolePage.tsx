@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, consoleUrl } from "@/lib/api";
 import type { SessionStatus } from "@/lib/types";
-import { b64ToBytes, cn, decodeBytes, formatBytes, formatNumber } from "@/lib/utils";
+import { b64ToBytes, cleanTerminalText, cn, decodeBytes, formatBytes, formatNumber } from "@/lib/utils";
 
 const MAX_RX_CHARS = 200_000;
 
@@ -46,7 +46,7 @@ function useRxStream(sessionId: string | undefined) {
           if ((message.type === "rx" || message.type === "replay") && message.data_b64) {
             const chunk = decodeBytes(b64ToBytes(message.data_b64));
             setText((previous) => {
-              const next = previous + chunk;
+              const next = cleanTerminalText(previous + chunk);
               return next.length > MAX_RX_CHARS ? next.slice(-MAX_RX_CHARS) : next;
             });
           } else if (message.type === "overflow") {
