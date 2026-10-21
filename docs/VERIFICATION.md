@@ -5,7 +5,7 @@
 | Suite | Result | Artifact |
 |---|---|---|
 | `pytest` (unit + integration + protocol + security + HIL) | **93 passed, 1 skipped** | `pytest -q` |
-| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **40 / 40 checks** | `artifacts/e2e/report.json` |
+| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **38 / 38 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
@@ -48,7 +48,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 * **HIL** — real COM port open/configure/control-lines/read-timeout/close via
   pyserial (`COM3`), plus the pyserial `loop://` transport.
 
-### 2. End-to-end (`scripts/verify_e2e.py`, 40 checks)
+### 2. End-to-end (`scripts/verify_e2e.py`, 38 checks)
 
 Starts `tio-server` as a **separate process** with a simulated board
 (`sim://board-a`), then:
@@ -68,15 +68,14 @@ Starts `tio-server` as a **separate process** with a simulated board
 * SPA index + hashed JS bundle served by the server;
 * **browser UI** (headless Chrome over CDP): login screen, login through the real
   API, sessions page, **create-session dialog** (typed, submitted, session
-  appears open), console page with live RX, **hand control to the agent** (composer
-  becomes read-only), take control back, send `ping` through the assistant-ui
-  composer and see `pong` in the thread, configuration/logs/system pages render,
-  no JS console errors.
+  appears open), terminal page with LIVE RX and STATUS, hand control to the agent
+  and take it back, type `ping` into xterm and see `pong`, configuration/logs/system
+  pages render, no JS console errors.
 
 Screenshots: [`01-login`](screenshots/01-login.png) ·
 [`02-sessions`](screenshots/02-sessions.png) ·
-[`03-console`](screenshots/03-console.png) ·
-[`04-console-command`](screenshots/04-console-command.png) ·
+[`03-terminal`](screenshots/03-terminal.png) ·
+[`04-terminal-command`](screenshots/04-terminal-command.png) ·
 [`05-config`](screenshots/05-config.png) ·
 [`06-logs`](screenshots/06-logs.png) ·
 [`07-system`](screenshots/07-system.png)
@@ -148,7 +147,7 @@ DTR/RTS reset sequence.
 
 Details, including the DTR-gating behaviour of the probe and the three product
 fixes it forced, are in [`live-debug-report.md`](./live-debug-report.md).
-Screenshot: [`08-live-console`](screenshots/08-live-console.png).
+Screenshot: [`10-terminal-tab`](screenshots/10-terminal-tab.png).
 
 ### 6. Agent path over MCP stdio (`scripts/live_shell_debug.py`, 24 checks)
 
@@ -187,9 +186,9 @@ plugin row is only composed after the DSH app restarts.
 1. **`serial_command` without `expect` duplicated output and ran until timeout.**
    The loop re-read from a fixed cursor every iteration; fixed to advance the
    cursor (regression test `test_command_without_expect_settles_once`).
-2. **Console crashed rendering an assistant message** because a copy button used
-   a part-scoped hook at message level; replaced with assistant-ui's
-   `ActionBarPrimitive.Copy`.
+2. **The removed chat console crashed rendering an assistant message** because a
+   copy button used a part-scoped hook at message level; moot after the console
+   was replaced by the xterm.js terminal (ADR-012).
 3. **`/mcp` answered 307** (trailing-slash redirect) which some clients do not
    follow; fixed with an ASGI path rewrite.
 4. **Admin write endpoint did not enforce `max_write_bytes_per_call`**; now

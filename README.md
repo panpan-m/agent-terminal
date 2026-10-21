@@ -1,13 +1,12 @@
 # tio-suite
 
 A cross-platform **shared serial-port gateway**: one long-running `tio-server`
-owns the serial port, humans use a React admin UI (built with
-[assistant-ui](https://github.com/assistant-ui/assistant-ui) primitives) and a
-`ttyd` browser terminal, and agents use **MCP** tools.  Nobody else opens the
-port.
+owns the serial port, humans use an **xterm.js Terminal tab** (plus a `ttyd`
+full terminal in its own tab), and agents use **MCP** tools. Nobody else opens
+the port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **93 tests**, **40/40 end-to-end checks**,
+> Verified on Windows 10: **93 tests**, **38/38 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **24/24 agent-path MCP checks** against a
 > Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing
@@ -25,11 +24,11 @@ arbitrates writes between human and agent, records a transcript, and exposes:
 
 | Surface | Endpoint | Purpose |
 |---|---|---|
-| MCP (Streamable HTTP) | `POST /mcp` | 5 stable tools for agents |
-| Admin UI (SPA) | `GET /` | sessions, config, permissions, console, logs |
+| MCP (Streamable HTTP) | `POST /mcp` | 7 tools for agents |
+| Admin UI (SPA) | `GET /` | sessions, terminal, config, permissions, logs |
 | Admin API | `/api/*` | what the SPA uses |
 | ttyd bridge WS | `ws://…/ws/bridge/{session}` | raw PTY ⇄ serial bytes for ttyd |
-| Console WS | `ws://…/ws/console/{session}` | live RX + operator commands |
+| Console WS | `ws://…/ws/console/{session}` | live RX for the terminal tab |
 | Health | `GET /healthz` | liveness only |
 
 All listeners default to `127.0.0.1`.
@@ -57,9 +56,9 @@ cd frontend && npm install && npm run build     # rebuild the SPA into src/tio_s
 ## Design at a glance
 
 ```
-Browser ──HTTP/WS──▶ ttyd ──PTY──▶ tio-web-bridge ──WS──▶ tio-server ──▶ /dev/ttyUSB0 | COM5
+Browser ──WS /ws/console──▶ tio-server ──▶ /dev/ttyUSB0 | COM5
+Browser ──HTTP/WS──▶ ttyd ──PTY──▶ tio-web-bridge ──WS──▶ tio-server
 Agent   ──HTTP────▶ /mcp ───────────────────────────────▶ tio-server
-Human   ──HTTP────▶ / (React + assistant-ui) ───────────▶ tio-server
 ```
 
 * **Single owner** — only `tio-server` opens the port.

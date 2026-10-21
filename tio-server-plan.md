@@ -1518,6 +1518,7 @@ tio-server/
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| v0.4 | 2026-10-21 | 移除会话式 chat 控制台，改为整页 xterm.js 交互终端（搜索/BREAK/断点续传/原始日志/状态面板）；ttyd 保留为独立完整终端 |
 | v0.3 | 2026-10-21 | 按本计划完成首版实现并验证（见第 23 节与 `docs/VERIFICATION.md`）；前端 UI 改用 assistant-ui |
 | v0.2 | 2026-10-21 | 固定 ttyd 为唯一浏览器终端；新增 tio-suite 工程形态、可选虚拟串口、Windows Job Object、Linux 运行配置路径、P0–P6 实施清单 |
 | v0.1 | 2026-10-21 | 初版：MCP、Admin、串口后端、Windows/Linux、打包与测试 |
@@ -1780,9 +1781,10 @@ ttyd.exe -p 7682 -i 127.0.0.1 -O -W -c operator:change-me -m 2 `
 
 ### 23.2 与计划的差异
 
-1. **前端 UI 使用 assistant-ui**（用户明确要求）：React + Vite + Tailwind，
-   以 assistant-ui 的 Thread/Composer/Message/ActionBar primitives 构建“会话式串口控制台”，
-   打包时只随附构建产物，运行期不需要 Node。原计划的 Jinja2/HTMX 页面不再使用。
+1. **前端交互终端**：最初按用户要求用 assistant-ui 做了会话式控制台，但聊天模型
+   无法支持原始按键/行编辑/全屏程序，v0.4 已移除，改为 xterm.js + 控制台 WebSocket
+   的整页终端（搜索、BREAK、断点续传、日志导出、状态面板）。React + Vite + Tailwind，
+   打包只随附构建产物，运行期不需要 Node；原计划的 Jinja2/HTMX 页面不再使用。
 2. **仓库结构**：根目录即 Python 工程（`src/tio_server`）+ `frontend/`，未再套
    `tio-suite/server/` 一层；进程边界与计划一致。
 3. **P6 未实现**：`VirtualSerialAdapter`（Linux PTY / Windows com0com）未做，
@@ -1793,7 +1795,7 @@ ttyd.exe -p 7682 -i 127.0.0.1 -O -W -c operator:change-me -m 2 `
 | 套件 | 结果 |
 |---|---|
 | pytest（单元/集成/协议/安全/HIL） | 93 passed（1 skipped：真机占用端口时 HIL 跳过） |
-| 端到端（真实服务进程 + MCP + 串口收發 + 重连 + 浏览器 UI） | 40/40 |
+| 端到端（真实服务进程 + MCP + 串口收發 + 重连 + 浏览器 UI） | 38/38 |
 | ttyd（真实 Windows ConPTY） | 13/13 —— P0 go/no-go 通过，含会话创建自动拉起/删除自动停止 |
 | PyInstaller 产物（server + tio-mcp） | 11/11 |
 | 真机（Raspberry Pi Debug Probe + Raspberry Pi 串口控制台） | 46/46 —— 见 `docs/live-debug-report.md` |

@@ -46,7 +46,7 @@ src/tio_server/
 
 src/tio_mcp_shim/        stdio JSON-RPC proxy (SSE aware, session-id aware)
 src/tio_web_bridge/      PTY raw mode (POSIX termios / Windows console) + WS pump
-frontend/                React 19 + Vite + Tailwind v4 + assistant-ui
+frontend/                React 19 + Vite + Tailwind v4 + xterm.js
 ```
 
 ## 3. Concurrency
@@ -98,7 +98,7 @@ untrusted device output; no tool executes or feeds RX into a shell.
 
 | Plan | Implementation | Why |
 |---|---|---|
-| Admin UI = FastAPI + Jinja2 + HTMX, no Node build | React 19 SPA using **assistant-ui** primitives, prebuilt into `web/static`; Node is build-time only | explicit product requirement to use assistant-ui components; the packaged server still needs no Node |
+| Admin UI = FastAPI + Jinja2 + HTMX, no Node build | React 19 SPA with an **xterm.js Terminal tab** (the short-lived assistant-ui chat console was removed in v0.4), prebuilt into `web/static`; Node is build-time only | the operator wanted a real terminal, not a chat thread; the packaged server still needs no Node |
 | `tio-suite/` with `server/` subdir | repo root is the Python project (`src/tio_server`) + `frontend/` | simpler repository; process boundaries are unchanged |
 | ttyd 1.7.7 "P0 go/no-go" | verified on Windows ConPTY: banner, keystrokes, Ctrl-C, basic auth (see VERIFICATION) | gate passed |
 | Optional `serial_expect` | implemented and enabled | cheap, read-only, useful for boot markers |
@@ -107,11 +107,12 @@ untrusted device output; no tool executes or feeds RX into a shell.
 
 ## 7. Decisions added during implementation
 
-* **ADR-012 — assistant-ui for the operator console.** The console is a chat
-  thread: an operator message becomes a CR-terminated command, the response is an
-  assistant message, unsolicited output stays in the live RX pane. assistant-ui
-  provides the thread/composer/message primitives; the advisory "hand control to
-  the agent" state is enforced server-side, not in the UI.
+* **ADR-012 — xterm.js for the operator terminal (supersedes the chat console).**
+  The first implementation used assistant-ui to model commands as chat messages;
+  that made interactive use (raw keys, Ctrl-C, line editing, `vim`) impossible.
+  The console is now a full-page xterm.js terminal over `/ws/console`: raw RX
+  bytes, keystrokes written straight to the session, cursor-resumed reconnects,
+  BREAK/search/export. ttyd remains available as a separate full-PTY tab.
 * **ADR-013 — one JSON document per transcript record.** Records contain
   `data_b64` plus `len` and `offset`, so a truncated tail can be re-assembled
   without guessing encodings.

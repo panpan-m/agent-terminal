@@ -5,7 +5,6 @@ import {
   ScrollText,
   SlidersHorizontal,
   SquareTerminal,
-  TerminalSquare,
   Waves,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -14,12 +13,11 @@ import { cn } from "@/lib/utils";
 import type { SessionStatus, SystemInfo } from "@/lib/types";
 import { StateBadge } from "@/components/ui/badge";
 
-export type Page = "sessions" | "terminal" | "console" | "config" | "logs" | "system";
+export type Page = "sessions" | "terminal" | "config" | "logs" | "system";
 
 const NAV: { page: Page; label: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", icon: LayoutDashboard },
   { page: "terminal", label: "Terminal", icon: SquareTerminal },
-  { page: "console", label: "Chat console", icon: TerminalSquare },
   { page: "config", label: "Configuration", icon: SlidersHorizontal },
   { page: "logs", label: "Logs & audit", icon: ScrollText },
   { page: "system", label: "System", icon: Cpu },
@@ -96,7 +94,7 @@ export function Shell({
                 type="button"
                 onClick={() => {
                   onSelectSession(session.session_id);
-                  onNavigate("console");
+                  onNavigate("terminal");
                 }}
                 className={cn(
                   "flex flex-col gap-1 rounded-lg px-3 py-2 text-left transition-colors",

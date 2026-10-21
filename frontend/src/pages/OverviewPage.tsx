@@ -7,7 +7,6 @@ import {
   Plus,
   Power,
   RotateCcw,
-  TerminalSquare,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -29,7 +28,6 @@ export function OverviewPage({
   refresh,
   notify,
   onCreate,
-  onOpen,
   onTerminal,
   onControl,
   onOpenSession,
@@ -42,7 +40,6 @@ export function OverviewPage({
   refresh: () => Promise<void>;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
   onCreate: (input: SessionInput) => Promise<void>;
-  onOpen: (id: string) => void;
   onTerminal: (id: string) => void;
   onControl: (id: string, owner: "human" | "agent") => Promise<boolean>;
   onOpenSession: (id: string) => Promise<boolean>;
@@ -97,7 +94,6 @@ export function OverviewPage({
             <SessionCard
               key={session.session_id}
               session={session}
-              onOpen={() => onOpen(session.session_id)}
               onTerminal={() => onTerminal(session.session_id)}
               onControl={onControl}
               onOpenSession={onOpenSession}
@@ -128,7 +124,6 @@ function Stat({ label, value, hint, accent }: { label: string; value: string; hi
 
 function SessionCard({
   session,
-  onOpen,
   onTerminal,
   onControl,
   onOpenSession,
@@ -139,7 +134,6 @@ function SessionCard({
   notify,
 }: {
   session: SessionStatus;
-  onOpen: () => void;
   onTerminal: () => void;
   onControl: (id: string, owner: "human" | "agent") => Promise<boolean>;
   onOpenSession: (id: string) => Promise<boolean>;
@@ -234,9 +228,6 @@ function SessionCard({
       <CardFooter className="flex-wrap">
         <Button size="sm" variant="primary" onClick={onTerminal} disabled={!isOpen} title="open the interactive terminal tab">
           <Monitor className="h-3.5 w-3.5" /> Terminal <ChevronRight className="h-3 w-3" />
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onOpen} disabled={!isOpen}>
-          <TerminalSquare className="h-3.5 w-3.5" /> Chat
         </Button>
         <Button
           size="sm"

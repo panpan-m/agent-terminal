@@ -5,14 +5,13 @@ import { Shell, type Page } from "@/components/Shell";
 import { LoginPage } from "@/pages/LoginPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { TerminalPage } from "@/pages/TerminalPage";
-import { ConsolePage } from "@/pages/ConsolePage";
 import { ConfigPage } from "@/pages/ConfigPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { ApiFailure, api } from "@/lib/api";
 import type { SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 
-const PAGES: Page[] = ["sessions", "terminal", "console", "config", "logs", "system"];
+const PAGES: Page[] = ["sessions", "terminal", "config", "logs", "system"];
 
 interface Toast {
   id: number;
@@ -23,7 +22,8 @@ interface Toast {
 function parseHash(): { page: Page; sessionId?: string } {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const [pageRaw, id] = raw.split("/");
-  const page = (PAGES as string[]).includes(pageRaw) ? (pageRaw as Page) : "sessions";
+  const normalized = pageRaw === "console" ? "terminal" : pageRaw; // old chat links
+  const page = (PAGES as string[]).includes(normalized) ? (normalized as Page) : "sessions";
   return { page, sessionId: id || undefined };
 }
 
@@ -148,7 +148,7 @@ export default function App() {
 
   const createSession = async (input: SessionInput) => {
     const ok = await guard(() => api.createSession(input), `session ${input.id} created`);
-    if (ok && input.id) navigate("console", input.id);
+    if (ok && input.id) navigate("terminal", input.id);
   };
 
   const updateSession = async (id: string, input: SessionInput) => {
@@ -160,7 +160,7 @@ export default function App() {
       <Shell
         page={route.page}
         onNavigate={navigate}
-        onSelectSession={(id) => navigate("console", id)}
+        onSelectSession={(id) => navigate("terminal", id)}
         sessions={sessions}
         selectedId={selectedId}
         system={system}
@@ -174,7 +174,6 @@ export default function App() {
             refresh={refresh}
             notify={notify}
             onCreate={createSession}
-            onOpen={(id) => navigate("console", id)}
             onTerminal={(id) => navigate("terminal", id)}
             onControl={(id, owner) => guard(() => api.setControl(id, owner), `control → ${owner}`)}
             onOpenSession={(id) => guard(() => api.openSession(id), "session opened")}
@@ -195,17 +194,6 @@ export default function App() {
             session={selected}
             selectedId={selectedId}
             onSelect={(id) => navigate("terminal", id)}
-            refresh={refresh}
-            notify={notify}
-          />
-        ) : null}
-
-        {route.page === "console" ? (
-          <ConsolePage
-            sessions={sessions}
-            session={selected}
-            selectedId={selectedId}
-            onSelect={(id) => navigate("console", id)}
             refresh={refresh}
             notify={notify}
           />

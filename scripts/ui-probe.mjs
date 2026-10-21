@@ -3,8 +3,8 @@
  * UI verification probe.
  *
  * Drives the built SPA in headless Chrome over the DevTools protocol:
- * logs in through the real API, seeds a simulated session, sends one command
- * through the assistant-ui composer, and captures screenshots of every page.
+ * logs in through the real API, seeds a simulated session, types one command
+ * into the xterm terminal, and captures screenshots of every page.
  *
  * Usage:
  *   node scripts/ui-probe.mjs --url http://127.0.0.1:8765 \
@@ -13,7 +13,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const CHROME_CANDIDATES = [
@@ -123,7 +123,7 @@ async function main() {
   const chromePath = findChrome();
   if (!chromePath) throw new Error("no Chrome/Edge binary found");
 
-  const profile = join(OUT, "profile");
+  const profile = resolve(OUT, "profile");
   const chrome = spawn(
     chromePath,
     [
@@ -194,7 +194,7 @@ async function main() {
     const bodyText = await cdp.evaluate("document.body.innerText");
     check(
       "sessions page renders",
-      bodyText.includes("Sessions") && bodyText.includes("board-a"),
+      bodyText.includes("Sessions") && bodyText.includes("New session"),
       bodyText.slice(0, 120),
     );
     await cdp.screenshot(join(OUT, "02-sessions.png"));
@@ -268,68 +268,54 @@ async function main() {
     );
     check("seed command executed", sessionSetup.ok && sessionSetup.matched, JSON.stringify(sessionSetup));
 
-    await cdp.evaluate("location.hash = '#/console/board-a'");
-    await sleep(2600);
-    const consoleText = await cdp.evaluate("document.body.innerText");
+    await cdp.evaluate("location.hash = '#/terminal/board-a'");
+    await sleep(2800);
+    const terminalText = await cdp.evaluate("document.body.innerText");
     check(
-      "console page renders",
-      consoleText.includes("live rx") || consoleText.includes("LIVE RX"),
-      consoleText.slice(0, 120),
+      "terminal page renders",
+      terminalText.includes("LIVE RX") && terminalText.includes("STATUS"),
+      terminalText.slice(0, 140),
     );
-    check("live rx shows device output", consoleText.includes("TioSim"), "banner visible in RX panel");
-    await cdp.screenshot(join(OUT, "03-console.png"));
+    const rows = await cdp.evaluate("document.querySelector('.xterm-rows')?.innerText || ''");
+    check("terminal shows device output", rows.includes("TioSim"), rows.slice(0, 120));
+    await cdp.screenshot(join(OUT, "03-terminal.png"));
 
-    // 4b. hand control to the agent and back, through the toolbar
-    await clickByText("Hand to agent");
-    await sleep(1500);
+    // 4b. hand control to the agent via the API, then take it back in the toolbar
+    await cdp.evaluate(
+      `fetch('/api/sessions/board-a/control', {method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':${JSON.stringify(csrf)}}, body: JSON.stringify({owner:'agent'})})`,
+    );
+    await sleep(3600);
     const agentState = await cdp.evaluate("document.body.innerText");
     check(
-      "toolbar hands write control to the agent",
-      agentState.includes("Take control") && agentState.includes("The agent owns write control"),
+      "toolbar offers Take control while the agent owns write",
+      agentState.includes("Take control"),
       agentState.slice(0, 160),
     );
     await clickByText("Take control");
-    await sleep(1500);
+    await sleep(2400);
     const humanState = await cdp.evaluate("document.body.innerText");
     check(
       "toolbar takes control back for the operator",
-      !humanState.includes("The agent owns write control"),
+      !humanState.includes("Take control"),
       humanState.slice(0, 160),
     );
 
-    const composer = await cdp.evaluate(
-      `(() => {
-        const area = document.querySelector('textarea');
-        if (!area) return {found:false};
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(area, 'ping');
-        area.dispatchEvent(new Event('input', {bubbles:true}));
-        return {found:true};
-      })()`,
-    );
-    check("assistant-ui composer present", composer.found);
-    if (composer.found) {
-      await sleep(300);
-      const clicked = await cdp.evaluate(
-        `(() => {
-          const send = [...document.querySelectorAll('button')].find(b => b.title === 'send');
-          if (!send) return false;
-          send.click();
-          return true;
-        })()`,
-      );
-      check("composer send button present", clicked);
-      await sleep(2600);
-      const threadText = await cdp.evaluate(
-        "(() => { const el = document.querySelector('[data-testid=\"console-thread\"]'); return el ? el.innerText : ''; })()",
-      );
-      check(
-        "composer command reached the device",
-        threadText.includes("pong") && threadText.length < 4000,
-        `thread chars=${threadText.length}`,
-      );
-      await cdp.screenshot(join(OUT, "04-console-command.png"));
+    // 4c. type a command into xterm and read the device reply back
+    await cdp.evaluate("document.querySelector('.xterm-helper-textarea')?.focus()");
+    await cdp.send("Input.insertText", { text: "ping" });
+    for (const type of ["keyDown", "keyUp"]) {
+      await cdp.send("Input.dispatchKeyEvent", {
+        type,
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+        nativeVirtualKeyCode: 13,
+      });
     }
+    await sleep(2400);
+    const afterType = await cdp.evaluate("document.querySelector('.xterm-rows')?.innerText || ''");
+    check("typing reaches the device and output returns", afterType.includes("pong"), afterType.slice(-160));
+    await cdp.screenshot(join(OUT, "04-terminal-command.png"));
 
     // 4. remaining pages via hash routing
     for (const [route, label, needle] of [

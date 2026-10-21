@@ -4,7 +4,7 @@ Date: 2026-10-21 · Host: Windows 10 19045 · Device: Raspberry Pi Debug Probe
 (`USB\VID_2E8A&PID_000C`) with a Raspberry Pi target on its UART.
 
 Result: **46 / 46 live checks passed** (`artifacts/live/report.json`),
-screenshot: [`screenshots/08-live-console.png`](./screenshots/08-live-console.png).
+screenshot: [`screenshots/10-terminal-tab.png`](./screenshots/10-terminal-tab.png).
 
 ## Hardware under test
 
