@@ -75,6 +75,31 @@ This is also the documented DSH integration path: see
 loads after the DSH app restarts, so the current session used the same stdio
 client directly.
 
+## Terminal tab vs ttyd (measured)
+
+The in-app **Terminal** tab uses xterm.js over the console WebSocket, not ttyd.
+The decision came from measurements on this machine:
+
+| Experiment | Result |
+|---|---|
+| ttyd direct, 40 × open / Enter or Ctrl-C / close | no crash, no wedge, `/token` always 200 |
+| ttyd through the server's HTTP/WS proxy, repeated browser loads | after a few teardowns `/token` times out, 4 half-closed `Established` sockets, new upgrades fail |
+| ttyd with production args, 25 × connect/disconnect stress | stable |
+| one live teardown | ttyd exited with `0xC0000005` (access violation) |
+
+Root cause of the proxy case: the proxy's upstream WebSocket was closed by
+cancelling the forwarding tasks; ttyd's single-threaded libwebsockets loop kept
+the half-closed connections (ttyd runs one child process per WebSocket client),
+and once its client slots were consumed it stopped answering `/token`. Direct
+ttyd never showed this. ttyd also has a rare native crash on Windows
+(`0xC0000005`); the supervisor now recreates dead entries on demand and every
+20 s, which is why the tab has a Reconnect button.
+
+Because `-O` rejects a cross-origin iframe (Origin `:8765`, Host `:7682`), the
+embedded tab cannot point at ttyd directly; xterm.js on the console stream gives
+the same raw interaction without the proxy. ttyd stays available as
+**Full terminal** in its own browser tab.
+
 ## Findings and product fixes
 
 ### 1. DTR low stalls the probe's TX pipe (driver/firmware behaviour)

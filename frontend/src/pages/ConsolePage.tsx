@@ -196,17 +196,13 @@ export function ConsolePage({
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </a>
-              {session.terminal?.view_url ? (
-                <a
-                  href={session.terminal.view_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-                  title="open the browser terminal (ttyd)"
-                >
-                  <Monitor className="h-4 w-4" />
-                </a>
-              ) : null}
+              <a
+                href={`#/terminal/${session.session_id}`}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                title="open the interactive terminal tab"
+              >
+                <Monitor className="h-4 w-4" />
+              </a>
             </>
           ) : null}
         </div>

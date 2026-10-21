@@ -1798,6 +1798,7 @@ ttyd.exe -p 7682 -i 127.0.0.1 -O -W -c operator:change-me -m 2 `
 | PyInstaller 产物（server + tio-mcp） | 11/11 |
 | 真机（Raspberry Pi Debug Probe + Raspberry Pi 串口控制台） | 46/46 —— 见 `docs/live-debug-report.md` |
 | 真机 Agent 路径（MCP stdio，与 DSH 同一客户端） | 23/23 —— Pi 5 root shell 上执行真实命令，含通用 POSIX 结束哨兵与退出码 |
+| 交互终端 Tab（xterm.js + 控制台 WS） | 3/3 —— 在构建后的 SPA 里输入 `uname -r`，真机返回内核版本 |
 
 **未验证项**（需相应环境）：Linux 运行时与 systemd 实测、RS-485/任意波特率的真实硬件、
 真实 USB-UART 板卡与 DTR/RTS 复位行为、Inno Setup/代码签名、24h soak。

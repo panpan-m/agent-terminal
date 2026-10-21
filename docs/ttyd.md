@@ -1,11 +1,34 @@
-# Browser terminal (ttyd)
+# Browser terminals
 
-ttyd is the only browser terminal: `tio-server` never implements xterm.js, and
-ttyd never opens the serial port.
+There are two browser surfaces, both served by `tio-server`:
+
+| Surface | Engine | Entry |
+|---|---|---|
+| **Terminal** tab in the SPA | xterm.js fed by the console WebSocket (`/ws/console/{id}`) | every session, full page |
+| **Full terminal** (new tab) | ttyd + `tio-web-bridge` | `session.terminal.control_url` / `view_url` |
+
+The Terminal tab renders raw RX bytes and writes every keystroke straight to the
+session (no local echo); it does not go through ttyd. ttyd still owns the full
+PTY experience (resize, scrollback, terminal-side features) and never opens the
+serial port:
 
 ```text
+Browser (xterm.js) ─WS /ws/console──▶ tio-server ─▶ UART
+
 Browser ─HTTP/WS─▶ ttyd ─PTY/ConPTY─▶ tio-web-bridge ─WS─▶ tio-server ─▶ UART
 ```
+
+## Why the tab is not an iframe of ttyd
+
+ttyd runs on its own loopback port and `-O` checks that the WebSocket `Origin`
+matches its own host. An iframe served by `http://127.0.0.1:8765` therefore
+cannot open ttyd's WebSocket on `:7682`. Proxying ttyd through the server works
+functionally, but on Windows an upstream WebSocket that is torn down while the
+browser disappears can leave libwebsockets with half-closed connections; after a
+few such cycles ttyd stops answering `/token` and new upgrades. Direct ttyd (no
+proxy) survived 40 open/close + Ctrl-C cycles in testing, so ttyd stays on its
+native path and the embedded tab uses the raw console stream instead. This was
+measured, not assumed; see `docs/live-debug-report.md`.
 
 ## Two entries per session
 

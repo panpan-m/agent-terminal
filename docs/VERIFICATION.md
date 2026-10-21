@@ -10,6 +10,7 @@
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
 | **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **23 / 23 checks** | `artifacts/live-shell/report.json` |
+| **Terminal tab**: xterm.js in the built SPA, typed on the real Pi | **3 / 3 checks** (CDP) | `docs/screenshots/10-terminal-tab.png` |
 
 The skipped test is the HIL "open a real COM port" case while the live
 debugging server holds `COM5` exclusively (expected; it passed in the earlier run).
@@ -98,6 +99,20 @@ allocates ports, builds the bridge command and launches both entries:
 * deleting the session stops those entries again.
 
 This clears the plan's **P0 Windows ttyd go/no-go**.
+
+### 3b. In-app Terminal tab (xterm.js + CDP)
+
+`scripts/ui-shot.mjs --send "uname -r"` drives the real built SPA in headless
+Chrome: it logs in, opens `#/terminal/board`, focuses the xterm helper textarea,
+inserts the text, presses Enter over the DevTools protocol, then reads the
+rendered terminal rows back.
+
+* the terminal renders the live prompt (`root@raspberry:~#`);
+* keystrokes go through `POST /api/sessions/board/write` to the real UART;
+* the device output comes back over `/ws/console` and is rendered by xterm:
+  `uname -r` → `6.18.39+rpt-rpi-2712`.
+
+Screenshot: [`10-terminal-tab`](screenshots/10-terminal-tab.png).
 
 ### 4. Packaged binaries (`scripts/verify_packaged.py`, 11 checks)
 

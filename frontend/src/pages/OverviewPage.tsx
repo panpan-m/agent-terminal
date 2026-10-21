@@ -30,6 +30,7 @@ export function OverviewPage({
   notify,
   onCreate,
   onOpen,
+  onTerminal,
   onControl,
   onOpenSession,
   onCloseSession,
@@ -42,6 +43,7 @@ export function OverviewPage({
   notify: (message: string, tone?: "info" | "error" | "success") => void;
   onCreate: (input: SessionInput) => Promise<void>;
   onOpen: (id: string) => void;
+  onTerminal: (id: string) => void;
   onControl: (id: string, owner: "human" | "agent") => Promise<boolean>;
   onOpenSession: (id: string) => Promise<boolean>;
   onCloseSession: (id: string) => Promise<boolean>;
@@ -96,6 +98,7 @@ export function OverviewPage({
               key={session.session_id}
               session={session}
               onOpen={() => onOpen(session.session_id)}
+              onTerminal={() => onTerminal(session.session_id)}
               onControl={onControl}
               onOpenSession={onOpenSession}
               onCloseSession={onCloseSession}
@@ -126,6 +129,7 @@ function Stat({ label, value, hint, accent }: { label: string; value: string; hi
 function SessionCard({
   session,
   onOpen,
+  onTerminal,
   onControl,
   onOpenSession,
   onCloseSession,
@@ -136,6 +140,7 @@ function SessionCard({
 }: {
   session: SessionStatus;
   onOpen: () => void;
+  onTerminal: () => void;
   onControl: (id: string, owner: "human" | "agent") => Promise<boolean>;
   onOpenSession: (id: string) => Promise<boolean>;
   onCloseSession: (id: string) => Promise<boolean>;
@@ -227,16 +232,12 @@ function SessionCard({
       </CardContent>
 
       <CardFooter className="flex-wrap">
-        <Button size="sm" variant="secondary" onClick={onOpen} disabled={!isOpen}>
-          <TerminalSquare className="h-3.5 w-3.5" /> Console <ChevronRight className="h-3 w-3" />
+        <Button size="sm" variant="primary" onClick={onTerminal} disabled={!isOpen} title="open the interactive terminal tab">
+          <Monitor className="h-3.5 w-3.5" /> Terminal <ChevronRight className="h-3 w-3" />
         </Button>
-        {session.terminal?.view_url ? (
-          <Button size="sm" variant="ghost" asChild title="open the read-only ttyd terminal">
-            <a href={session.terminal.view_url} target="_blank" rel="noreferrer">
-              <Monitor className="h-3.5 w-3.5" /> Terminal
-            </a>
-          </Button>
-        ) : null}
+        <Button size="sm" variant="secondary" onClick={onOpen} disabled={!isOpen}>
+          <TerminalSquare className="h-3.5 w-3.5" /> Chat
+        </Button>
         <Button
           size="sm"
           variant={agentOwns ? "outline" : "primary"}

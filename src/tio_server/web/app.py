@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -227,18 +228,31 @@ def create_app(config: Config) -> FastAPI:
     def ensure_ttyd(session_id: str) -> None:
         if not config.ttyd.enabled or not ttyd.available:
             return
+        info = ttyd.info(session_id)
+        if info.get("view_url") and info.get("control_url"):
+            return
         try:
             ttyd.start_for(session_id)
         except Exception as exc:  # ttyd is optional; never fail the API for it
             logger.warning("ttyd start failed for %s: %s", session_id, exc)
+
+    async def ttyd_reconcile_loop() -> None:
+        """Recreate entries that died (crash, port takeover, manual kill)."""
+        while True:
+            await asyncio.sleep(20)
+            if not config.ttyd.enabled or not ttyd.available:
+                continue
+            for session_id in list(manager.sessions):
+                try:
+                    await asyncio.to_thread(ensure_ttyd, session_id)
+                except Exception:  # pragma: no cover - best effort
+                    pass
 
     mcp_server = build_mcp_server(manager, config)
     allowed_hosts = [config.server.bind, f"{config.server.bind}:{config.server.port}"]
     for host in ("localhost", "127.0.0.1", "[::1]"):
         allowed_hosts += [host, f"{host}:{config.server.port}"]
     if config.server.public_url:
-        from urllib.parse import urlparse
-
         parsed = urlparse(config.server.public_url)
         if parsed.hostname:
             allowed_hosts.append(parsed.hostname)
@@ -259,10 +273,12 @@ def create_app(config: Config) -> FastAPI:
     async def lifespan(app: FastAPI):
         manager.start()
         ttyd.ensure_for_all(list(manager.sessions))
+        reconcile = asyncio.create_task(ttyd_reconcile_loop(), name="ttyd-reconcile")
         try:
             async with mcp_server.session_manager.run():
                 yield
         finally:
+            reconcile.cancel()
             ttyd.stop_all()
             manager.stop()
 

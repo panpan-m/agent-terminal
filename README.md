@@ -10,7 +10,8 @@ port.
 > Verified on Windows 10: **90 tests**, **40/40 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **23/23 agent-path MCP checks** against a
-> Raspberry Pi 5 shell — see [`docs/VERIFICATION.md`](./docs/VERIFICATION.md),
+> Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing
+> `uname -r` in the built SPA — see [`docs/VERIFICATION.md`](./docs/VERIFICATION.md),
 > [`docs/live-debug-report.md`](./docs/live-debug-report.md) and
 > [`docs/dsh.md`](./docs/dsh.md).
 
@@ -72,7 +73,7 @@ Human   ──HTTP────▶ / (React + assistant-ui) ───────
 
 * [`docs/install.md`](./docs/install.md) — install, service, packaging
 * [`docs/mcp.md`](./docs/mcp.md) — tools, schemas, client config
-* [`docs/ttyd.md`](./docs/ttyd.md) — browser terminal wiring
+* [`docs/ttyd.md`](./docs/ttyd.md) — browser terminals: in-app xterm tab + ttyd
 * [`docs/architecture.md`](./docs/architecture.md) — modules, decisions, ADRs
 * [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) — how this build was verified
 * [`docs/live-debug-report.md`](./docs/live-debug-report.md) — real Raspberry Pi over a Debug Probe

@@ -160,6 +160,7 @@ class TtydSupervisor:
                     "port": rec.port,
                     "pid": rec.process.pid,
                     "alive": rec.alive(),
+                    "returncode": rec.process.returncode,
                     "url": f"http://127.0.0.1:{rec.port}/",
                 }
                 for rec in self._procs.values()

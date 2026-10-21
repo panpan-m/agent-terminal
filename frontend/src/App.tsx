@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { Shell, type Page } from "@/components/Shell";
 import { LoginPage } from "@/pages/LoginPage";
 import { OverviewPage } from "@/pages/OverviewPage";
+import { TerminalPage } from "@/pages/TerminalPage";
 import { ConsolePage } from "@/pages/ConsolePage";
 import { ConfigPage } from "@/pages/ConfigPage";
 import { LogsPage } from "@/pages/LogsPage";
@@ -11,7 +12,7 @@ import { SystemPage } from "@/pages/SystemPage";
 import { ApiFailure, api } from "@/lib/api";
 import type { SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 
-const PAGES: Page[] = ["sessions", "console", "config", "logs", "system"];
+const PAGES: Page[] = ["sessions", "terminal", "console", "config", "logs", "system"];
 
 interface Toast {
   id: number;
@@ -174,6 +175,7 @@ export default function App() {
             notify={notify}
             onCreate={createSession}
             onOpen={(id) => navigate("console", id)}
+            onTerminal={(id) => navigate("terminal", id)}
             onControl={(id, owner) => guard(() => api.setControl(id, owner), `control → ${owner}`)}
             onOpenSession={(id) => guard(() => api.openSession(id), "session opened")}
             onCloseSession={(id) => guard(() => api.closeSession(id), "session closed")}
@@ -184,6 +186,17 @@ export default function App() {
                 notify(`reset applied (${result.steps} steps)`, "success");
               })
             }
+          />
+        ) : null}
+
+        {route.page === "terminal" ? (
+          <TerminalPage
+            sessions={sessions}
+            session={selected}
+            selectedId={selectedId}
+            onSelect={(id) => navigate("terminal", id)}
+            refresh={refresh}
+            notify={notify}
           />
         ) : null}
 

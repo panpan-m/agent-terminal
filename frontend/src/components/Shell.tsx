@@ -4,6 +4,7 @@ import {
   LogOut,
   ScrollText,
   SlidersHorizontal,
+  SquareTerminal,
   TerminalSquare,
   Waves,
 } from "lucide-react";
@@ -13,11 +14,12 @@ import { cn } from "@/lib/utils";
 import type { SessionStatus, SystemInfo } from "@/lib/types";
 import { StateBadge } from "@/components/ui/badge";
 
-export type Page = "sessions" | "console" | "config" | "logs" | "system";
+export type Page = "sessions" | "terminal" | "console" | "config" | "logs" | "system";
 
 const NAV: { page: Page; label: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", icon: LayoutDashboard },
-  { page: "console", label: "Console", icon: TerminalSquare },
+  { page: "terminal", label: "Terminal", icon: SquareTerminal },
+  { page: "console", label: "Chat console", icon: TerminalSquare },
   { page: "config", label: "Configuration", icon: SlidersHorizontal },
   { page: "logs", label: "Logs & audit", icon: ScrollText },
   { page: "system", label: "System", icon: Cpu },

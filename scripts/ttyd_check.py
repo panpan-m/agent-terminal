@@ -1,4 +1,4 @@
-"""ttyd end-to-end check (Windows ConPTY): browser terminal -> bridge -> server.
+﻿"""ttyd end-to-end check (Windows ConPTY): browser terminal -> bridge -> server.
 
 The server is configured with ``ttyd.enabled = true``; its supervisor starts the
 read-only and control entries for every session, creates the bridge command and
@@ -234,3 +234,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+

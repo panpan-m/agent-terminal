@@ -27,6 +27,9 @@ const PASSWORD = arg("password", "");
 const HASH = arg("hash", "#/sessions");
 const OUT = arg("out", "artifacts/live/console.png");
 const PORT = Number(arg("port", "9444"));
+const WAIT = Number(arg("wait", "2500"));
+const EVAL = arg("eval", "");
+const SEND = arg("send", "");
 
 class CDP {
   constructor(url) {
@@ -130,8 +133,28 @@ async function main() {
     await cdp.send("Page.reload", { ignoreCache: true });
     await sleep(2200);
     await cdp.evaluate(`location.hash = ${JSON.stringify(HASH)}`);
-    await sleep(2500);
+    await sleep(WAIT);
     const summary = await cdp.evaluate("document.body.innerText.slice(0, 300)");
+    if (EVAL) {
+      const value = await cdp.evaluate(EVAL);
+      console.log("eval:", typeof value === "string" ? value : JSON.stringify(value));
+    }
+    if (SEND) {
+      await cdp.evaluate("document.querySelector('.xterm-helper-textarea')?.focus()");
+      await cdp.send("Input.insertText", { text: SEND });
+      for (const type of ["keyDown", "keyUp"]) {
+        await cdp.send("Input.dispatchKeyEvent", {
+          type,
+          key: "Enter",
+          code: "Enter",
+          windowsVirtualKeyCode: 13,
+          nativeVirtualKeyCode: 13,
+        });
+      }
+      await sleep(1500);
+      const rows = await cdp.evaluate("document.querySelector('.xterm-rows')?.innerText?.slice(-400)");
+      console.log("terminal after send:", JSON.stringify(rows));
+    }
     const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
     writeFileSync(outFile, Buffer.from(data, "base64"));
     console.log(`screenshot: ${outFile}`);
