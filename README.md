@@ -6,7 +6,7 @@ full terminal in its own tab), and agents use **MCP** tools. Nobody else opens
 the port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **111 tests**, **41/41 end-to-end checks**,
+> Verified on Windows 10: **112 tests**, **41/41 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **25/25 agent-path MCP checks** against a
 > Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing
@@ -27,6 +27,11 @@ The **Terminal** page is one workspace for both transports: the tab bar lists
 serial sessions and SSH sessions together, and switching reattaches to the
 matching xterm view ([mixed Serial + SSH](docs/screenshots/19-terminal-mixed-serial.png),
 [SSH tab](docs/screenshots/20-terminal-mixed-ssh.png)).
+
+**Windows desktop app:** a WebView2 window (`tio-desktop.exe`) with a per-user
+installer, Start Menu/desktop shortcuts, optional start-with-Windows and its own
+`%LOCALAPPDATA%\tio-server-desktop` data directory. No browser or service needed
+([details](docs/desktop.md)).
 
 The **SSH** tab manages saved hosts and opens a full xterm.js PTY terminal with
 strict known_hosts, password/private-key/agent auth, jump hosts, SFTP, optional

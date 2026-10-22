@@ -4,7 +4,7 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **111 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **112 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
@@ -120,7 +120,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (111 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (112 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -301,6 +301,22 @@ With an agent-visible SSH session:
 4. the verification session was left open for the operator; no files were
    changed by the commands.
 
+### 13. Windows desktop app
+
+1. `packaging/pyinstaller/build_desktop.ps1` built `dist/tio-desktop` (PyInstaller
+   onedir, windowed, icon) and its `--smoke` step started the server and exited 0;
+2. `packaging/windows/tio-desktop.iss` produced
+   `dist/installer/tio-server-desktop-0.1.0-setup.exe` (~24.7 MB);
+3. silent per-user install exited 0; Start Menu/desktop shortcut
+   `tio-server Desktop` and the installed `tio-desktop.exe` were created under
+   `%LOCALAPPDATA%\Programs\tio-server`;
+4. the installed app opened a WebView2 window titled `tio-server`; first run
+   created `%LOCALAPPDATA%\tio-server-desktop\config.toml` and
+   `first-run-credentials.json`, independent from the service data directory;
+5. the desktop server bound `127.0.0.1:18765` (stable MCP endpoint), login with
+   the generated first-run password returned HTTP 200, and the app/service used
+   different data dirs and ports; no service was installed or modified.
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
@@ -312,13 +328,14 @@ With an agent-visible SSH session:
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
 | SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 16 tools total; host_info contract tested |
-| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 110 |
+| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 112 |
 | SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
 | Unified Terminal: serial + SSH in one tab bar | ✅ | COM5 + two SSH sessions; screenshots 19/20; per-tab × disconnect verified |
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
 | SSH remembered credentials | ✅ | encrypted at rest; second connect without password; Forget clears |
 | SSH agent visibility | ✅ | default private; marked session listed/executable; unmarked denied |
 | SSH agent activity in web UI | ✅ | `ssh_write` PTY input visible in terminal; activity card; exec separate |
+| Windows desktop app/installer | ✅ | WebView2 onedir + per-user setup; installed, launched, first-run data verified |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |

@@ -80,7 +80,25 @@ Notes:
 * Add an Authenticode signature to the installer and executables before
   distributing.
 
-## 4. Linux
+## 4. Windows desktop app
+
+For a normal desktop install (no service, no browser), use the WebView2 app:
+
+```powershell
+pip install -e ".[desktop]"
+powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build_desktop.ps1
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\windows\tio-desktop.iss
+```
+
+Run `dist\installer\tio-server-desktop-0.1.0-setup.exe`. It installs per-user to
+`%LOCALAPPDATA%\Programs\tio-server`, adds Start Menu/optional desktop shortcuts
+and an optional **Start with Windows** entry. Data lives in
+`%LOCALAPPDATA%\tio-server-desktop`; first launch opens
+`first-run-credentials.json` and shows the login page in the app window.
+
+See [desktop.md](desktop.md) for the runtime, uninstall and limitations.
+
+## 5. Linux
 
 ### Bundle layout (produced by CI / PyInstaller)
 
@@ -115,7 +133,7 @@ journalctl -u tio-server -f
 Permissions: the service user must be in `dialout` (Debian/Ubuntu) or `uucp`
 (Arch); a udev rule can also grant access to a specific USB VID/PID.
 
-## 5. Configuration essentials
+## 6. Configuration essentials
 
 `config.toml` (validated on load; atomic writes from the UI):
 
@@ -167,7 +185,7 @@ agent_permissions = ["read", "write", "command"]
 
 `control_owner` is runtime state and always starts as `human` after a restart.
 
-## 6. Upgrade / uninstall
+## 7. Upgrade / uninstall
 
 * Upgrade: replace the program files, keep `config.toml`, restart. `config_version`
   migration runs on load; the old file is kept as `config.toml.bak` when a
@@ -178,7 +196,7 @@ agent_permissions = ["read", "write", "command"]
   `/opt/tio-server` and the unit; keep `/var/lib/tio-server` if you want to keep
   transcripts and tokens.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|

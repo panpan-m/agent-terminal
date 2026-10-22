@@ -31,11 +31,15 @@ dev = [
   "pytest-asyncio>=0.24",
   "pyinstaller>=6.6",
 ]
+desktop = [
+  "pywebview>=6.0",
+]
 
 [project.scripts]
 tio-server = "tio_server.cli:main"
 tio-mcp = "tio_mcp_shim.__main__:main"
 tio-web-bridge = "tio_web_bridge.__main__:main"
+tio-desktop = "tio_server.desktop:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tio_server", "src/tio_mcp_shim", "src/tio_web_bridge"]
