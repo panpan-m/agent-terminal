@@ -151,6 +151,9 @@ echo 0 > events/block/enable
 
 **模块核心**
 
+完整实测（源码、编译、128s 报告、栈/taint 解释、清理）见
+[`hung-task-report.md`](./hung-task-report.md)。
+
 ```c
 #include <linux/module.h>
 #include <linux/kthread.h>
