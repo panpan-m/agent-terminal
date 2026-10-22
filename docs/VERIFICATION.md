@@ -295,7 +295,10 @@ With an agent-visible SSH session:
    **AGENT ACTIVITY** card (last writer/action/writes/last exec) and a 5 s
    `agent exec` pulse in the header
    ([22-ssh-agent-activity](screenshots/22-ssh-agent-activity.png));
-4. the session/profile/key were removed afterwards.
+4. a second run (`uname -r; echo agent-output-visible; pwd`) showed the command
+   and its stdout in a panel directly above the terminal, plus exit 0/77 ms
+   ([23-ssh-agent-output](screenshots/23-ssh-agent-output.png));
+5. the session/profile/key were removed afterwards.
 
 ## Plan acceptance criteria (plan §14.3)
 
@@ -314,7 +317,7 @@ With an agent-visible SSH session:
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
 | SSH remembered credentials | ✅ | encrypted at rest; second connect without password; Forget clears |
 | SSH agent visibility | ✅ | default private; marked session listed/executable; unmarked denied |
-| SSH agent activity in web UI | ✅ | LIVE bar + agent card + pulse after MCP write/exec |
+| SSH agent activity in web UI | ✅ | command + stdout/stderr panel, LIVE bar, agent card, pulse |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |

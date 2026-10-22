@@ -234,6 +234,9 @@ export interface SshSessionStatus {
   agent_last_action?: string | null;
   agent_last_at?: string | null;
   agent_action_count?: number;
+  agent_last_command?: string | null;
+  agent_last_output?: string | null;
+  agent_last_output_truncated?: boolean;
   last_exec_exit_code?: number | null;
   last_exec_elapsed_ms?: number | null;
   auto_reconnect?: boolean;

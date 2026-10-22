@@ -107,7 +107,17 @@ export function SshTerminalPage({
   const [filesError, setFilesError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [agentBusy, setAgentBusy] = useState(false);
-  const [agentPulse, setAgentPulse] = useState<{ action: string; source: string; at: string } | null>(null);
+  const [agentPanelOpen, setAgentPanelOpen] = useState(true);
+  const [agentPulse, setAgentPulse] = useState<{
+    action: string;
+    source: string;
+    at: string;
+    command?: string | null;
+    output?: string | null;
+    output_truncated?: boolean;
+    exit_code?: number | null;
+    elapsed_ms?: number | null;
+  } | null>(null);
   const agentTimerRef = useRef<number | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { theme } = useTheme();
@@ -342,6 +352,11 @@ export function SshTerminalPage({
             action?: string;
             source?: string;
             at?: string;
+            command?: string | null;
+            output?: string | null;
+            output_truncated?: boolean;
+            exit_code?: number | null;
+            elapsed_ms?: number | null;
             error?: { message?: string };
           };
           if (message.type === "status" && message.status) {
@@ -354,7 +369,13 @@ export function SshTerminalPage({
               action: message.action,
               source: message.source ?? "agent",
               at: message.at ?? new Date().toISOString(),
+              command: message.command,
+              output: message.output,
+              output_truncated: message.output_truncated,
+              exit_code: message.exit_code,
+              elapsed_ms: message.elapsed_ms,
             });
+            setAgentPanelOpen(true);
             if (agentTimerRef.current) window.clearTimeout(agentTimerRef.current);
             agentTimerRef.current = window.setTimeout(() => setAgentPulse(null), 5000);
             return;
@@ -643,6 +664,15 @@ export function SshTerminalPage({
             {status.last_exec_elapsed_ms != null ? ` · ${status.last_exec_elapsed_ms}ms` : ""}
           </span>
         ) : null}
+        {status?.agent_last_action && !agentPanelOpen ? (
+          <button
+            type="button"
+            onClick={() => setAgentPanelOpen(true)}
+            className="text-amber-300 hover:underline"
+          >
+            show agent output
+          </button>
+        ) : null}
         {dropped > 0 ? <span className="text-amber-300">{dropped} dropped</span> : null}
         <div className="ml-auto flex items-center gap-2 text-zinc-500">
           <button
@@ -655,6 +685,48 @@ export function SshTerminalPage({
           <span>scrollback {received}</span>
         </div>
       </div>
+
+      {status?.agent_last_action && agentPanelOpen ? (
+        <div className="border-b border-amber-500/20 bg-amber-500/[0.04] px-4 py-2">
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-amber-300">
+              agent {status.agent_last_action}
+            </span>
+            {status.agent_last_command ? (
+              <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-200">
+                {status.agent_last_command}
+              </code>
+            ) : (
+              <span className="flex-1 text-zinc-500">no command text</span>
+            )}
+            {status.agent_last_action === "exec" && status.last_exec_exit_code != null ? (
+              <span className={status.last_exec_exit_code === 0 ? "text-emerald-300" : "text-red-300"}>
+                exit {status.last_exec_exit_code}
+              </span>
+            ) : null}
+            {status.last_exec_elapsed_ms != null ? (
+              <span className="text-zinc-500">{status.last_exec_elapsed_ms}ms</span>
+            ) : null}
+            <span className="text-zinc-600">{formatTime(status.agent_last_at)}</span>
+            <button
+              type="button"
+              onClick={() => setAgentPanelOpen(false)}
+              className="rounded px-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+              title="hide agent output"
+            >
+              ×
+            </button>
+          </div>
+          {status.agent_last_output ? (
+            <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-zinc-950/60 px-2 py-1 font-mono text-[11px] text-zinc-300">
+              {status.agent_last_output}
+            </pre>
+          ) : null}
+          {status.agent_last_output_truncated ? (
+            <p className="mt-1 text-[10px] text-zinc-500">output truncated to 4000 characters</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative min-h-0 flex-1 overflow-hidden">

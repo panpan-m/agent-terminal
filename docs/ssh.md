@@ -16,6 +16,8 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 ![Agent activity in the SSH terminal](screenshots/22-ssh-agent-activity.png)
 
+![Agent command and output above the terminal](screenshots/23-ssh-agent-output.png)
+
 ![Serial and SSH sessions in one Terminal workspace](screenshots/19-terminal-mixed-serial.png)
 
 ## Security model
@@ -142,9 +144,11 @@ terminal replays the last 64 KiB.
 - **Agent activity is visible live.** When MCP `ssh_write`/`ssh_exec` acts on a
   session, the header shows an amber `agent write/exec` pulse, the LIVE bar shows
   the last action/exit/elapsed time, and the sidebar has an **AGENT ACTIVITY**
-  card (last writer, action, write count, last exec). `ssh_exec` uses a separate
-  channel, so its output does not echo into the PTY; the status card is how the
-  operator sees it.
+  card (last writer, action, write count, last exec). For `ssh_exec` a panel above
+  the terminal shows the command, exit code/latency and stdout/stderr preview;
+  `ssh_write` shows the written text. `ssh_exec` uses a separate channel, so it
+  still does not echo into the PTY, but the operator now sees what ran and what
+  it returned.
 - **Test** performs a TCP + SSH handshake only (no auth, no command), reports the
   SHA256 host-key fingerprint and whether it is `known` / `unknown` / `changed`
   in known_hosts, and offers a copyable `ssh-keyscan` command. It tests the

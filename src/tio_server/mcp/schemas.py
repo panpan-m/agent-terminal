@@ -191,6 +191,9 @@ class SshStatusResult(BaseModel):
     agent_last_action: str | None = None
     agent_last_at: str | None = None
     agent_action_count: int = 0
+    agent_last_command: str | None = None
+    agent_last_output: str | None = None
+    agent_last_output_truncated: bool = False
     last_exec_exit_code: int | None = None
     last_exec_elapsed_ms: int | None = None
     auto_reconnect: bool = True

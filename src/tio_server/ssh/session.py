@@ -106,6 +106,9 @@ class SshSession:
         self.agent_last_action: str | None = None
         self.agent_last_at: str | None = None
         self.agent_action_count = 0
+        self.agent_last_command: str | None = None
+        self.agent_last_output: str | None = None
+        self.agent_last_output_truncated = False
         self.last_exec_exit_code: int | None = None
         self.last_exec_elapsed_ms: int | None = None
         self.opened_at: str | None = None
@@ -736,16 +739,41 @@ class SshSession:
             with self._sub_lock:
                 for sub in list(self._subs):
                     sub.put({"type": "tx", "data": data, "source": source})
-        self._note_tx(source)
+        self._note_tx(source, command=data.decode("utf-8", "replace") if source == "agent" else None)
         return len(data)
 
-    def _note_tx(self, source: str, *, action: str | None = None) -> None:
+    @staticmethod
+    def _preview_text(text: str, limit: int = 4000) -> tuple[str, bool]:
+        if len(text) <= limit:
+            return text, False
+        return text[:limit] + "\n… [truncated]", True
+
+    def _note_tx(
+        self,
+        source: str,
+        *,
+        action: str | None = None,
+        command: str | None = None,
+        output: str | None = None,
+        exit_code: int | None = None,
+        elapsed_ms: int | None = None,
+    ) -> None:
         self.last_write_source = source
         self.last_tx_at = now_iso()
         if source == "agent":
             self.agent_last_action = action or "write"
             self.agent_last_at = self.last_tx_at
             self.agent_action_count += 1
+            if command is not None:
+                self.agent_last_command, _ = self._preview_text(command, 1000)
+            self.agent_last_output = None
+            self.agent_last_output_truncated = False
+            if output is not None:
+                self.agent_last_output, self.agent_last_output_truncated = self._preview_text(output)
+            if exit_code is not None:
+                self.last_exec_exit_code = int(exit_code)
+            if elapsed_ms is not None:
+                self.last_exec_elapsed_ms = int(elapsed_ms)
         self._broadcast_status()
         with self._sub_lock:
             for sub in list(self._subs):
@@ -755,13 +783,33 @@ class SshSession:
                         "action": self.agent_last_action if source == "agent" else action or "write",
                         "source": source,
                         "at": self.last_tx_at,
+                        "command": self.agent_last_command if source == "agent" else None,
+                        "output": self.agent_last_output if source == "agent" else None,
+                        "output_truncated": self.agent_last_output_truncated if source == "agent" else False,
+                        "exit_code": self.last_exec_exit_code if source == "agent" else None,
+                        "elapsed_ms": self.last_exec_elapsed_ms if source == "agent" else None,
                     }
                 )
 
-    def _note_exec(self, exit_code: int, elapsed_ms: int) -> None:
-        self.last_exec_exit_code = int(exit_code)
-        self.last_exec_elapsed_ms = int(elapsed_ms)
-        self._note_tx("agent", action="exec")
+    def _note_exec(
+        self,
+        command: str,
+        exit_code: int,
+        elapsed_ms: int,
+        stdout: str,
+        stderr: str,
+    ) -> None:
+        output = stdout
+        if stderr:
+            output = f"{stdout}\n[stderr]\n{stderr}" if stdout else f"[stderr]\n{stderr}"
+        self._note_tx(
+            "agent",
+            action="exec",
+            command=command,
+            output=output,
+            exit_code=exit_code,
+            elapsed_ms=elapsed_ms,
+        )
 
     def resize(self, cols: int, rows: int) -> None:
         if self._channel is None or self.state is not SshState.OPEN:
@@ -793,7 +841,13 @@ class SshSession:
         except Exception as exc:
             raise ToolFailure(SSH_ERROR, f"SSH exec failed: {exc}") from exc
         elapsed_ms = int((time.monotonic() - started) * 1000)
-        self._note_exec(int(code), elapsed_ms)
+        self._note_exec(
+            command,
+            int(code),
+            elapsed_ms,
+            out.decode("utf-8", "replace"),
+            err.decode("utf-8", "replace"),
+        )
         return {
             "command": command,
             "stdout": out.decode("utf-8", "replace"),
@@ -996,6 +1050,9 @@ class SshSession:
             "agent_last_action": self.agent_last_action,
             "agent_last_at": self.agent_last_at,
             "agent_action_count": self.agent_action_count,
+            "agent_last_command": self.agent_last_command,
+            "agent_last_output": self.agent_last_output,
+            "agent_last_output_truncated": self.agent_last_output_truncated,
             "last_exec_exit_code": self.last_exec_exit_code,
             "last_exec_elapsed_ms": self.last_exec_elapsed_ms,
             "auto_reconnect": self.auto_reconnect,
