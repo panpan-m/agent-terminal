@@ -8,43 +8,48 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { McpStatus } from "@/lib/types";
 
-type PromptKind = "dsh" | "http";
-
-function buildPrompts(status: McpStatus): Record<PromptKind, string> {
+function buildPrompt(status: McpStatus): string {
   const toolNames = status.tools.map((tool) => tool.name).join(", ");
-  const dsh = `Add the tio-server MCP server to my DSH profile.
+  return `Install and connect the tio-server MCP server.
 
-1. Open the profile patch (~/.dsh/profiles/desktop/cordis.patch.yml) and append this row:
-
-- id: mcp-tio
-  name: "@deepseek-ai/dsh-mcp-client"
-  config:
-    serverName: tio
-    transport: stdio
-    command: '${status.shim}'
-    args:
-      - '--url'
-      - '${status.url}'
-      - '--token-file'
-      - '${status.api_token_file}'
-    toolCallTimeoutMs: 70000
-
-2. Restart DSH so the plugin row is composed.
-3. Verify these tools are available: ${toolNames}.
-4. Call mcp__tio__serial_sessions with {} and show me the serial sessions.
-
-The token file is a secret: read it at runtime, never print its contents.`;
-
-  const http = `Connect to the tio-server MCP endpoint.
-
-- URL: ${status.url}
+Server:
+- Name: tio
 - Transport: Streamable HTTP
-- Auth: Bearer token stored in ${status.api_token_file} (read it at runtime, never print it)
+- URL: ${status.url}
+- Auth: Authorization: Bearer <token>
+- Token file: ${status.api_token_file} (read it at runtime; never print its contents)
 - Server: ${status.server.name} ${status.server.version}
 - Tools: ${toolNames}
 
-Add this server to your MCP client configuration, list its tools, then call serial_sessions with {} and show me the serial sessions.`;
-  return { dsh, http };
+Steps:
+1. Add this server to the MCP configuration of whichever client you are running
+   (Claude Desktop, Cursor, Codex, DSH, VS Code, or any other MCP client), using
+   the URL and Bearer token above.
+2. If your client only supports stdio servers, launch the bundled shim instead:
+   command: '${status.shim}'
+   args: '--url' '${status.url}' '--token-file' '${status.api_token_file}'
+   Example for DSH (append this row to the profile patch):
+   - id: mcp-tio
+     name: "@deepseek-ai/dsh-mcp-client"
+     config:
+       serverName: tio
+       transport: stdio
+       command: '${status.shim}'
+       args:
+         - '--url'
+         - '${status.url}'
+         - '--token-file'
+         - '${status.api_token_file}'
+       toolCallTimeoutMs: 70000
+3. Restart or reload the client if its configuration requires it.
+4. Verify that the tools above are listed, then call serial_sessions with {} and
+   show me the serial sessions.
+
+The token file is a secret: read it at runtime, never print its contents.`;
+}
+
+function stdioCommand(status: McpStatus): string {
+  return `"${status.shim}" --url "${status.url}" --token-file "${status.api_token_file}"`;
 }
 
 export function McpPage({
@@ -55,7 +60,6 @@ export function McpPage({
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [promptKind, setPromptKind] = useState<PromptKind>("dsh");
   const [copied, setCopied] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -75,7 +79,8 @@ export function McpPage({
     void load();
   }, [load]);
 
-  const prompts = useMemo(() => (status ? buildPrompts(status) : null), [status]);
+  const prompt = useMemo(() => (status ? buildPrompt(status) : null), [status]);
+  const command = useMemo(() => (status ? stdioCommand(status) : null), [status]);
 
   const copy = async (text: string, label: string) => {
     try {
@@ -185,29 +190,29 @@ export function McpPage({
               <div>
                 <CardTitle>Install prompt</CardTitle>
                 <CardDescription>
-                  Paste this to an agent; it contains the exact paths and endpoint for this server.
+                  Universal: any MCP client can follow it; the DSH row is included as one example.
                 </CardDescription>
               </div>
               <div className="flex items-center gap-1">
                 <Button
                   size="sm"
-                  variant={promptKind === "dsh" ? "outline" : "ghost"}
-                  onClick={() => setPromptKind("dsh")}
+                  variant="ghost"
+                  onClick={() => command && void copy(command, "stdio command")}
+                  disabled={!command}
+                  title="copy just the stdio shim command"
                 >
-                  DSH
-                </Button>
-                <Button
-                  size="sm"
-                  variant={promptKind === "http" ? "outline" : "ghost"}
-                  onClick={() => setPromptKind("http")}
-                >
-                  Generic HTTP
+                  {copied === "stdio command" ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  Copy stdio command
                 </Button>
                 <Button
                   size="sm"
                   variant="primary"
-                  onClick={() => prompts && void copy(prompts[promptKind], "prompt")}
-                  disabled={!prompts}
+                  onClick={() => prompt && void copy(prompt, "prompt")}
+                  disabled={!prompt}
                 >
                   {copied === "prompt" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                   Copy prompt
@@ -221,7 +226,7 @@ export function McpPage({
                   "bg-zinc-950/60 px-3 py-2 font-mono text-[11px] leading-relaxed text-zinc-300",
                 )}
               >
-                {prompts?.[promptKind]}
+                {prompt}
               </pre>
             </CardContent>
           </Card>

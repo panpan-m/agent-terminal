@@ -6,9 +6,10 @@ up as `mcp__tio__serial_*` next to the built-in tools.
 ## Configuration
 
 Edit the profile patch (`~/.dsh/profiles/desktop/cordis.patch.yml`) and add one
-row. The UI's **MCP** tab generates this exact block with the real paths and has
-a **Copy prompt** button, so you can hand it to an agent instead of editing by
-hand.
+row. The UI's **MCP** tab generates a **universal install prompt** (any MCP
+client can follow it; the DSH row below is included as one example) with the real
+paths and a **Copy prompt** button, so you can hand it to an agent instead of
+editing by hand.
 
 The stdio shim keeps the bearer token in a file, so nothing secret lands in the
 config:

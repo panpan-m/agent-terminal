@@ -20,8 +20,8 @@ Light theme is available from the sidebar/login toggle and persists per browser
 ([preview](docs/screenshots/11-light-sessions.png)); the xterm palette follows.
 
 The **MCP** tab shows the endpoint, bearer/token status and tool list, and
-generates a copy-paste install prompt for agents
-([screenshot](docs/screenshots/08-mcp.png)).
+generates a universal copy-paste install prompt for any MCP client (DSH row
+included as an example) ([screenshot](docs/screenshots/08-mcp.png)).
 
 ## Why
 
