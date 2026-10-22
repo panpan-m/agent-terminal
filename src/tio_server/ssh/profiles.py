@@ -20,7 +20,7 @@ from ..transcript import now_iso
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _TERM_RE = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
-AUTH_METHODS = ("password", "key")
+AUTH_METHODS = ("password", "key", "agent", "interactive")
 
 
 def _bad(message: str, **details: Any) -> ToolFailure:
@@ -52,6 +52,7 @@ class SshHost:
     auth: str = "password"
     key_file: str = ""
     known_hosts: str = ""
+    jump_host_id: str = ""
     term: str = "xterm-256color"
     connect_timeout_s: int = 10
     created_at: str = field(default_factory=now_iso)
@@ -78,6 +79,10 @@ class SshHost:
             raise _bad("auth must be password or key", field="auth")
         if self.auth == "key" and not self.key_file:
             raise _bad("key_file is required when auth=key", field="key_file")
+        if self.jump_host_id and not _ID_RE.fullmatch(self.jump_host_id):
+            raise _bad("jump_host_id must be a saved host id", field="jump_host_id")
+        if self.jump_host_id == self.id:
+            raise _bad("a host cannot jump through itself", field="jump_host_id")
         if not _TERM_RE.fullmatch(self.term):
             raise _bad("term contains invalid characters", field="term")
         if not (1 <= int(self.connect_timeout_s) <= 120):
@@ -173,6 +178,7 @@ class SshProfileStore:
                 auth=str(payload.get("auth") or "password"),
                 key_file=_clean(payload.get("key_file"), "key_file", max_len=1024),
                 known_hosts=_clean(payload.get("known_hosts"), "known_hosts", max_len=1024),
+                jump_host_id=_clean(payload.get("jump_host_id"), "jump_host_id", max_len=32),
                 term=_clean(payload.get("term") or "xterm-256color", "term", max_len=64),
                 connect_timeout_s=10
                 if payload.get("connect_timeout_s") is None
@@ -197,6 +203,7 @@ class SshProfileStore:
                 "auth",
                 "key_file",
                 "known_hosts",
+                "jump_host_id",
                 "term",
                 "connect_timeout_s",
             ):
@@ -211,6 +218,7 @@ class SshProfileStore:
                 auth=str(merged["auth"]),
                 key_file=_clean(merged.get("key_file"), "key_file", max_len=1024),
                 known_hosts=_clean(merged.get("known_hosts"), "known_hosts", max_len=1024),
+                jump_host_id=_clean(merged.get("jump_host_id"), "jump_host_id", max_len=32),
                 term=_clean(merged.get("term") or "xterm-256color", "term", max_len=64),
                 connect_timeout_s=int(merged["connect_timeout_s"]),
                 created_at=current.created_at,

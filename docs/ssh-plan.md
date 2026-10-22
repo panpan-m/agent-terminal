@@ -298,13 +298,14 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 `ssh_expect`（匹配 `mcp-ssh-ok`），随后断开并删除临时 profile。MCP 工具总数为
 **15**（8 串口 + 7 SSH）；没有 `ssh_connect`/`ssh_disconnect`。
 
-### Phase 4 — 进阶
+### Phase 4 — 进阶（大部分完成）
 
-- SFTP 上传/下载/目录浏览；
-- keyboard-interactive/2FA；
-- jump host / ProxyJump；
-- SSH agent；
-- 连接配置导入（~/.ssh/config 只读解析）。
+- ✅ SFTP：目录浏览、上传/下载、mkdir/rename/delete，走同一 SSH transport；
+- ✅ jump host：目标 host 配置 `jump_host_id`，经跳板机 `direct-tcpip` 通道连接；
+- ✅ SSH agent：auth=agent，使用 tio-server 进程的 agent；
+- ✅ ~/.ssh/config 导入：解析 Host/HostName/User/Port/IdentityFile，预览后导入；
+- ⚠️ keyboard-interactive/2FA：后端 handler + UI 响应列表已实现，但当前没有
+  2FA 测试主机，只做了代码路径/构建验证，未做真机端到端。
 
 ## 12. 风险与待确认
 

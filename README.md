@@ -6,7 +6,7 @@ full terminal in its own tab), and agents use **MCP** tools. Nobody else opens
 the port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **104 tests**, **41/41 end-to-end checks**,
+> Verified on Windows 10: **107 tests**, **41/41 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **25/25 agent-path MCP checks** against a
 > Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing

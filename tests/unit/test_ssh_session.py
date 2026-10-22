@@ -153,3 +153,22 @@ def test_manager_refuses_unknown_host(ssh_bundle):
     with pytest.raises(Exception) as exc:
         manager.connect("missing")
     assert getattr(exc.value, "code", None) == "NOT_FOUND"
+
+
+def test_agent_auth_uses_the_ssh_agent(ssh_bundle):
+    manager, profiles, _transcripts, _audit = ssh_bundle
+    profiles.create(
+        {
+            "id": "agent-host",
+            "name": "Agent host",
+            "host": "127.0.0.1",
+            "username": "root",
+            "auth": "agent",
+        }
+    )
+    client = FakeClient()
+    session = SshSession(profiles.get("agent-host"), manager, "ssh-agent", client_factory=lambda: client)
+    session.connect(cols=80, rows=24)
+    assert client.connect_kwargs["allow_agent"] is True
+    assert "key_filename" not in client.connect_kwargs
+    session.close()

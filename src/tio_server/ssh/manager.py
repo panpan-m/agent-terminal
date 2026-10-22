@@ -40,6 +40,9 @@ class SshManager:
         *,
         password: str | None = None,
         passphrase: str | None = None,
+        jump_password: str | None = None,
+        jump_passphrase: str | None = None,
+        responses: list[str] | None = None,
         cols: int = 120,
         rows: int = 30,
     ) -> SshSession:
@@ -51,7 +54,15 @@ class SshManager:
             session = SshSession(host, self, session_id)
             self._sessions[session_id] = session
         try:
-            session.connect(password=password, passphrase=passphrase, cols=cols, rows=rows)
+            session.connect(
+                password=password,
+                passphrase=passphrase,
+                jump_password=jump_password,
+                jump_passphrase=jump_passphrase,
+                responses=responses,
+                cols=cols,
+                rows=rows,
+            )
         except Exception:
             with self._lock:
                 self._sessions.pop(session_id, None)

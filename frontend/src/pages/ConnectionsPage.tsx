@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
+  FileInput,
   KeyRound,
   Loader2,
   Pencil,
@@ -18,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { ApiFailure, api } from "@/lib/api";
-import type { SshHost, SshHostInput, SshSessionStatus, SshTestResult } from "@/lib/types";
+import type { SshConfigCandidate, SshHost, SshHostInput, SshSessionStatus, SshTestResult } from "@/lib/types";
 import { formatBytes, formatTime } from "@/lib/utils";
 
 const EMPTY: SshHostInput = {
@@ -29,6 +30,7 @@ const EMPTY: SshHostInput = {
   auth: "password",
   key_file: "",
   known_hosts: "",
+  jump_host_id: "",
   term: "xterm-256color",
   connect_timeout_s: 10,
 };
@@ -58,12 +60,21 @@ export function ConnectionsPage({
   const [connectTarget, setConnectTarget] = useState<SshHost | null>(null);
   const [password, setPassword] = useState("");
   const [passphrase, setPassphrase] = useState("");
+  const [jumpPassword, setJumpPassword] = useState("");
+  const [jumpPassphrase, setJumpPassphrase] = useState("");
+  const [responsesText, setResponsesText] = useState("");
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectDetails, setConnectDetails] = useState<Record<string, unknown> | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<SshTestResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importPath, setImportPath] = useState("");
+  const [candidates, setCandidates] = useState<SshConfigCandidate[]>([]);
+  const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -103,6 +114,7 @@ export function ConnectionsPage({
       auth: host.auth,
       key_file: host.key_file,
       known_hosts: host.known_hosts,
+      jump_host_id: host.jump_host_id,
       term: host.term,
       connect_timeout_s: host.connect_timeout_s,
     });
@@ -146,6 +158,9 @@ export function ConnectionsPage({
     setConnectTarget(host);
     setPassword("");
     setPassphrase("");
+    setJumpPassword("");
+    setJumpPassphrase("");
+    setResponsesText("");
     setConnectError(null);
     setConnectDetails(null);
   };
@@ -163,6 +178,12 @@ export function ConnectionsPage({
       const result = await api.sshConnect(connectTarget.id, {
         password: password || undefined,
         passphrase: passphrase || undefined,
+        jump_password: jumpPassword || undefined,
+        jump_passphrase: jumpPassphrase || undefined,
+        responses: responsesText
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
         cols: 120,
         rows: 30,
       });
@@ -203,6 +224,59 @@ export function ConnectionsPage({
     }
   };
 
+  const openImport = async () => {
+    setImportOpen(true);
+    setImportError(null);
+    setCandidates([]);
+    try {
+      const result = await api.sshConfigCandidates();
+      setImportPath(result.path);
+      const existing = new Set(hosts.map((host) => host.id));
+      const available = result.hosts.filter((host) => !existing.has(host.id));
+      setCandidates(available);
+      setSelectedCandidates(new Set(available.map((host) => host.id)));
+    } catch (error) {
+      setImportError((error as Error).message);
+    }
+  };
+
+  const importSelected = async () => {
+    setImportBusy(true);
+    setImportError(null);
+    let imported = 0;
+    const failures: string[] = [];
+    for (const candidate of candidates) {
+      if (!selectedCandidates.has(candidate.id)) continue;
+      try {
+        await api.createSshHost({
+          id: candidate.id,
+          name: candidate.name,
+          host: candidate.host,
+          port: candidate.port,
+          username: candidate.username,
+          auth: candidate.auth,
+          key_file: candidate.key_file,
+          known_hosts: "",
+          jump_host_id: "",
+          term: "xterm-256color",
+          connect_timeout_s: 10,
+        });
+        imported += 1;
+      } catch (error) {
+        failures.push(`${candidate.name}: ${(error as ApiFailure).message}`);
+      }
+    }
+    setImportBusy(false);
+    await load();
+    if (imported) notify(`imported ${imported} SSH host(s)`, "success");
+    if (failures.length) setImportError(failures.join("; "));
+    else setImportOpen(false);
+  };
+
+  const connectJump = connectTarget
+    ? hosts.find((host) => host.id === connectTarget.jump_host_id)
+    : undefined;
+
   return (
     <div className="mx-auto max-w-6xl px-5 py-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -213,9 +287,14 @@ export function ConnectionsPage({
             stored. Host keys are checked strictly against known_hosts.
           </p>
         </div>
-        <Button variant="primary" onClick={openCreate}>
-          <Plus className="h-4 w-4" /> New SSH host
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" onClick={() => void openImport()}>
+            <FileInput className="h-4 w-4" /> Import ~/.ssh/config
+          </Button>
+          <Button variant="primary" onClick={openCreate}>
+            <Plus className="h-4 w-4" /> New SSH host
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -265,6 +344,11 @@ export function ConnectionsPage({
                   <span className="rounded border border-zinc-800 px-1.5 py-0.5">
                     known_hosts: {host.known_hosts || "~/.ssh/known_hosts"}
                   </span>
+                  {host.jump_host_id ? (
+                    <span className="rounded border border-sky-500/30 px-1.5 py-0.5 text-sky-300">
+                      via {host.jump_host_id}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <Button size="sm" variant="primary" onClick={() => startConnect(host)}>
@@ -409,6 +493,23 @@ export function ConnectionsPage({
                 >
                   <option value="password">password</option>
                   <option value="key">private key</option>
+                  <option value="agent">ssh agent</option>
+                  <option value="interactive">keyboard-interactive / 2FA</option>
+                </Select>
+              </Field>
+              <Field label="Jump host" hint="optional; another saved SSH host">
+                <Select
+                  value={form.jump_host_id ?? ""}
+                  onChange={(event) => setForm({ ...form, jump_host_id: event.target.value })}
+                >
+                  <option value="">direct connection</option>
+                  {hosts
+                    .filter((host) => host.id !== (editing?.id ?? form.id))
+                    .map((host) => (
+                      <option key={host.id} value={host.id}>
+                        {host.name} ({host.username}@{host.host})
+                      </option>
+                    ))}
                 </Select>
               </Field>
             </div>
@@ -473,7 +574,20 @@ export function ConnectionsPage({
                 {connectTarget.username}@{connectTarget.host}:{connectTarget.port} · {connectTarget.auth} ·{" "}
                 {connectTarget.term}
               </div>
-              {connectTarget.auth === "password" ? (
+              {connectTarget.auth === "interactive" ? (
+                <Field
+                  label="Interactive responses"
+                  hint="one per prompt, in order (e.g. password, then OTP); leave blank to see the server prompts"
+                >
+                  <textarea
+                    value={responsesText}
+                    onChange={(event) => setResponsesText(event.target.value)}
+                    rows={3}
+                    className="w-full rounded-md border border-zinc-700 bg-zinc-950/60 px-3 py-2 font-mono text-xs text-zinc-100 focus:border-emerald-500/60 focus:outline-none"
+                    placeholder={"password\n123456"}
+                  />
+                </Field>
+              ) : connectTarget.auth === "password" ? (
                 <Field label="Password">
                   <Input
                     type="password"
@@ -482,7 +596,7 @@ export function ConnectionsPage({
                     onChange={(event) => setPassword(event.target.value)}
                   />
                 </Field>
-              ) : (
+              ) : connectTarget.auth === "key" ? (
                 <Field label="Key passphrase" hint="leave empty if the key has no passphrase">
                   <Input
                     type="password"
@@ -491,7 +605,39 @@ export function ConnectionsPage({
                     onChange={(event) => setPassphrase(event.target.value)}
                   />
                 </Field>
+              ) : (
+                <p className="rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-[11px] text-zinc-400">
+                  Authentication uses the SSH agent of the tio-server process.
+                </p>
               )}
+
+              {connectJump ? (
+                <div className="space-y-2 rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2">
+                  <p className="text-[11px] text-sky-200">
+                    Jump host: {connectJump.name} ({connectJump.username}@{connectJump.host}:{connectJump.port},{" "}
+                    {connectJump.auth})
+                  </p>
+                  {connectJump.auth === "password" ? (
+                    <Field label="Jump host password">
+                      <Input
+                        type="password"
+                        value={jumpPassword}
+                        onChange={(event) => setJumpPassword(event.target.value)}
+                      />
+                    </Field>
+                  ) : connectJump.auth === "key" ? (
+                    <Field label="Jump host key passphrase" hint="empty if the jump key has no passphrase">
+                      <Input
+                        type="password"
+                        value={jumpPassphrase}
+                        onChange={(event) => setJumpPassphrase(event.target.value)}
+                      />
+                    </Field>
+                  ) : (
+                    <p className="text-[10px] text-zinc-400">Jump host uses its own agent authentication.</p>
+                  )}
+                </div>
+              ) : null}
               <p className="text-[11px] text-zinc-500">
                 The host key must already be present in{" "}
                 <span className="font-mono">{connectTarget.known_hosts || "~/.ssh/known_hosts"}</span>. Unknown keys
@@ -520,6 +666,66 @@ export function ConnectionsPage({
               </div>
             </form>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent
+          className="w-[min(720px,94vw)]"
+          title="Import from ~/.ssh/config"
+          description={`Read-only candidates from ${importPath || "~/.ssh/config"}. Secrets are never imported.`}
+        >
+          {candidates.length === 0 ? (
+            <p className="text-xs text-zinc-500">No importable hosts found (missing file, or only wildcard entries).</p>
+          ) : (
+            <div className="max-h-[55vh] space-y-2 overflow-y-auto">
+              {candidates.map((candidate) => (
+                <label
+                  key={candidate.id}
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1 accent-emerald-500"
+                    checked={selectedCandidates.has(candidate.id)}
+                    onChange={(event) => {
+                      const next = new Set(selectedCandidates);
+                      if (event.target.checked) next.add(candidate.id);
+                      else next.delete(candidate.id);
+                      setSelectedCandidates(next);
+                    }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-zinc-100">{candidate.name}</span>
+                      <Badge tone={candidate.auth === "key" ? "accent" : "default"}>{candidate.auth}</Badge>
+                    </div>
+                    <p className="truncate font-mono text-[10px] text-zinc-500">
+                      {candidate.username}@{candidate.host}:{candidate.port}
+                      {candidate.key_file ? ` · ${candidate.key_file}` : ""}
+                    </p>
+                    {candidate.proxy_jump ? (
+                      <p className="text-[10px] text-amber-300">ProxyJump in config: {candidate.proxy_jump} (imported as direct)</p>
+                    ) : null}
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+          {importError ? <p className="mt-2 text-xs text-red-400">{importError}</p> : null}
+          <div className="mt-3 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={importBusy || selectedCandidates.size === 0}
+              onClick={() => void importSelected()}
+            >
+              {importBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Import {selectedCandidates.size}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

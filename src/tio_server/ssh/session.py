@@ -12,9 +12,11 @@ import base64
 import fnmatch
 import hashlib
 import os
+import posixpath
 import queue
 import re
 import socket
+import stat as stat_module
 import threading
 import time
 from dataclasses import dataclass, field
@@ -107,6 +109,10 @@ class SshSession:
         self.mac: str | None = None
         self._client: Any | None = None
         self._channel: Any | None = None
+        self._jump_client: Any | None = None
+        self._jump_transport: Any | None = None
+        self._sftp: Any | None = None
+        self._sftp_lock = threading.Lock()
         self._client_factory = client_factory or paramiko.SSHClient
         self._stop = threading.Event()
         self._reader: threading.Thread | None = None
@@ -130,11 +136,129 @@ class SshSession:
         return self.state is SshState.OPEN
 
     # --------------------------------------------------------------- lifecycle
+    def _configure_known_hosts(self, client: Any, profile: SshHost) -> None:
+        client.load_system_host_keys()
+        known_hosts = os.path.expanduser(profile.known_hosts) if profile.known_hosts else ""
+        if known_hosts:
+            if not os.path.exists(known_hosts):
+                raise ToolFailure(
+                    SSH_HOST_UNKNOWN,
+                    f"known_hosts file does not exist: {known_hosts}",
+                    {"host_id": profile.id, "known_hosts": known_hosts},
+                )
+            client.load_host_keys(known_hosts)
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+
+    def _connect_kwargs(self, profile: SshHost, password: str | None, passphrase: str | None) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "hostname": profile.host,
+            "port": int(profile.port),
+            "username": profile.username,
+            "timeout": int(profile.connect_timeout_s),
+            "banner_timeout": int(profile.connect_timeout_s),
+            "auth_timeout": int(profile.connect_timeout_s),
+            "allow_agent": False,
+            "look_for_keys": False,
+        }
+        if profile.auth == "password":
+            if not password:
+                raise ToolFailure(
+                    SSH_AUTH_FAILED,
+                    "password is required for this host",
+                    {"host_id": profile.id},
+                )
+            kwargs["password"] = password
+        elif profile.auth == "key":
+            key_file = os.path.expanduser(profile.key_file)
+            if not os.path.isfile(key_file):
+                raise ToolFailure(
+                    SSH_AUTH_FAILED,
+                    f"private key file not found or unreadable: {key_file}",
+                    {"host_id": profile.id, "key_file": key_file},
+                )
+            kwargs["key_filename"] = key_file
+            if passphrase:
+                kwargs["passphrase"] = passphrase
+        elif profile.auth == "agent":
+            kwargs["allow_agent"] = True
+        else:
+            raise ToolFailure(
+                INVALID_ARGUMENT,
+                "keyboard-interactive hosts cannot use the jump-host path",
+                {"host_id": profile.id},
+            )
+        return kwargs
+
+    def _known_key_status(self, profile: SshHost, key: Any) -> tuple[str, Any]:
+        known = paramiko.HostKeys()
+        system_known = os.path.expanduser("~/.ssh/known_hosts")
+        if os.path.isfile(system_known):
+            known.load(system_known)
+        if profile.known_hosts and os.path.isfile(os.path.expanduser(profile.known_hosts)):
+            known.load(os.path.expanduser(profile.known_hosts))
+        lookup = profile.host if int(profile.port) == 22 else f"[{profile.host}]:{profile.port}"
+        entry = known.lookup(lookup)
+        if not entry:
+            return "unknown", None
+        expected = entry.get(key.get_name())
+        if expected is not None and expected.asbytes() == key.asbytes():
+            return "known", expected
+        return "changed", expected
+
+    def _connect_interactive(self, password: str | None, responses: list[str]) -> Any:
+        transport = paramiko.Transport((self.host.host, int(self.host.port)))
+        try:
+            transport.start_client(timeout=int(self.host.connect_timeout_s))
+            key = transport.get_remote_server_key()
+            status, _ = self._known_key_status(self.host, key)
+            if status == "unknown":
+                raise ToolFailure(
+                    SSH_HOST_UNKNOWN,
+                    "SSH host is not in known_hosts; add its key before connecting",
+                    {
+                        "host_id": self.host.id,
+                        "host": self.host.host,
+                        "port": self.host.port,
+                        "fingerprint": _fingerprint(key),
+                    },
+                )
+            if status == "changed":
+                raise ToolFailure(
+                    SSH_HOST_KEY_CHANGED,
+                    "SSH host key changed; refusing to connect",
+                    {"host_id": self.host.id, "host": self.host.host, "actual_fingerprint": _fingerprint(key)},
+                )
+            answers = list(responses)
+            if password:
+                answers.insert(0, password)
+
+            def handler(title: str, instructions: str, prompts: list[tuple[str, bool]]) -> list[str]:
+                del title, instructions
+                out = []
+                for _prompt, _echo in prompts:
+                    out.append(answers.pop(0) if answers else "")
+                return out
+
+            transport.auth_interactive(self.host.username, handler)
+            client = self._client_factory()
+            client._transport = transport
+            client._policy = paramiko.RejectPolicy()
+            return client
+        except Exception:
+            try:
+                transport.close()
+            except Exception:
+                pass
+            raise
+
     def connect(
         self,
         *,
         password: str | None = None,
         passphrase: str | None = None,
+        jump_password: str | None = None,
+        jump_passphrase: str | None = None,
+        responses: list[str] | None = None,
         cols: int = 120,
         rows: int = 30,
     ) -> None:
@@ -145,50 +269,44 @@ class SshSession:
         self.last_error_code = None
         client = self._client_factory()
         try:
-            client.load_system_host_keys()
-            known_hosts = os.path.expanduser(self.host.known_hosts) if self.host.known_hosts else ""
-            if known_hosts:
-                if not os.path.exists(known_hosts):
+            if self.host.auth == "interactive":
+                if self.host.jump_host_id:
                     raise ToolFailure(
-                        SSH_HOST_UNKNOWN,
-                        f"known_hosts file does not exist: {known_hosts}",
-                        {"host_id": self.host.id, "known_hosts": known_hosts},
-                    )
-                client.load_host_keys(known_hosts)
-            client.set_missing_host_key_policy(paramiko.RejectPolicy())
-
-            kwargs: dict[str, Any] = {
-                "hostname": self.host.host,
-                "port": int(self.host.port),
-                "username": self.host.username,
-                "timeout": int(self.host.connect_timeout_s),
-                "banner_timeout": int(self.host.connect_timeout_s),
-                "auth_timeout": int(self.host.connect_timeout_s),
-                "allow_agent": False,
-                "look_for_keys": False,
-            }
-            if self.host.auth == "password":
-                if not password:
-                    raise ToolFailure(
-                        SSH_AUTH_FAILED,
-                        "password is required for this host",
+                        INVALID_ARGUMENT,
+                        "keyboard-interactive auth through a jump host is not supported yet",
                         {"host_id": self.host.id},
                     )
-                kwargs["password"] = password
+                client = self._connect_interactive(password, responses or [])
+                transport = client.get_transport()
             else:
-                key_file = os.path.expanduser(self.host.key_file)
-                if not os.path.isfile(key_file):
-                    raise ToolFailure(
-                        SSH_AUTH_FAILED,
-                        f"private key file not found or unreadable: {key_file}",
-                        {"host_id": self.host.id, "key_file": key_file},
-                    )
-                kwargs["key_filename"] = key_file
-                if passphrase:
-                    kwargs["passphrase"] = passphrase
-
-            client.connect(**kwargs)
-            transport = client.get_transport()
+                self._configure_known_hosts(client, self.host)
+                kwargs = self._connect_kwargs(self.host, password, passphrase)
+                if self.host.jump_host_id:
+                    jump = self.manager.profiles.get(self.host.jump_host_id)
+                    jump_client = self._client_factory()
+                    try:
+                        self._configure_known_hosts(jump_client, jump)
+                        jump_client.connect(**self._connect_kwargs(jump, jump_password, jump_passphrase))
+                        jump_transport = jump_client.get_transport()
+                        if jump_transport is None:
+                            raise paramiko.SSHException("jump host has no transport")
+                        jump_channel = jump_transport.open_channel(
+                            "direct-tcpip",
+                            (self.host.host, int(self.host.port)),
+                            ("127.0.0.1", 0),
+                        )
+                    except Exception as exc:
+                        self._safe_close(jump_client)
+                        raise ToolFailure(
+                            SSH_ERROR,
+                            f"jump host {jump.id} failed: {exc}",
+                            {"host_id": self.host.id, "jump_host_id": jump.id},
+                        ) from exc
+                    self._jump_client = jump_client
+                    self._jump_transport = jump_transport
+                    kwargs["sock"] = jump_channel
+                client.connect(**kwargs)
+                transport = client.get_transport()
             if transport is None:
                 raise paramiko.SSHException("no SSH transport after connect")
             key = transport.get_remote_server_key()
@@ -298,6 +416,14 @@ class SshSession:
             client.close()
         except Exception:
             pass
+        jump = self._jump_client
+        self._jump_client = None
+        self._jump_transport = None
+        if jump is not None:
+            try:
+                jump.close()
+            except Exception:
+                pass
 
     def _probe_fingerprint(self) -> str | None:
         try:
@@ -522,14 +648,134 @@ class SshSession:
             "elapsed_ms": int((time.monotonic() - started) * 1000),
         }
 
+    # ------------------------------------------------------------------ sftp
+    @staticmethod
+    def _remote_path(path: str) -> str:
+        if not path or not str(path).startswith("/"):
+            raise ToolFailure(INVALID_ARGUMENT, "SFTP path must be absolute")
+        normalized = posixpath.normpath(str(path))
+        if normalized.startswith("//"):
+            normalized = "/" + normalized.lstrip("/")
+        return normalized
+
+    def _sftp_client(self) -> Any:
+        if self._sftp is None:
+            if self._client is None or self.state is not SshState.OPEN:
+                raise ToolFailure(DISCONNECTED, "SSH session is not open")
+            try:
+                transport = self._client.get_transport()
+                if transport is None:
+                    raise paramiko.SSHException("no SSH transport")
+                self._sftp = paramiko.SFTPClient.from_transport(transport)
+            except Exception as exc:
+                raise ToolFailure(SSH_ERROR, f"cannot open SFTP subsystem: {exc}") from exc
+        return self._sftp
+
+    def sftp_list(self, path: str) -> dict[str, Any]:
+        remote = self._remote_path(path)
+        try:
+            with self._sftp_lock:
+                attrs = self._sftp_client().listdir_attr(remote)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP list failed: {exc}") from exc
+        entries = []
+        for attr in sorted(attrs, key=lambda item: (not stat_module.S_ISDIR(item.st_mode), item.filename.lower())):
+            mode = int(attr.st_mode or 0)
+            entries.append(
+                {
+                    "name": attr.filename,
+                    "path": posixpath.join(remote, attr.filename),
+                    "size": int(attr.st_size or 0),
+                    "mtime": int(attr.st_mtime or 0),
+                    "mode": oct(mode & 0o777),
+                    "is_dir": stat_module.S_ISDIR(mode),
+                    "is_link": stat_module.S_ISLNK(mode),
+                }
+            )
+        return {"path": remote, "entries": entries}
+
+    def sftp_read(self, path: str, *, max_bytes: int = 32 * 1024 * 1024) -> bytes:
+        remote = self._remote_path(path)
+        try:
+            with self._sftp_lock:
+                with self._sftp_client().open(remote, "rb") as handle:
+                    data = handle.read(max_bytes + 1)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP download failed: {exc}") from exc
+        if len(data) > max_bytes:
+            raise ToolFailure(INVALID_ARGUMENT, f"file larger than {max_bytes} bytes")
+        return data
+
+    def sftp_write(self, path: str, data: bytes) -> int:
+        remote = self._remote_path(path)
+        try:
+            with self._sftp_lock:
+                with self._sftp_client().open(remote, "wb") as handle:
+                    handle.write(data)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP upload failed: {exc}") from exc
+        return len(data)
+
+    def sftp_mkdir(self, path: str) -> str:
+        remote = self._remote_path(path)
+        try:
+            with self._sftp_lock:
+                self._sftp_client().mkdir(remote)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP mkdir failed: {exc}") from exc
+        return remote
+
+    def sftp_delete(self, path: str) -> str:
+        remote = self._remote_path(path)
+        try:
+            with self._sftp_lock:
+                client = self._sftp_client()
+                attr = client.stat(remote)
+                if stat_module.S_ISDIR(attr.st_mode or 0):
+                    client.rmdir(remote)
+                else:
+                    client.remove(remote)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP delete failed: {exc}") from exc
+        return remote
+
+    def sftp_rename(self, old_path: str, new_path: str) -> tuple[str, str]:
+        old = self._remote_path(old_path)
+        new = self._remote_path(new_path)
+        try:
+            with self._sftp_lock:
+                self._sftp_client().rename(old, new)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP rename failed: {exc}") from exc
+        return old, new
+
     # ------------------------------------------------------------------ close
     def close(self) -> None:
         if self.state is SshState.CLOSED and self._stop.is_set():
             return
         self._stop.set()
         channel, client = self._channel, self._client
+        sftp = self._sftp
         self._channel = None
         self._client = None
+        self._sftp = None
+        if sftp is not None:
+            try:
+                sftp.close()
+            except Exception:
+                pass
         if channel is not None:
             try:
                 channel.close()
@@ -538,6 +784,14 @@ class SshSession:
         if client is not None:
             try:
                 client.close()
+            except Exception:
+                pass
+        jump = self._jump_client
+        self._jump_client = None
+        self._jump_transport = None
+        if jump is not None:
+            try:
+                jump.close()
             except Exception:
                 pass
         if self._reader is not None and self._reader.is_alive():
@@ -561,6 +815,7 @@ class SshSession:
             "host_id": self.host.id,
             "name": self.name,
             "host": self.host.host,
+            "jump_host_id": self.host.jump_host_id or None,
             "port": self.host.port,
             "username": self.host.username,
             "auth": self.host.auth,

@@ -165,7 +165,7 @@ export interface McpStatus {
   tools: McpToolInfo[];
 }
 
-export type SshAuth = "password" | "key";
+export type SshAuth = "password" | "key" | "agent" | "interactive";
 export type SshState = "connecting" | "open" | "closed" | "error";
 
 export interface SshHost {
@@ -177,6 +177,7 @@ export interface SshHost {
   auth: SshAuth;
   key_file: string;
   known_hosts: string;
+  jump_host_id: string;
   term: string;
   connect_timeout_s: number;
   created_at: string;
@@ -192,6 +193,7 @@ export interface SshHostInput {
   auth: SshAuth;
   key_file?: string;
   known_hosts?: string;
+  jump_host_id?: string;
   term?: string;
   connect_timeout_s?: number;
 }
@@ -205,6 +207,7 @@ export interface SshSessionStatus {
   username: string;
   auth: SshAuth;
   state: SshState;
+  jump_host_id?: string | null;
   host_key_fingerprint: string | null;
   host_key_type: string | null;
   remote_version: string | null;
@@ -224,6 +227,9 @@ export interface SshSessionStatus {
 export interface SshConnectInput {
   password?: string;
   passphrase?: string;
+  jump_password?: string;
+  jump_passphrase?: string;
+  responses?: string[];
   cols?: number;
   rows?: number;
 }
@@ -238,4 +244,30 @@ export interface SshTestResult {
   fingerprint: string;
   known_hosts_status: "known" | "unknown" | "changed";
   known_hosts: string;
+}
+
+export interface SshFileEntry {
+  name: string;
+  path: string;
+  size: number;
+  mtime: number;
+  mode: string;
+  is_dir: boolean;
+  is_link: boolean;
+}
+
+export interface SshFileList {
+  path: string;
+  entries: SshFileEntry[];
+}
+
+export interface SshConfigCandidate {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth: SshAuth;
+  key_file: string;
+  proxy_jump: string;
 }

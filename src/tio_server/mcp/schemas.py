@@ -170,6 +170,7 @@ class SshStatusResult(BaseModel):
     username: str
     auth: str
     state: str
+    jump_host_id: str | None = None
     host_key_fingerprint: str | None = None
     host_key_type: str | None = None
     remote_version: str | None = None

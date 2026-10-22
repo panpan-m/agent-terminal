@@ -1,8 +1,10 @@
 # SSH web terminal
 
-Phase 1 + 3: saved SSH hosts, password or private-key login, strict known_hosts,
-an xterm.js PTY terminal, resize, transcript/audit, cursor-resume reconnect, and
-seven read/write/exec MCP tools for operator-opened sessions.
+Phase 1–4: saved SSH hosts, password/private-key/agent/keyboard-interactive
+login, strict known_hosts, an xterm.js PTY terminal, resize, transcript/audit,
+cursor-resume reconnect, seven MCP tools, SFTP, jump hosts and ~/.ssh/config
+import. Keyboard-interactive/2FA is implemented but not yet tested against a real
+2FA server.
 
 ![SSH connections](screenshots/13-ssh-connections.png)
 
@@ -98,7 +100,8 @@ terminal replays the last 64 KiB.
 - **Log** downloads a timestamped raw TX/RX transcript (`/api/ssh/sessions/{id}/export`).
 - **Test** performs a TCP + SSH handshake only (no auth, no command), reports the
   SHA256 host-key fingerprint and whether it is `known` / `unknown` / `changed`
-  in known_hosts, and offers a copyable `ssh-keyscan` command.
+  in known_hosts, and offers a copyable `ssh-keyscan` command. It tests the
+  target directly, not through its jump host.
 - **Keys** shows browser-reserved shortcuts and alternatives (same list as the
   serial terminal).
 - Resize is sent to the remote PTY (`stty size` changes); xterm's `FitAddon`
@@ -126,6 +129,32 @@ The same operator-opened sessions are exposed over MCP (Phase 3):
 There is **no** `ssh_connect`/`ssh_disconnect`: the agent cannot create or close
 SSH sessions, only operate ones the operator opened. `ssh_exec` runs a command on
 the same SSH connection without touching the interactive shell.
+
+## Files (SFTP)
+
+The **Files** button in the SSH terminal opens a directory browser over the same
+SSH transport:
+
+- list directories, navigate up/enter, show size/mode;
+- **Upload** (max 32 MiB) and **Download**;
+- **New folder**, **Rename**, **Delete** (empty directories only);
+- operations are audited as `ssh.sftp_*` and run over SFTP, not the PTY.
+
+## Jump host, 2FA, agent, config import
+
+- **Jump host**: choose another saved host as `jump_host_id`; the server opens a
+  `direct-tcpip` channel through it, with its own strict known_hosts and auth.
+  Per-connection jump credentials are prompted separately.
+- **keyboard-interactive/2FA**: choose `interactive`, enter one response per
+  prompt (e.g. password then OTP). The backend `auth_interactive` handler maps
+  them in order. This path is implemented but not yet validated against a real
+  2FA server.
+- **SSH agent**: choose `agent`; Paramiko uses the tio-server process's agent
+  (Pageant/OpenSSH agent depending on platform). Covered by a unit test, not by a
+  real agent in this environment.
+- **~/.ssh/config import**: the Connections page previews aliases from
+  `~/.ssh/config` (Host/HostName/User/Port/IdentityFile) and imports selected
+  profiles. ProxyJump entries are shown but imported as direct connections.
 
 ## Verification
 

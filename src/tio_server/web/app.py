@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import platform as platform_mod
+import posixpath
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from mcp.server.transport_security import TransportSecuritySettings
@@ -29,6 +30,7 @@ from ..mcp import build_mcp_server
 from ..observability import setup_logging
 from ..sessions import Session, SessionManager
 from ..ssh import SshManager, SshProfileStore
+from ..ssh.importers import parse_ssh_config
 from ..transcript import now_iso
 from .ttyd_supervisor import TtydSupervisor
 
@@ -230,9 +232,10 @@ class SshHostBody(BaseModel):
     host: str
     port: int = Field(default=22, ge=1, le=65535)
     username: str = ""
-    auth: Literal["password", "key"] = "password"
+    auth: Literal["password", "key", "agent", "interactive"] = "password"
     key_file: str = ""
     known_hosts: str = ""
+    jump_host_id: str = ""
     term: str = "xterm-256color"
     connect_timeout_s: int = Field(default=10, ge=1, le=120)
 
@@ -240,8 +243,20 @@ class SshHostBody(BaseModel):
 class SshConnectBody(BaseModel):
     password: str | None = None
     passphrase: str | None = None
+    jump_password: str | None = None
+    jump_passphrase: str | None = None
+    responses: list[str] = Field(default_factory=list)
     cols: int = Field(default=120, ge=20, le=400)
     rows: int = Field(default=30, ge=5, le=200)
+
+
+class SftpPathBody(BaseModel):
+    path: str
+
+
+class SftpRenameBody(BaseModel):
+    path: str
+    new_path: str
 
 
 # ------------------------------------------------------------------- app factory
@@ -471,6 +486,12 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_list_hosts(rec: AdminSession = Depends(admin_session)):
         return {"hosts": ssh_profiles.list()}
 
+    @app.get("/api/ssh/config")
+    async def ssh_config_candidates(rec: AdminSession = Depends(admin_session)):
+        path = Path.home() / ".ssh" / "config"
+        hosts = await asyncio.to_thread(parse_ssh_config, path)
+        return {"path": str(path), "hosts": hosts}
+
     @app.post("/api/ssh/hosts", status_code=201)
     async def ssh_create_host(body: SshHostBody, rec: AdminSession = Depends(csrf_guard)):
         host = ssh_profiles.create(body.model_dump(exclude_none=True))
@@ -503,6 +524,9 @@ def create_app(config: Config) -> FastAPI:
             host_id,
             password=body.password,
             passphrase=body.passphrase,
+            jump_password=body.jump_password,
+            jump_passphrase=body.jump_passphrase,
+            responses=body.responses,
             cols=body.cols,
             rows=body.rows,
         )
@@ -537,6 +561,79 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_test_host(host_id: str, rec: AdminSession = Depends(csrf_guard)):
         result = await asyncio.to_thread(ssh_manager.test, host_id)
         return result
+
+    # ------------------------------------------------------------------ SFTP
+    @app.get("/api/ssh/sessions/{session_id}/sftp/list")
+    async def ssh_sftp_list(
+        session_id: str,
+        path: str = "/",
+        rec: AdminSession = Depends(admin_session),
+    ):
+        sess = ssh_manager.get(session_id)
+        return await asyncio.to_thread(sess.sftp_list, path)
+
+    @app.get("/api/ssh/sessions/{session_id}/sftp/download")
+    async def ssh_sftp_download(
+        session_id: str,
+        path: str,
+        rec: AdminSession = Depends(admin_session),
+    ):
+        sess = ssh_manager.get(session_id)
+        data = await asyncio.to_thread(sess.sftp_read, path, max_bytes=32 * 1024 * 1024)
+        filename = posixpath.basename(path).replace('"', "") or "download"
+        return Response(
+            content=data,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.post("/api/ssh/sessions/{session_id}/sftp/upload")
+    async def ssh_sftp_upload(
+        session_id: str,
+        path: str,
+        file: UploadFile = File(...),
+        rec: AdminSession = Depends(csrf_guard),
+    ):
+        sess = ssh_manager.get(session_id)
+        data = await file.read(32 * 1024 * 1024 + 1)
+        if len(data) > 32 * 1024 * 1024:
+            raise ToolFailure("INVALID_ARGUMENT", "upload larger than 32 MiB")
+        written = await asyncio.to_thread(sess.sftp_write, path, data)
+        manager.audit.write("ssh.sftp_upload", session=session_id, path=path, bytes=written)
+        return {"path": path, "bytes": written}
+
+    @app.post("/api/ssh/sessions/{session_id}/sftp/mkdir")
+    async def ssh_sftp_mkdir(
+        session_id: str,
+        body: SftpPathBody,
+        rec: AdminSession = Depends(csrf_guard),
+    ):
+        sess = ssh_manager.get(session_id)
+        path = await asyncio.to_thread(sess.sftp_mkdir, body.path)
+        manager.audit.write("ssh.sftp_mkdir", session=session_id, path=path)
+        return {"path": path}
+
+    @app.post("/api/ssh/sessions/{session_id}/sftp/delete")
+    async def ssh_sftp_delete(
+        session_id: str,
+        body: SftpPathBody,
+        rec: AdminSession = Depends(csrf_guard),
+    ):
+        sess = ssh_manager.get(session_id)
+        path = await asyncio.to_thread(sess.sftp_delete, body.path)
+        manager.audit.write("ssh.sftp_delete", session=session_id, path=path)
+        return {"path": path}
+
+    @app.post("/api/ssh/sessions/{session_id}/sftp/rename")
+    async def ssh_sftp_rename(
+        session_id: str,
+        body: SftpRenameBody,
+        rec: AdminSession = Depends(csrf_guard),
+    ):
+        sess = ssh_manager.get(session_id)
+        old, new = await asyncio.to_thread(sess.sftp_rename, body.path, body.new_path)
+        manager.audit.write("ssh.sftp_rename", session=session_id, old=old, new=new)
+        return {"path": new}
 
     @app.post("/api/ssh/sessions/{session_id}/disconnect")
     async def ssh_disconnect(session_id: str, rec: AdminSession = Depends(csrf_guard)):
