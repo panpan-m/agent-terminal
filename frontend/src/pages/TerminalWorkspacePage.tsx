@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Cable, Server } from "lucide-react";
+import { Cable, Loader2, Server, X } from "lucide-react";
 
 import { SshTerminalPage } from "@/pages/SshTerminalPage";
 import { TerminalPage } from "@/pages/TerminalPage";
@@ -23,6 +23,7 @@ export function TerminalWorkspacePage({
   onSelectSerial,
   onSelectSsh,
   onOpenSessions,
+  onEmpty,
 }: {
   initialKind: TerminalKind;
   sessionId?: string;
@@ -33,8 +34,10 @@ export function TerminalWorkspacePage({
   onSelectSerial: (id: string) => void;
   onSelectSsh: (id: string) => void;
   onOpenSessions: () => void;
+  onEmpty: () => void;
 }) {
   const [sshSessions, setSshSessions] = useState<SshSessionStatus[]>([]);
+  const [closingId, setClosingId] = useState<string | null>(null);
 
   const loadSsh = useCallback(async () => {
     try {
@@ -66,6 +69,25 @@ export function TerminalWorkspacePage({
 
   const activeId =
     activeKind === "ssh" ? sshCurrent?.session_id : serialCurrent?.session_id;
+
+  const closeSshTab = async (id: string) => {
+    setClosingId(id);
+    try {
+      await api.sshDisconnect(id);
+    } catch (error) {
+      notify(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`, "error");
+      setClosingId(null);
+      return;
+    }
+    const remaining = sshSessions.filter((item) => item.session_id !== id);
+    setSshSessions(remaining);
+    setClosingId(null);
+    if (activeKind === "ssh" && activeId === id) {
+      if (remaining[0]) onSelectSsh(remaining[0].session_id);
+      else if (serialCurrent) onSelectSerial(serialCurrent.session_id);
+      else onEmpty();
+    }
+  };
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-950">
@@ -100,33 +122,51 @@ export function TerminalWorkspacePage({
           </button>
         ))}
         {sshSessions.map((item) => (
-          <button
+          <div
             key={`ssh-${item.session_id}`}
-            type="button"
-            onClick={() => onSelectSsh(item.session_id)}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-t border-b-2 px-2.5 py-1 text-[11px] transition-colors",
+              "group flex shrink-0 items-center rounded-t border-b-2 transition-colors",
               activeKind === "ssh" && activeId === item.session_id
                 ? "border-emerald-400 bg-zinc-900 text-zinc-100"
                 : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
             )}
             title={`${item.username}@${item.host}:${item.port}`}
           >
-            <Server className="h-3 w-3 shrink-0" />
-            <span className="max-w-[12rem] truncate">{item.name}</span>
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                item.state === "open"
-                  ? "bg-emerald-400"
-                  : item.state === "reconnecting" || item.state === "connecting"
-                    ? "bg-amber-400"
-                    : item.state === "error"
-                      ? "bg-red-400"
-                      : "bg-zinc-600",
+            <button
+              type="button"
+              onClick={() => onSelectSsh(item.session_id)}
+              className="flex items-center gap-1.5 py-1 pl-2.5 pr-1 text-[11px]"
+            >
+              <Server className="h-3 w-3 shrink-0" />
+              <span className="max-w-[12rem] truncate">{item.name}</span>
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  item.state === "open"
+                    ? "bg-emerald-400"
+                    : item.state === "reconnecting" || item.state === "connecting"
+                      ? "bg-amber-400"
+                      : item.state === "error"
+                        ? "bg-red-400"
+                        : "bg-zinc-600",
+                )}
+              />
+            </button>
+            <button
+              type="button"
+              data-session-id={item.session_id}
+              disabled={closingId === item.session_id}
+              onClick={() => void closeSshTab(item.session_id)}
+              className="mr-1 rounded p-0.5 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+              title="disconnect this SSH session and close its tab"
+            >
+              {closingId === item.session_id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <X className="h-3 w-3" />
               )}
-            />
-          </button>
+            </button>
+          </div>
         ))}
         <button
           type="button"

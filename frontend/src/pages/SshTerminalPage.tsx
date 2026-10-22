@@ -11,7 +11,6 @@ import {
   Pencil,
   RefreshCw,
   Search,
-  Square,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -98,7 +97,6 @@ export function SshTerminalPage({
   const [query, setQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [generation, setGeneration] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [filesPath, setFilesPath] = useState("");
   const [filesDraft, setFilesDraft] = useState("");
@@ -376,19 +374,6 @@ export function SshTerminalPage({
     else searchRef.current?.findNext(query, { incremental: true });
   };
 
-  const disconnect = async () => {
-    setBusy(true);
-    try {
-      await api.sshDisconnect(sessionId);
-      notify("SSH session disconnected", "success");
-      onBack();
-    } catch (error) {
-      notify(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`, "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const stateTone =
     status?.state === "open"
       ? "text-emerald-300"
@@ -454,10 +439,6 @@ export function SshTerminalPage({
             title="browser-reserved keys and alternatives"
           >
             <Keyboard className="h-3.5 w-3.5" /> Keys
-          </Button>
-          <Button size="sm" variant="danger" onClick={() => void disconnect()} disabled={busy}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
-            Disconnect
           </Button>
         </div>
       </header>

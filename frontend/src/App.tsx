@@ -202,6 +202,7 @@ export default function App() {
             onSelectSerial={(id) => navigate("terminal", id)}
             onSelectSsh={(id) => navigate("ssh", id)}
             onOpenSessions={() => navigate("sessions")}
+            onEmpty={() => navigate("terminal")}
           />
         ) : null}
 
@@ -218,6 +219,7 @@ export default function App() {
             onSelectSerial={(id) => navigate("terminal", id)}
             onSelectSsh={(id) => navigate("ssh", id)}
             onOpenSessions={() => navigate("connections")}
+            onEmpty={() => navigate("terminal")}
           />
         ) : null}
 

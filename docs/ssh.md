@@ -103,8 +103,10 @@ terminal replays the last 64 KiB.
   disconnect it. Reopen from the **Open SSH sessions** table.
 - **Multiple sessions** appear as tabs at the top of the unified Terminal page
   together with serial sessions; switching reattaches to that session's
-  server-side ring buffer, so scrollback continues. The SSH terminal view keeps
-  its own header (BREAK/Find/Files/Log/Disconnect) but shares the global tab bar.
+  server-side ring buffer, so scrollback continues. Each SSH tab has an **×**:
+  it disconnects that SSH session, closes the tab and stays in Terminal (the
+  next session, or the serial session, becomes active; it never jumps back to
+  Sessions).
 - **Auto reconnect** is enabled per host (`auto_reconnect`, default true). After
   a transport drop the server retries with exponential backoff (2s→30s, max 8),
   reports `reconnecting`, then resumes the same ring/cursor. Credentials needed
