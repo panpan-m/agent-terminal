@@ -18,16 +18,22 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 ## Security model
 
-- **No secrets on disk.** Host profiles contain host/port/user/auth type/key
+- **No secrets by default.** Host profiles contain host/port/user/auth type/key
   *path*/known_hosts path only. Passwords and key passphrases are sent in the
   connect request, kept in memory for that connection and never returned by the
   API, written to the transcript or included in audit events.
+- **Optional Remember.** If *Remember credentials on this server* is checked, the
+  password/passphrase/jump credentials are encrypted with a per-install Fernet
+  key (`ssh-secrets.key`, 0600) and stored in `ssh-secrets.json`. The API only
+  returns `has_saved_secrets` / `saved_fields`; it never returns the values.
+  `Forget` clears them. This is convenience storage, not a hardware vault: anyone
+  who can read the data directory can read the key too.
 - **Strict host keys.** Both the system `known_hosts` and the profile's
   `known_hosts` are loaded; Paramiko uses `RejectPolicy`, so an unknown or
   changed key aborts the connection.
 - **Operator-created sessions.** Only the admin UI/API can create an SSH session.
-  Phase 3 MCP tools will operate existing sessions; there is no agent-facing
-  "connect to arbitrary host" tool.
+  MCP tools operate existing sessions; there is no agent-facing "connect to
+  arbitrary host" tool.
 - **Audit + transcript.** `ssh.connect`, `ssh.connect_failed`, `ssh.disconnect`
   go to `audit.log`; RX/TX bytes and events go to the per-session transcript.
 - **Key files stay local to the server.** The browser only submits a path; file
@@ -44,6 +50,16 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 5. **Connect**; the terminal opens at `#/ssh/<session-id>`.
 
 Password auth works the same way; the password prompt appears per connection.
+
+### Remember credentials
+
+Check **Remember credentials on this server** in the connect dialog to store the
+password/passphrase/jump credentials encrypted. On the next connect the host card
+shows `credentials saved`; the dialog offers **Use credentials saved on this
+server** and leaves the password field blank. Use **Forget** on the host card to
+delete the encrypted record. The API never returns the plaintext.
+
+![Remember credentials](screenshots/21-ssh-remember.png)
 
 ## Host key errors
 

@@ -29,7 +29,7 @@ from ..errors import CONFLICT, UNAUTHORIZED, ToolFailure
 from ..mcp import build_mcp_server
 from ..observability import setup_logging
 from ..sessions import Session, SessionManager
-from ..ssh import SshManager, SshProfileStore
+from ..ssh import SshManager, SshProfileStore, SshSecretStore
 from ..ssh.importers import parse_ssh_config
 from ..transcript import now_iso
 from .ttyd_supervisor import TtydSupervisor
@@ -247,6 +247,8 @@ class SshConnectBody(BaseModel):
     jump_password: str | None = None
     jump_passphrase: str | None = None
     responses: list[str] = Field(default_factory=list)
+    use_saved: bool = True
+    remember: bool = False
     cols: int = Field(default=120, ge=20, le=400)
     rows: int = Field(default=30, ge=5, le=200)
 
@@ -265,11 +267,13 @@ def create_app(config: Config) -> FastAPI:
     logger = setup_logging(config.log_dir, config.server.log_level)
     manager = SessionManager(config, on_config_changed=_save_config)
     ssh_profiles = SshProfileStore(config.data_dir)
+    ssh_secrets = SshSecretStore(config.data_dir)
     ssh_manager = SshManager(
         config,
         ssh_profiles,
         transcripts=manager.transcripts,
         audit=manager.audit,
+        secrets=ssh_secrets,
     )
     auth = AuthManager(
         session_secret=config.auth.session_secret,
@@ -359,6 +363,7 @@ def create_app(config: Config) -> FastAPI:
     app.state.manager = manager
     app.state.ssh = ssh_manager
     app.state.ssh_profiles = ssh_profiles
+    app.state.ssh_secrets = ssh_secrets
     app.state.auth = auth
     app.state.ttyd = ttyd
     app.state.logger = logger
@@ -485,7 +490,12 @@ def create_app(config: Config) -> FastAPI:
     # ------------------------------------------------------------------ ssh
     @app.get("/api/ssh/hosts")
     async def ssh_list_hosts(rec: AdminSession = Depends(admin_session)):
-        return {"hosts": ssh_profiles.list()}
+        hosts = ssh_profiles.list()
+        for host in hosts:
+            fields = ssh_secrets.fields(host["id"])
+            host["has_saved_secrets"] = bool(fields)
+            host["saved_fields"] = fields
+        return {"hosts": hosts}
 
     @app.get("/api/ssh/config")
     async def ssh_config_candidates(rec: AdminSession = Depends(admin_session)):
@@ -515,8 +525,16 @@ def create_app(config: Config) -> FastAPI:
                     {"host_id": host_id, "session_id": session["session_id"]},
                 )
         ssh_profiles.delete(host_id)
+        ssh_secrets.clear(host_id)
         manager.audit.write("ssh.host_deleted", host_id=host_id)
         return {"ok": True}
+
+    @app.delete("/api/ssh/hosts/{host_id}/secrets")
+    async def ssh_forget_secrets(host_id: str, rec: AdminSession = Depends(csrf_guard)):
+        ssh_profiles.get(host_id)
+        cleared = ssh_secrets.clear(host_id)
+        manager.audit.write("ssh.credentials_cleared", host_id=host_id, cleared=cleared)
+        return {"ok": True, "cleared": cleared}
 
     @app.post("/api/ssh/hosts/{host_id}/connect")
     async def ssh_connect(host_id: str, body: SshConnectBody, rec: AdminSession = Depends(csrf_guard)):
@@ -528,6 +546,8 @@ def create_app(config: Config) -> FastAPI:
             jump_password=body.jump_password,
             jump_passphrase=body.jump_passphrase,
             responses=body.responses,
+            use_saved=body.use_saved,
+            remember=body.remember,
             cols=body.cols,
             rows=body.rows,
         )

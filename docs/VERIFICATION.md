@@ -4,7 +4,7 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **107 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **109 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
@@ -120,7 +120,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (107 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (109 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -255,6 +255,20 @@ operator-opened SSH session to the Pi:
 - **keyboard-interactive/2FA**: backend handler and UI response list are
   implemented, but no 2FA host was available; **not** end-to-end verified.
 
+### 10. SSH remembered credentials
+
+Against the real Pi with a temporary `tiotest` account:
+
+1. first connect sent `password` + `remember=true`; `GET /api/ssh/hosts` then
+   returned `has_saved_secrets=true`, `saved_fields=["password"]`, and no plaintext;
+2. after disconnect, a second connect sent **no password**, only
+   `use_saved=true`, and returned `state=open` as `tiotest`;
+3. `run/ssh-secrets.json` contained no plaintext (`TioTest!123` absent) and
+   `ssh-secrets.key` existed;
+4. `DELETE /api/ssh/hosts/{id}/secrets` returned `cleared=true` and the host
+   flags went back to false;
+5. the profile and the temporary Linux user were removed afterwards.
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
@@ -266,10 +280,11 @@ operator-opened SSH session to the Pi:
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
 | SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 15 tools total |
-| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 107 |
+| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 109 |
 | SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
 | Unified Terminal: serial + SSH in one tab bar | ✅ | COM5 + two SSH sessions; screenshots 19/20; per-tab × disconnect verified |
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
+| SSH remembered credentials | ✅ | encrypted at rest; second connect without password; Forget clears |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |

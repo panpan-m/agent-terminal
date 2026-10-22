@@ -13,6 +13,7 @@ from ..config import Config
 from ..errors import CONFLICT, NOT_FOUND, SSH_UNREACHABLE, ToolFailure
 from ..transcript import AuditLog, TranscriptRegistry
 from .profiles import SshHost, SshProfileStore
+from .secrets import SshSecretStore
 from .session import SshSession, _fingerprint
 
 
@@ -24,12 +25,14 @@ class SshManager:
         *,
         transcripts: TranscriptRegistry,
         audit: AuditLog,
+        secrets: SshSecretStore | None = None,
         max_sessions: int | None = None,
     ) -> None:
         self.config = config
         self.profiles = profiles
         self.transcripts = transcripts
         self.audit = audit
+        self.secrets = secrets or SshSecretStore(config.data_dir)
         self.max_sessions = max_sessions or max(2, int(config.security.max_sessions))
         self._sessions: dict[str, SshSession] = {}
         self._lock = threading.RLock()
@@ -43,10 +46,21 @@ class SshManager:
         jump_password: str | None = None,
         jump_passphrase: str | None = None,
         responses: list[str] | None = None,
+        use_saved: bool = True,
+        remember: bool = False,
         cols: int = 120,
         rows: int = 30,
     ) -> SshSession:
         host: SshHost = self.profiles.get(host_id)
+        saved = self.secrets.get(host_id) if use_saved else {}
+        if not password:
+            password = saved.get("password")
+        if not passphrase:
+            passphrase = saved.get("passphrase")
+        if not jump_password:
+            jump_password = saved.get("jump_password")
+        if not jump_passphrase:
+            jump_passphrase = saved.get("jump_passphrase")
         with self._lock:
             if len(self._sessions) >= self.max_sessions:
                 raise ToolFailure(CONFLICT, "maximum number of SSH sessions reached")
@@ -67,6 +81,18 @@ class SshManager:
             with self._lock:
                 self._sessions.pop(session_id, None)
             raise
+        if remember:
+            fields = self.secrets.save(
+                host_id,
+                {
+                    "password": password,
+                    "passphrase": passphrase,
+                    "jump_password": jump_password,
+                    "jump_passphrase": jump_passphrase,
+                },
+            )
+            if fields:
+                self.audit.write("ssh.credentials_saved", host_id=host_id, fields=fields)
         return session
 
     def test(self, host_id: str) -> dict[str, Any]:

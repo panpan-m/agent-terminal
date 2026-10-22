@@ -83,9 +83,12 @@ MCP (/mcp)
 }
 ```
 
-**秘密不落盘**：
+**秘密默认不落盘**：
 
 - `password`、`passphrase` 只出现在 `POST /connect` 请求体，内存中使用，不写 JSON/日志/transcript。
+- 可选 **Remember credentials**：用 `ssh-secrets.key`（0600）加密后写入
+  `ssh-secrets.json`；API 只返回 `has_saved_secrets` / `saved_fields`，不返回明文；
+  `Forget` 删除。该密钥与密文同目录，属于便利存储而非硬件保险箱。
 - 私钥文件本身由用户管理；路径可配置，内容不读取进配置。
 - 后续可选 OS keyring/加密存储，但 MVP 不做“保存密码”。
 
@@ -143,7 +146,7 @@ Paramiko 是同步库：
 | POST | `/api/ssh/hosts` | 新建（CSRF） |
 | PUT | `/api/ssh/hosts/{id}` | 修改（CSRF） |
 | DELETE | `/api/ssh/hosts/{id}` | 删除（CSRF）；若会话仍打开则拒绝 |
-| POST | `/api/ssh/hosts/{id}/connect` | body `{password?, passphrase?, cols?, rows?}`；返回会话 |
+| POST | `/api/ssh/hosts/{id}/connect` | body `{password?, passphrase?, use_saved?, remember?, cols?, rows?}`；返回会话 |
 | GET | `/api/ssh/sessions` | 当前 SSH 会话列表 |
 | GET | `/api/ssh/sessions/{sid}` | 状态 |
 | POST | `/api/ssh/sessions/{sid}/disconnect` | 断开 |
@@ -226,7 +229,7 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
 ## 9. 安全边界
 
-- **凭据**：不落盘、不回显、不进日志/transcript；连接完成后从请求对象丢弃。
+- **凭据**：默认不落盘、不回显、不进日志/transcript；可选 Remember 加密存储，API 不回传明文。
 - **主机密钥**：严格 known_hosts；未知/变更即拒绝；错误里只给指纹，不给密钥内容。
 - **SSRF/横向移动**：host 只能来自管理员创建的 profile；agent 不能指定 host。
 - **CSRF/Origin**：沿用现有 `csrf_guard`、`_ws_auth`。

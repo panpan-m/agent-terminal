@@ -183,6 +183,8 @@ export interface SshHost {
   connect_timeout_s: number;
   created_at: string;
   updated_at: string;
+  has_saved_secrets?: boolean;
+  saved_fields?: string[];
 }
 
 export interface SshHostInput {
@@ -234,6 +236,8 @@ export interface SshConnectInput {
   jump_password?: string;
   jump_passphrase?: string;
   responses?: string[];
+  use_saved?: boolean;
+  remember?: boolean;
   cols?: number;
   rows?: number;
 }

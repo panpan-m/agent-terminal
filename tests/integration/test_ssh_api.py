@@ -57,6 +57,36 @@ def test_ssh_host_crud_and_auth_gate(tmp_path):
         assert client.get("/api/ssh/hosts").json()["hosts"] == []
 
 
+def test_ssh_saved_credentials_flags_and_forget(tmp_path):
+    app, _, secrets = make_app(tmp_path)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        csrf = login(client, secrets)
+        created = client.post(
+            "/api/ssh/hosts",
+            json={
+                "id": "saved",
+                "name": "Saved",
+                "host": "127.0.0.1",
+                "port": 22,
+                "username": "root",
+                "auth": "password",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert created.status_code == 201, created.text
+        app.state.ssh_secrets.save("saved", {"password": "top-secret"})
+
+        listed = client.get("/api/ssh/hosts").json()["hosts"][0]
+        assert listed["has_saved_secrets"] is True
+        assert listed["saved_fields"] == ["password"]
+        assert "top-secret" not in str(listed)
+
+        cleared = client.delete("/api/ssh/hosts/saved/secrets", headers={"X-CSRF-Token": csrf})
+        assert cleared.status_code == 200
+        listed = client.get("/api/ssh/hosts").json()["hosts"][0]
+        assert listed["has_saved_secrets"] is False
+
+
 def test_ssh_test_endpoint_is_structured(tmp_path):
     app, _, secrets = make_app(tmp_path)
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:

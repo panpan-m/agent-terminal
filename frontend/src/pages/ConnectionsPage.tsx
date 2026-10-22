@@ -65,6 +65,8 @@ export function ConnectionsPage({
   const [jumpPassword, setJumpPassword] = useState("");
   const [jumpPassphrase, setJumpPassphrase] = useState("");
   const [responsesText, setResponsesText] = useState("");
+  const [useSaved, setUseSaved] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectDetails, setConnectDetails] = useState<Record<string, unknown> | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -164,6 +166,8 @@ export function ConnectionsPage({
     setJumpPassword("");
     setJumpPassphrase("");
     setResponsesText("");
+    setUseSaved(Boolean(host.has_saved_secrets));
+    setRemember(false);
     setConnectError(null);
     setConnectDetails(null);
   };
@@ -171,7 +175,9 @@ export function ConnectionsPage({
   const connect = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!connectTarget) return;
-    if (connectTarget.auth === "password" && !password) {
+    const savedPassword =
+      useSaved && Boolean(connectTarget.saved_fields?.includes("password"));
+    if (connectTarget.auth === "password" && !password && !savedPassword) {
       setConnectError("password is required");
       return;
     }
@@ -187,6 +193,8 @@ export function ConnectionsPage({
           .split("\n")
           .map((line) => line.trim())
           .filter(Boolean),
+        use_saved: useSaved,
+        remember,
         cols: 120,
         rows: 30,
       });
@@ -224,6 +232,17 @@ export function ConnectionsPage({
       setTestError(`${failure.code ?? "ERROR"}: ${failure.message}`);
     } finally {
       setTestingId(null);
+    }
+  };
+
+  const forgetSecrets = async (host: SshHost) => {
+    if (!window.confirm(`Forget saved credentials for ${host.name}?`)) return;
+    try {
+      await api.sshForgetSecrets(host.id);
+      notify("saved credentials cleared", "success");
+      await load();
+    } catch (error) {
+      notify(`${(error as ApiFailure).code ?? "ERROR"}: ${(error as ApiFailure).message}`, "error");
     }
   };
 
@@ -353,6 +372,11 @@ export function ConnectionsPage({
                       via {host.jump_host_id}
                     </span>
                   ) : null}
+                  {host.has_saved_secrets ? (
+                    <span className="rounded border border-emerald-500/30 px-1.5 py-0.5 text-emerald-300">
+                      credentials saved
+                    </span>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <Button size="sm" variant="primary" onClick={() => startConnect(host)}>
@@ -374,6 +398,11 @@ export function ConnectionsPage({
                   <Button size="sm" variant="ghost" onClick={() => openEdit(host)}>
                     <Pencil className="h-3.5 w-3.5" /> Edit
                   </Button>
+                  {host.has_saved_secrets ? (
+                    <Button size="sm" variant="ghost" onClick={() => void forgetSecrets(host)}>
+                      <Trash2 className="h-3.5 w-3.5" /> Forget
+                    </Button>
+                  ) : null}
                   <Button size="sm" variant="ghost" onClick={() => void remove(host)}>
                     <Trash2 className="h-3.5 w-3.5" /> Delete
                   </Button>
@@ -582,7 +611,7 @@ export function ConnectionsPage({
       <Dialog open={Boolean(connectTarget)} onOpenChange={(open) => !open && setConnectTarget(null)}>
         <DialogContent
           title={connectTarget ? `Connect to ${connectTarget.name}` : "Connect"}
-          description="Credentials are used for this connection only and are not written to disk."
+          description="Credentials are used for this connection; when Remember is checked they are encrypted on the server."
         >
           {connectTarget ? (
             <form className="space-y-3" onSubmit={connect}>
@@ -604,12 +633,22 @@ export function ConnectionsPage({
                   />
                 </Field>
               ) : connectTarget.auth === "password" ? (
-                <Field label="Password">
+                <Field
+                  label="Password"
+                  hint={
+                    connectTarget.has_saved_secrets && useSaved
+                      ? "saved on the server; leave blank to use it"
+                      : undefined
+                  }
+                >
                   <Input
                     type="password"
                     autoFocus
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
+                    placeholder={
+                      connectTarget.has_saved_secrets && useSaved ? "saved password" : undefined
+                    }
                   />
                 </Field>
               ) : connectTarget.auth === "key" ? (
@@ -619,6 +658,9 @@ export function ConnectionsPage({
                     autoFocus
                     value={passphrase}
                     onChange={(event) => setPassphrase(event.target.value)}
+                    placeholder={
+                      connectTarget.has_saved_secrets && useSaved ? "saved passphrase" : undefined
+                    }
                   />
                 </Field>
               ) : (
@@ -626,6 +668,38 @@ export function ConnectionsPage({
                   Authentication uses the SSH agent of the tio-server process.
                 </p>
               )}
+
+              {connectTarget.has_saved_secrets ? (
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-emerald-500"
+                    checked={useSaved}
+                    onChange={(event) => setUseSaved(event.target.checked)}
+                  />
+                  <span className="text-[11px] text-zinc-300">
+                    Use credentials saved on this server
+                    {connectTarget.saved_fields?.length
+                      ? ` (${connectTarget.saved_fields.join(", ")})`
+                      : ""}
+                  </span>
+                </label>
+              ) : null}
+
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-emerald-500"
+                  checked={remember}
+                  onChange={(event) => setRemember(event.target.checked)}
+                />
+                <span className="text-[11px] text-zinc-300">
+                  Remember credentials on this server
+                  <span className="block text-[10px] text-zinc-500">
+                    Encrypted at rest; the API never returns the password. Clear it later with Forget.
+                  </span>
+                </span>
+              </label>
 
               {connectJump ? (
                 <div className="space-y-2 rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2">

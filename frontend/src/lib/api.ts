@@ -165,6 +165,10 @@ export const api = {
     }),
   sshTestHost: (id: string) =>
     request<SshTestResult>(`/api/ssh/hosts/${encodeURIComponent(id)}/test`, { method: "POST" }),
+  sshForgetSecrets: (id: string) =>
+    request<{ ok: boolean; cleared: boolean }>(`/api/ssh/hosts/${encodeURIComponent(id)}/secrets`, {
+      method: "DELETE",
+    }),
   sshSftpList: (sessionId: string, path: string) =>
     request<SshFileList>(
       `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/list?path=${encodeURIComponent(path)}`,
