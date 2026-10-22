@@ -315,6 +315,9 @@ tracefs on /sys/kernel/tracing type tracefs
 `__arm64_sys_newuname` 这一棵调用树的缩进与耗时，而不是期待很长的调用链。
 关键点：先 `tracing_on=0` 再换 tracer、清理时恢复 `nop` 并清空 `trace`，避免影响后续测量。
 
+完整实测（5 次采样、原始 trace、统计与清理）见
+[`ftrace-uname-report.md`](./ftrace-uname-report.md)。
+
 **风险**：写 tracefs；不影响业务，但必须清理。
 
 ---
