@@ -383,3 +383,11 @@ serial_write、serial_break、serial_command、serial_expect。
 | 风险意识 | 不改 cmdline、不重启、不写块设备 |
 | 结论 | 能区分“内核 bug / 驱动/固件提示 / 配置导致” |
 | 修复 | 给出可验证的恢复步骤与验证命令 |
+
+---
+
+## 进阶题
+
+需要深 ftrace、块 I/O、hung task、模块或调试内核能力时，见
+[`kernel-advanced-questions.md`](./kernel-advanced-questions.md)（含一次真实的
+`do_sys_openat2` 深调用图：1275 行 trace、39.685 µs）。
