@@ -3,6 +3,7 @@ import { Download, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import type { SessionStatus, SshSessionStatus, TranscriptEvent } from "@/lib/types";
@@ -110,7 +111,7 @@ export function LogsPage({
         </div>
         <div className="flex items-center gap-2">
           {tab === "transcript" ? (
-            <select
+            <Select
               value={`${selected.kind}:${selected.id}`}
               onChange={(event) => {
                 const [kind, id] = event.target.value.split(":");
@@ -120,7 +121,7 @@ export function LogsPage({
                     : sshSessions.find((s) => s.session_id === id)?.name ?? id;
                 setSelected({ kind, id, name } as Selection);
               }}
-              className="h-8 rounded-md border border-zinc-700 bg-zinc-950/60 px-2 text-xs text-zinc-200"
+              className="h-8 w-auto px-2 text-xs"
             >
               <optgroup label="Serial">
                 {sessions.map((item) => (
@@ -138,7 +139,7 @@ export function LogsPage({
                   ))}
                 </optgroup>
               ) : null}
-            </select>
+            </Select>
           ) : null}
           <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh

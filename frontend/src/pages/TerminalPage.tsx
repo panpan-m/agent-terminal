@@ -17,6 +17,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
 import { Badge, StateBadge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatusPanel } from "@/components/StatusPanel";
 import { TerminalSearchBar } from "@/components/TerminalSearchBar";
@@ -255,10 +256,10 @@ export function TerminalPage({
         </div>
         {showSessionPicker ? (
           <>
-            <select
+            <Select
               value={selectedId ?? ""}
               onChange={(event) => onSelect(event.target.value)}
-              className="h-8 rounded-md border border-zinc-700 bg-zinc-950/60 px-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
+              className="h-8 w-auto px-2 text-xs"
             >
               {sessions.length === 0 ? <option value="">no sessions</option> : null}
               {sessions.map((item) => (
@@ -266,7 +267,7 @@ export function TerminalPage({
                   {item.name} · {item.port}
                 </option>
               ))}
-            </select>
+            </Select>
             {session ? <StateBadge state={session.state} /> : null}
             {session ? (
               <span className="font-mono text-[11px] text-zinc-500">

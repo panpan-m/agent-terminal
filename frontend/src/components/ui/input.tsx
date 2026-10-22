@@ -24,7 +24,9 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
       ref={ref}
       data-input=""
       className={cn(
-        "h-9 w-full appearance-none rounded-md border border-zinc-700 bg-zinc-950/60 px-3 text-sm text-zinc-100",
+        // no appearance-none: the native arrow and popup follow the theme's
+        // color-scheme, and `select option` in index.css paints the list
+        "h-9 w-full rounded-md border border-zinc-700 bg-zinc-950/60 px-3 text-sm text-zinc-100",
         "focus:border-emerald-500/60 focus:outline-none focus:ring-1 focus:ring-emerald-500/40",
         className,
       )}

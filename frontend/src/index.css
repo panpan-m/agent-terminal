@@ -73,6 +73,12 @@ code {
   font-family: var(--font-mono, ui-monospace), SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* native select popups follow the active palette (Chromium honours option bg) */
+select option {
+  background-color: var(--color-zinc-900, #18181b);
+  color: var(--color-zinc-100, #f4f4f5);
+}
+
 html[data-theme="pixel"] .rounded-full {
   border-radius: 2px;
 }
