@@ -21,6 +21,10 @@ server keeps transport sessions; the *serial* session is always selected by the
 
 ## Tools
 
+Fifteen tools: eight for serial sessions and seven for SSH sessions. The SSH
+tools never connect or disconnect — they only operate sessions the operator has
+already opened in the UI.
+
 | Tool | Read-only | Purpose |
 |---|---|---|
 | `serial_sessions` | yes | list configured sessions |
@@ -31,9 +35,18 @@ server keeps transport sessions; the *serial* session is always selected by the
 | `serial_break` | no | send a serial framing BREAK (`duration_ms`, default 250) |
 | `serial_command` | no | write one line and collect the response (expect, or a POSIX end marker with exit code) |
 | `serial_expect` | yes | wait for a pattern without writing |
+| `ssh_sessions` | yes | list SSH sessions the operator has already opened |
+| `ssh_status` | yes | host/user/state, host-key fingerprint, cipher/MAC, counters |
+| `ssh_read` | yes | buffered SSH output by cursor or tail |
+| `ssh_tail` | yes | newest N lines from an SSH session |
+| `ssh_write` | no | raw input to the interactive SSH shell |
+| `ssh_exec` | no | separate exec channel: stdout, stderr, exit code |
+| `ssh_expect` | yes | wait for a pattern in SSH output |
 
 There is deliberately **no** `serial_open`, `serial_close` or
-`serial_configure`: only the operator configures ports.
+`serial_configure`: only the operator configures ports. Likewise there is no
+`ssh_connect` or `ssh_disconnect`: the agent can only operate SSH sessions the
+operator opened in the UI, so it cannot use the gateway as a jump host.
 
 ### `serial_read`
 

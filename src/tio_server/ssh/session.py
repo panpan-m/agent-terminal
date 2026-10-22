@@ -9,9 +9,11 @@ browser, transcript and audit behave the same way.
 from __future__ import annotations
 
 import base64
+import fnmatch
 import hashlib
 import os
 import queue
+import re
 import socket
 import threading
 import time
@@ -23,6 +25,7 @@ import paramiko
 
 from ..errors import (
     DISCONNECTED,
+    INVALID_ARGUMENT,
     ToolFailure,
 )
 from ..errors import SSH_AUTH_FAILED, SSH_ERROR, SSH_HOST_KEY_CHANGED, SSH_HOST_UNKNOWN, SSH_UNREACHABLE
@@ -407,6 +410,63 @@ class SshSession:
         max_bytes: int = 16384,
     ) -> ReadSlice:
         return self.ring.read(cursor, max_bytes, tail_bytes=tail_bytes)
+
+    def expect(
+        self,
+        pattern: str,
+        *,
+        mode: str = "literal",
+        cursor: int | None = None,
+        timeout_ms: int = 5000,
+        max_bytes: int = 16384,
+        ignore_case: bool = False,
+    ) -> tuple[ReadSlice, bool, str | None, list[str], bool]:
+        if mode not in ("literal", "regex", "glob"):
+            raise ToolFailure(INVALID_ARGUMENT, "mode must be literal, regex or glob")
+        flags = re.IGNORECASE if ignore_case else 0
+        try:
+            if mode == "literal":
+                matcher = re.compile(re.escape(pattern), flags)
+            elif mode == "glob":
+                matcher = re.compile(fnmatch.translate(pattern), flags)
+            else:
+                matcher = re.compile(pattern, flags)
+        except re.error as exc:
+            raise ToolFailure(INVALID_ARGUMENT, f"invalid pattern: {exc}") from exc
+        start = self.ring.head if cursor is None else max(0, int(cursor))
+        deadline = time.monotonic() + max(1, int(timeout_ms)) / 1000.0
+        collected = bytearray()
+        matched = False
+        match_text: str | None = None
+        groups: list[str] = []
+        truncated = False
+        while True:
+            sl = self.ring.read(start, max_bytes)
+            if sl.data:
+                collected.extend(sl.data)
+                start = sl.next_cursor
+                text = collected.decode("utf-8", "replace")
+                hit = matcher.search(text)
+                if hit is not None:
+                    matched, match_text, groups = True, hit.group(0), list(hit.groups())
+                    break
+                if len(collected) >= max_bytes:
+                    truncated = True
+                    break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            self.ring.wait_for_data(start, min(remaining, 0.05))
+        data = bytes(collected)
+        sl = ReadSlice(
+            start=(self.ring.head if cursor is None else int(cursor)),
+            end=(self.ring.head if cursor is None else int(cursor)) + len(data),
+            data=data,
+            head=self.ring.head,
+            gap=False,
+            truncated=truncated,
+        )
+        return sl, matched, match_text, groups, not matched
 
     # -------------------------------------------------------------- write path
     def write_bytes(self, data: bytes, *, source: str = "human") -> int:

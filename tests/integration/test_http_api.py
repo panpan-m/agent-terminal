@@ -160,6 +160,13 @@ def test_mcp_status_endpoint(app_bundle):
         "serial_break",
         "serial_command",
         "serial_expect",
+        "ssh_sessions",
+        "ssh_status",
+        "ssh_read",
+        "ssh_tail",
+        "ssh_write",
+        "ssh_exec",
+        "ssh_expect",
     ]
     assert any(tool["read_only"] for tool in data["tools"])
     assert any(tool["destructive"] for tool in data["tools"])

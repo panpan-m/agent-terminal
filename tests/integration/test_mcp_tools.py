@@ -40,6 +40,13 @@ async def test_tools_list_contract(mcp_setup):
         "serial_break",
         "serial_command",
         "serial_expect",
+        "ssh_sessions",
+        "ssh_status",
+        "ssh_read",
+        "ssh_tail",
+        "ssh_write",
+        "ssh_exec",
+        "ssh_expect",
     ]
     for tool in tools:
         assert tool.output_schema is not None, tool.name
@@ -48,8 +55,26 @@ async def test_tools_list_contract(mcp_setup):
     assert by_name["serial_read"].annotations.read_only_hint is True
     assert by_name["serial_write"].annotations.destructive_hint is True
     assert by_name["serial_write"].annotations.read_only_hint is False
+    assert by_name["ssh_read"].annotations.read_only_hint is True
+    assert by_name["ssh_exec"].annotations.destructive_hint is True
     # no port-management tools are exposed
     assert not any(n in names for n in ("serial_open", "serial_close", "serial_configure"))
+    assert not any(n in names for n in ("ssh_connect", "ssh_disconnect"))
+
+
+async def test_ssh_tools_require_an_operator_opened_session(mcp_setup):
+    _, mcp, _ = mcp_setup
+    res = await _call(mcp, "ssh_sessions")
+    assert res.is_error is False
+    assert _structured(res)["sessions"] == []
+
+    res = await _call(mcp, "ssh_status", {})
+    assert res.is_error is True
+    assert _structured(res)["error"]["code"] == "NO_SESSION"
+
+    res = await _call(mcp, "ssh_exec", {"command": "true"})
+    assert res.is_error is True
+    assert _structured(res)["error"]["code"] == "NO_SESSION"
 
 
 async def test_sessions_and_status(mcp_setup):

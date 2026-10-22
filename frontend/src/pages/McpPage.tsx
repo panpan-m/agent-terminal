@@ -43,7 +43,7 @@ Steps:
        toolCallTimeoutMs: 70000
 3. Restart or reload the client if its configuration requires it.
 4. Verify that the tools above are listed, then call serial_sessions with {} and
-   show me the serial sessions.
+   ssh_sessions with {} and show me the serial and SSH sessions.
 
 The token file is a secret: read it at runtime, never print its contents.`;
 }
@@ -148,7 +148,7 @@ export function McpPage({
               <CardContent className="py-3.5">
                 <p className="text-[10px] uppercase tracking-widest text-zinc-500">tools</p>
                 <p className="mt-1 text-2xl font-semibold text-zinc-100">{status.tools.length}</p>
-                <p className="mt-0.5 text-[11px] text-zinc-500">serial_* surface</p>
+                <p className="mt-0.5 text-[11px] text-zinc-500">serial + ssh surface</p>
               </CardContent>
             </Card>
           </div>

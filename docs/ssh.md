@@ -1,7 +1,8 @@
 # SSH web terminal
 
-Phase 1: saved SSH hosts, password or private-key login, strict known_hosts, an
-xterm.js PTY terminal, resize, transcript/audit and cursor-resume reconnect.
+Phase 1 + 3: saved SSH hosts, password or private-key login, strict known_hosts,
+an xterm.js PTY terminal, resize, transcript/audit, cursor-resume reconnect, and
+seven read/write/exec MCP tools for operator-opened sessions.
 
 ![SSH connections](screenshots/13-ssh-connections.png)
 
@@ -100,6 +101,23 @@ terminal replays the last 64 KiB.
   conversion.
 - Password auth is supported but there is no keyboard-interactive/2FA yet;
   SFTP, jump hosts and an SSH agent are later phases.
+
+## MCP tools
+
+The same operator-opened sessions are exposed over MCP (Phase 3):
+
+| Tool | Use |
+|---|---|
+| `ssh_sessions` | list open SSH sessions; empty means ask the operator |
+| `ssh_status` | state, host-key fingerprint, cipher/MAC, counters |
+| `ssh_read` / `ssh_tail` | cursor/tail reads, ANSI-stripped lines |
+| `ssh_write` | raw input to the interactive shell |
+| `ssh_exec` | separate exec channel with stdout/stderr/exit code |
+| `ssh_expect` | wait for a pattern without writing |
+
+There is **no** `ssh_connect`/`ssh_disconnect`: the agent cannot create or close
+SSH sessions, only operate ones the operator opened. `ssh_exec` runs a command on
+the same SSH connection without touching the interactive shell.
 
 ## Verification
 

@@ -142,3 +142,54 @@ class ErrorPayload(BaseModel):
     """Shape used inside ``structuredContent`` for ``isError=true`` results."""
 
     error: dict[str, Any]
+
+
+class SshSessionSummary(BaseModel):
+    session_id: str
+    host_id: str
+    name: str
+    host: str
+    port: int
+    username: str
+    state: str = Field(description="connecting|open|closed|error")
+    host_key_fingerprint: str | None = None
+
+
+class SshSessionsResult(BaseModel):
+    sessions: list[SshSessionSummary] = Field(
+        description="SSH sessions the operator has already opened; the agent cannot create them."
+    )
+
+
+class SshStatusResult(BaseModel):
+    session_id: str
+    host_id: str
+    name: str
+    host: str
+    port: int
+    username: str
+    auth: str
+    state: str
+    host_key_fingerprint: str | None = None
+    host_key_type: str | None = None
+    remote_version: str | None = None
+    cipher: str | None = None
+    mac: str | None = None
+    rx_bytes: int
+    tx_bytes: int
+    rx_start: int
+    rx_head: int
+    buffer_bytes: int
+    opened_at: str | None = None
+    last_error: str | None = None
+    last_error_code: str | None = None
+    control_owner: str
+
+
+class SshExecResult(BaseModel):
+    session_id: str
+    command: str
+    stdout: str
+    stderr: str
+    exit_code: int
+    elapsed_ms: int

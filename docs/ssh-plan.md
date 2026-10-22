@@ -287,12 +287,17 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 - host key 指纹页面/known_hosts 导入提示；
 - 连接测试（仅 TCP/握手，不执行命令）。
 
-### Phase 3 — MCP
+### Phase 3 — MCP ✅ 已实现（2026-10-22）
 
 - `ssh_sessions/status/exec/read/tail/write/expect`；
 - 权限与审计；
 - DSH 安装提示/工具列表更新；
 - 只操作 operator 已打开会话。
+
+实现证据：真实 Pi 会话上通过 MCP 调用 `ssh_sessions`、`ssh_status`、
+`ssh_exec("uname -r")`（exit 0）、`ssh_read`、`ssh_tail`、`ssh_write` +
+`ssh_expect`（匹配 `mcp-ssh-ok`），随后断开并删除临时 profile。MCP 工具总数为
+**15**（8 串口 + 7 SSH）；没有 `ssh_connect`/`ssh_disconnect`。
 
 ### Phase 4 — 进阶
 
@@ -314,5 +319,4 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 | 阻塞 I/O | 全部 `asyncio.to_thread`，reader 独立线程 |
 | MCP 越权 | 不提供 connect；host 仅来自 profile；权限+审计 |
 
-**实施前只需确认一件事**：Phase 1 是否按“Connections 页面 + SSH Terminal 页面”两个路由做，
-还是希望把 SSH 终端直接并进现有 Terminal 页的 transport 切换（一个页面，serial/ssh 下拉切换）。
+Phase 1 按“Connections 页面 + SSH Terminal 页面”两个路由实现（已确认选 A）。

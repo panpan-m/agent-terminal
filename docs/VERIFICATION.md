@@ -4,7 +4,7 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **102 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **103 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
@@ -12,6 +12,7 @@
 | **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | `artifacts/live-shell/report.json` |
 | **Terminal tab**: xterm.js in the built SPA, typed on the real Pi | **3 / 3 checks** (CDP) | `docs/screenshots/10-terminal-tab.png` |
 | **SSH web terminal**: Paramiko against the real Pi (OpenSSH 10.0p2) | **7 / 7 checks** | [`ssh.md`](./ssh.md), [screenshot](screenshots/14-ssh-terminal.png) |
+| **SSH MCP tools**: exec/read/tail/write/expect on a real session | **7 / 7 checks** | [`ssh-plan.md`](./ssh-plan.md) |
 
 The skipped test is the HIL "open a real COM port" case while the live
 debugging server holds `COM5` exclusively (expected; it passed in the earlier run).
@@ -29,7 +30,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 102 passed + 1 skipped)
+### 1. Test suite (`pytest`, 103 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -41,7 +42,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
   API + CSRF + WebSockets; MCP end-to-end over Streamable HTTP.
 * **Protocol** — raw JSON-RPC `initialize` / `notifications/initialized` /
   `tools/list` / `tools/call` (SSE responses), `Mcp-Session-Id` handling,
-  `outputSchema` and annotations on all six tools.
+  `outputSchema` and annotations on all fifteen tools.
 * **Security** — auth required on every admin route, forged cookie, strict bearer
   token, foreign `Origin`, CSRF, payload cap, path traversal, regex DoS
   (catastrophic pattern bounded by the 500 ms matcher timeout), pattern-length
@@ -56,7 +57,7 @@ Starts `tio-server` as a **separate process** with a simulated board
 
 * admin login; auto-opened session; banner captured in the ring buffer;
 * human `command` with `expect` over the simulated UART;
-* MCP `initialize`, `tools/list` (exactly six tools, schemas + annotations),
+* MCP `initialize`, `tools/list` (exactly fifteen tools, schemas + annotations),
   `serial_sessions`, `serial_read`, `serial_write`, `serial_command`;
 * `WRITE_LOCKED` while the human owns control; allowed after handover;
   `WRITE_DISABLED` after removing the permission; `RATE_LIMITED` path;
@@ -71,11 +72,11 @@ Starts `tio-server` as a **separate process** with a simulated board
   API, sessions page, **create-session dialog** (typed, submitted, session
   appears open), terminal page with LIVE RX and STATUS, hand control to the agent
   and take it back, type `ping` into xterm and see `pong`, **toggle light/dark
-  theme** (and back), **MCP page** (status, endpoint, eight tools, install
+  theme** (and back), **MCP page** (status, endpoint, fifteen tools, install
   prompt), configuration/logs/system pages render, no JS console errors.
 
 The `/api/mcp` status endpoint is covered by its own pytest case: auth required,
-Streamable HTTP URL, bearer mode, token/shim paths, and the eight-tool list.
+Streamable HTTP URL, bearer mode, token/shim paths, and the fifteen-tool list.
 
 Screenshots: [`01-login`](screenshots/01-login.png) ·
 [`02-sessions`](screenshots/02-sessions.png) ·
@@ -119,7 +120,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (102 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (103 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -148,7 +149,7 @@ Probe (`2E8A:000C`, CMSIS-DAP + CDC-ACM UART) on `COM5` — target:
 
 Everything was exercised against the live port: open/close/reopen, control
 lines, text/hex/chunked writes, cursor reads, `serial_command` with
-`expect="login:"` matching the real prompt in 15 ms, all six MCP tools through
+`expect="login:"` matching the real prompt in 15 ms, all eight serial MCP tools through
 the packaged `tio-mcp.exe`, control-owner and permission arbitration, ttyd
 entries (HTTP + raw WebSocket), baud change/reopen, transcript/audit, and the
 DTR/RTS reset sequence.
@@ -196,6 +197,21 @@ Transcripts (`run/transcripts/ssh-*.jsonl`) and audit events (`ssh.connect`,
 [14-ssh-terminal](screenshots/14-ssh-terminal.png),
 [15-ssh-typed](screenshots/15-ssh-typed.png).
 
+### 8. SSH MCP tools (7 checks)
+
+Through the live `/mcp` endpoint (Bearer + `Mcp-Session-Id`), with an
+operator-opened SSH session to the Pi:
+
+1. `tools/list` returned **15 tools** (8 serial + 7 SSH) with schemas/annotations;
+2. `ssh_sessions` listed the open session and its host-key fingerprint;
+3. `ssh_status` reported `state=open`, `aes128-ctr`, SHA256 fingerprint;
+4. `ssh_exec("uname -r")` returned `exit_code=0`, stdout `6.18.39+rpt-rpi-2712`;
+5. `ssh_read`/`ssh_tail` returned the login banner and root prompt;
+6. `ssh_write("echo mcp-ssh-ok")` + `ssh_expect("mcp-ssh-ok")` matched;
+7. disconnect/delete removed the session/profile; the temporary key was removed
+   from the Pi and the artifacts deleted. No `ssh_connect`/`ssh_disconnect`
+   tools exist (operator-opened sessions only).
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
@@ -206,6 +222,7 @@ Transcripts (`run/transcripts/ssh-*.jsonl`) and audit events (`ssh.connect`,
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
+| SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 15 tools total |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |
 | Replug reconnects, cursor continues, gap reported | ✅ | reconnect test, gap unit tests, HIL enumeration |

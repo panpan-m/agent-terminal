@@ -54,7 +54,9 @@ place, but a newly inserted plugin row only appears after the app restarts. So:
 2. quit and reopen DSH;
 3. start a session — the tool list now contains
    `mcp__tio__serial_sessions`, `serial_status`, `serial_read`, `serial_tail`,
-   `serial_write`, `serial_break`, `serial_command`, `serial_expect`.
+   `serial_write`, `serial_break`, `serial_command`, `serial_expect`,
+   `ssh_sessions`, `ssh_status`, `ssh_read`, `ssh_tail`, `ssh_write`,
+   `ssh_exec`, `ssh_expect`.
 
 The same behaviour was verified here: the row was added at 16:31 and the running
 app did not spawn the shim; restarting is the supported path.
@@ -71,8 +73,17 @@ app did not spawn the shim; restarting is the supported path.
 | `mcp__tio__serial_write` | raw bytes |
 | `mcp__tio__serial_break` | framing BREAK (U-Boot/failsafe), needs write control |
 | `mcp__tio__serial_expect` | wait for a pattern without writing |
+| `mcp__tio__ssh_sessions` | list operator-opened SSH sessions |
+| `mcp__tio__ssh_status` | SSH state, host-key fingerprint, cipher/MAC, counters |
+| `mcp__tio__ssh_read` | cursor/tail reads from an SSH session |
+| `mcp__tio__ssh_tail` | newest N lines from an SSH session |
+| `mcp__tio__ssh_write` | raw input to the interactive SSH shell |
+| `mcp__tio__ssh_exec` | run one command over SSH, return stdout/stderr/exit code |
+| `mcp__tio__ssh_expect` | wait for a pattern in SSH output |
 
-There is deliberately no open/close/configure tool: the operator owns the port.
+There is deliberately no open/close/configure tool: the operator owns the port
+and the SSH connection. The agent cannot connect to a new SSH host; an operator
+must open the session in the UI first.
 Writes need `control_owner=agent` (hand over in the UI or via the admin API).
 
 For shell boards, `capture_exit: true` is the portable way to know a command

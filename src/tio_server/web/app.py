@@ -296,7 +296,7 @@ def create_app(config: Config) -> FastAPI:
                 except Exception:  # pragma: no cover - best effort
                     pass
 
-    mcp_server = build_mcp_server(manager, config)
+    mcp_server = build_mcp_server(manager, config, ssh_manager)
     allowed_hosts = [config.server.bind, f"{config.server.bind}:{config.server.port}"]
     for host in ("localhost", "127.0.0.1", "[::1]"):
         allowed_hosts += [host, f"{host}:{config.server.port}"]

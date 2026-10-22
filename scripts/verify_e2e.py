@@ -230,7 +230,7 @@ def main() -> int:
         tools = mcp.rpc("tools/list")
         names = [tool["name"] for tool in tools.get("result", {}).get("tools", [])]
         report.check(
-            "MCP tools/list exposes exactly the seven tools",
+            "MCP tools/list exposes exactly the fifteen tools",
             names == [
                 "serial_sessions",
                 "serial_status",
@@ -240,6 +240,13 @@ def main() -> int:
                 "serial_break",
                 "serial_command",
                 "serial_expect",
+                "ssh_sessions",
+                "ssh_status",
+                "ssh_read",
+                "ssh_tail",
+                "ssh_write",
+                "ssh_exec",
+                "ssh_expect",
             ],
             ",".join(names),
         )
