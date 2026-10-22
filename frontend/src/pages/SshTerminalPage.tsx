@@ -107,6 +107,8 @@ export function SshTerminalPage({
   const [filesError, setFilesError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [agentBusy, setAgentBusy] = useState(false);
+  const [agentPulse, setAgentPulse] = useState<{ action: string; source: string; at: string } | null>(null);
+  const agentTimerRef = useRef<number | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { theme } = useTheme();
   const themeRef = useRef(theme);
@@ -298,6 +300,12 @@ export function SshTerminalPage({
   }, [theme]);
 
   useEffect(() => {
+    return () => {
+      if (agentTimerRef.current) window.clearTimeout(agentTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     cursorRef.current = null;
     setDropped(0);
     setReceived(0);
@@ -331,11 +339,24 @@ export function SshTerminalPage({
             offset?: number;
             dropped?: number;
             status?: SshSessionStatus;
+            action?: string;
+            source?: string;
+            at?: string;
             error?: { message?: string };
           };
           if (message.type === "status" && message.status) {
             setStatus(message.status);
             setLastError(message.status.last_error);
+            return;
+          }
+          if (message.type === "agent" && message.action && message.source === "agent") {
+            setAgentPulse({
+              action: message.action,
+              source: message.source ?? "agent",
+              at: message.at ?? new Date().toISOString(),
+            });
+            if (agentTimerRef.current) window.clearTimeout(agentTimerRef.current);
+            agentTimerRef.current = window.setTimeout(() => setAgentPulse(null), 5000);
             return;
           }
           if (message.type === "overflow") {
@@ -418,6 +439,12 @@ export function SshTerminalPage({
           {status ? (
             <span className="truncate font-mono text-[11px] text-zinc-500">
               {status.username}@{status.host}:{status.port}
+            </span>
+          ) : null}
+          {agentPulse ? (
+            <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300" />
+              agent {agentPulse.action}
             </span>
           ) : null}
         </div>
@@ -607,6 +634,15 @@ export function SshTerminalPage({
         <span className="text-zinc-500">
           {status ? `${formatBytes(status.rx_bytes)} rx · ${formatBytes(status.tx_bytes)} tx` : "no status"}
         </span>
+        {status?.agent_last_action ? (
+          <span className="inline-flex items-center gap-1 text-amber-300">
+            agent: {status.agent_last_action}
+            {status.agent_last_action === "exec" && status.last_exec_exit_code != null
+              ? ` exit ${status.last_exec_exit_code}`
+              : ""}
+            {status.last_exec_elapsed_ms != null ? ` · ${status.last_exec_elapsed_ms}ms` : ""}
+          </span>
+        ) : null}
         {dropped > 0 ? <span className="text-amber-300">{dropped} dropped</span> : null}
         <div className="ml-auto flex items-center gap-2 text-zinc-500">
           <button
@@ -656,6 +692,33 @@ export function SshTerminalPage({
               <div className="flex justify-between gap-2">
                 <dt>opened</dt>
                 <dd className="text-zinc-300">{formatTime(status?.opened_at)}</dd>
+              </div>
+            </dl>
+          </div>
+          <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-[11px]">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">agent activity</p>
+            <dl className="mt-1 space-y-1 text-zinc-400">
+              <div className="flex justify-between gap-2">
+                <dt>last writer</dt>
+                <dd className="font-mono text-zinc-300">{status?.last_write_source ?? "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt>last action</dt>
+                <dd className={status?.agent_last_action ? "text-amber-300" : "text-zinc-300"}>
+                  {status?.agent_last_action ?? "none"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt>agent writes</dt>
+                <dd className="font-mono text-zinc-300">{status?.agent_action_count ?? 0}</dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt>last exec</dt>
+                <dd className="font-mono text-zinc-300">
+                  {status?.last_exec_exit_code == null
+                    ? "—"
+                    : `exit ${status.last_exec_exit_code} · ${status.last_exec_elapsed_ms ?? "?"}ms`}
+                </dd>
               </div>
             </dl>
           </div>

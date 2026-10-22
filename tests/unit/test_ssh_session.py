@@ -141,6 +141,14 @@ def test_session_connect_read_write_resize_and_close(ssh_bundle):
 
     assert session.write_bytes(b"uname\n") == 6
     assert client.channel.sent == [b"uname\n"]
+    assert session.status()["last_write_source"] == "human"
+
+    assert session.write_bytes(b"echo agent\n", source="agent") == 11
+    status = session.status()
+    assert status["last_write_source"] == "agent"
+    assert status["agent_last_action"] == "write"
+    assert status["agent_action_count"] == 1
+
     session.resize(120, 40)
     assert client.channel.sizes[-1] == (120, 40)
 

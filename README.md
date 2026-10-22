@@ -37,6 +37,8 @@ auto-reconnect, transcript and reattach
 [mixed tabs](docs/screenshots/20-terminal-mixed-ssh.png)).
 SSH sessions stay on the server when the browser tab closes. They are **private
 to agents by default**; mark a session **Agent visible** to expose it to MCP.
+Agent writes and `ssh_exec` calls show a live **AGENT ACTIVITY** indicator in the
+SSH terminal (last writer, action, exec exit code/latency).
 
 ## Why
 

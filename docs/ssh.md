@@ -14,6 +14,8 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 ![SSH terminal with serial and SSH tabs](screenshots/20-terminal-mixed-ssh.png)
 
+![Agent activity in the SSH terminal](screenshots/22-ssh-agent-activity.png)
+
 ![Serial and SSH sessions in one Terminal workspace](screenshots/19-terminal-mixed-serial.png)
 
 ## Security model
@@ -137,6 +139,12 @@ terminal replays the last 64 KiB.
   reports `reconnecting`, then resumes the same ring/cursor. Credentials needed
   for the retry are kept in process memory only and cleared on disconnect.
 - **Log** downloads a timestamped raw TX/RX transcript (`/api/ssh/sessions/{id}/export`).
+- **Agent activity is visible live.** When MCP `ssh_write`/`ssh_exec` acts on a
+  session, the header shows an amber `agent write/exec` pulse, the LIVE bar shows
+  the last action/exit/elapsed time, and the sidebar has an **AGENT ACTIVITY**
+  card (last writer, action, write count, last exec). `ssh_exec` uses a separate
+  channel, so its output does not echo into the PTY; the status card is how the
+  operator sees it.
 - **Test** performs a TCP + SSH handshake only (no auth, no command), reports the
   SHA256 host-key fingerprint and whether it is `known` / `unknown` / `changed`
   in known_hosts, and offers a copyable `ssh-keyscan` command. It tests the

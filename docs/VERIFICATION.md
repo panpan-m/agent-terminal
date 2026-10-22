@@ -283,6 +283,20 @@ With one SSH session to the Pi (default `agent_visible=false`):
    explicit id returned `PERMISSION_DENIED`;
 4. the session/profile and temporary key were removed afterwards.
 
+### 12. SSH agent activity in the web terminal
+
+With an agent-visible SSH session:
+
+1. MCP `ssh_write` wrote `echo agent-activity` to the PTY; the session status
+   became `last_write_source=agent`;
+2. MCP `ssh_exec("uname -r")` set `agent_last_action=exec`,
+   `agent_action_count=2`, `last_exec_exit_code=0`, `last_exec_elapsed_ms=172`;
+3. the web UI showed `agent exec exit 0 · 172ms` in the LIVE bar, an
+   **AGENT ACTIVITY** card (last writer/action/writes/last exec) and a 5 s
+   `agent exec` pulse in the header
+   ([22-ssh-agent-activity](screenshots/22-ssh-agent-activity.png));
+4. the session/profile/key were removed afterwards.
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
@@ -300,6 +314,7 @@ With one SSH session to the Pi (default `agent_visible=false`):
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
 | SSH remembered credentials | ✅ | encrypted at rest; second connect without password; Forget clears |
 | SSH agent visibility | ✅ | default private; marked session listed/executable; unmarked denied |
+| SSH agent activity in web UI | ✅ | LIVE bar + agent card + pulse after MCP write/exec |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |

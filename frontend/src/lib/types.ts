@@ -229,6 +229,13 @@ export interface SshSessionStatus {
   last_error_code: string | null;
   control_owner: string;
   agent_visible?: boolean;
+  last_write_source?: string | null;
+  last_tx_at?: string | null;
+  agent_last_action?: string | null;
+  agent_last_at?: string | null;
+  agent_action_count?: number;
+  last_exec_exit_code?: number | null;
+  last_exec_elapsed_ms?: number | null;
   auto_reconnect?: boolean;
   reconnect_count?: number;
 }

@@ -940,6 +940,15 @@ def create_app(config: Config) -> FastAPI:
                         await send_json(
                             {"type": "tx", "data_b64": base64.b64encode(item["data"]).decode(), "source": item["source"]}
                         )
+                    elif item["type"] == "agent":
+                        await send_json(
+                            {
+                                "type": "agent",
+                                "action": item.get("action"),
+                                "source": item.get("source"),
+                                "at": item.get("at"),
+                            }
+                        )
                     elif item["type"] == "overflow":
                         await send_json({"type": "overflow", "dropped": item["dropped"]})
             except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
@@ -1039,6 +1048,15 @@ def create_app(config: Config) -> FastAPI:
                     elif item["type"] == "tx":
                         await send_json(
                             {"type": "tx", "data_b64": base64.b64encode(item["data"]).decode(), "source": item["source"]}
+                        )
+                    elif item["type"] == "agent":
+                        await send_json(
+                            {
+                                "type": "agent",
+                                "action": item.get("action"),
+                                "source": item.get("source"),
+                                "at": item.get("at"),
+                            }
                         )
                     elif item["type"] == "overflow":
                         await send_json({"type": "overflow", "dropped": item["dropped"]})

@@ -101,6 +101,13 @@ class SshSession:
         self.ring = RingBuffer(8 * 1024 * 1024)
         self.rx_bytes = 0
         self.tx_bytes = 0
+        self.last_write_source: str | None = None
+        self.last_tx_at: str | None = None
+        self.agent_last_action: str | None = None
+        self.agent_last_at: str | None = None
+        self.agent_action_count = 0
+        self.last_exec_exit_code: int | None = None
+        self.last_exec_elapsed_ms: int | None = None
         self.opened_at: str | None = None
         self.last_error: str | None = None
         self.last_error_code: str | None = None
@@ -729,7 +736,32 @@ class SshSession:
             with self._sub_lock:
                 for sub in list(self._subs):
                     sub.put({"type": "tx", "data": data, "source": source})
+        self._note_tx(source)
         return len(data)
+
+    def _note_tx(self, source: str, *, action: str | None = None) -> None:
+        self.last_write_source = source
+        self.last_tx_at = now_iso()
+        if source == "agent":
+            self.agent_last_action = action or "write"
+            self.agent_last_at = self.last_tx_at
+            self.agent_action_count += 1
+        self._broadcast_status()
+        with self._sub_lock:
+            for sub in list(self._subs):
+                sub.put(
+                    {
+                        "type": "agent",
+                        "action": self.agent_last_action if source == "agent" else action or "write",
+                        "source": source,
+                        "at": self.last_tx_at,
+                    }
+                )
+
+    def _note_exec(self, exit_code: int, elapsed_ms: int) -> None:
+        self.last_exec_exit_code = int(exit_code)
+        self.last_exec_elapsed_ms = int(elapsed_ms)
+        self._note_tx("agent", action="exec")
 
     def resize(self, cols: int, rows: int) -> None:
         if self._channel is None or self.state is not SshState.OPEN:
@@ -760,12 +792,14 @@ class SshSession:
             raise ToolFailure("TIMEOUT", f"SSH exec timed out after {timeout_ms} ms") from exc
         except Exception as exc:
             raise ToolFailure(SSH_ERROR, f"SSH exec failed: {exc}") from exc
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        self._note_exec(int(code), elapsed_ms)
         return {
             "command": command,
             "stdout": out.decode("utf-8", "replace"),
             "stderr": err.decode("utf-8", "replace"),
             "exit_code": int(code),
-            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "elapsed_ms": elapsed_ms,
         }
 
     # ------------------------------------------------------------------ sftp
@@ -957,6 +991,13 @@ class SshSession:
             "last_error_code": self.last_error_code,
             "control_owner": self.control_owner,
             "agent_visible": self.agent_visible,
+            "last_write_source": self.last_write_source,
+            "last_tx_at": self.last_tx_at,
+            "agent_last_action": self.agent_last_action,
+            "agent_last_at": self.agent_last_at,
+            "agent_action_count": self.agent_action_count,
+            "last_exec_exit_code": self.last_exec_exit_code,
+            "last_exec_elapsed_ms": self.last_exec_elapsed_ms,
             "auto_reconnect": self.auto_reconnect,
             "reconnect_count": self.reconnect_count,
         }

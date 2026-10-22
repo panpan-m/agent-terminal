@@ -186,6 +186,13 @@ class SshStatusResult(BaseModel):
     last_error_code: str | None = None
     control_owner: str
     agent_visible: bool = False
+    last_write_source: str | None = None
+    last_tx_at: str | None = None
+    agent_last_action: str | None = None
+    agent_last_at: str | None = None
+    agent_action_count: int = 0
+    last_exec_exit_code: int | None = None
+    last_exec_elapsed_ms: int | None = None
     auto_reconnect: bool = True
     reconnect_count: int = 0
 
