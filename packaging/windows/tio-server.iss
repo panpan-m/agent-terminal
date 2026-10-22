@@ -72,8 +72,8 @@ begin
     CredPath := ExpandConstant('{commonappdata}\tio-server\first-run-credentials.json');
     if FileExists(CredPath) then
       MsgBox('Configuration created.' + #13#10#13#10 +
-             'The MCP API token is in:' + #13#10 + CredPath +
-             #13#10#13#10 + 'Read it, then delete the file.' + #13#10 +
+             'The MCP API token is in:' + #13#10 + CredPath + #13#10#13#10 +
+             'Read it, then delete the file.' + #13#10 +
              'Then open http://127.0.0.1:8765/ (no login needed).', mbInformation, MB_OK);
   end;
 end;
