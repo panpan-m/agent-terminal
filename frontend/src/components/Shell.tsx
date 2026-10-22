@@ -5,13 +5,13 @@ import {
   ScrollText,
   Server,
   SquareTerminal,
-  Waves,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import type { SessionStatus, SshSessionStatus, SystemInfo } from "@/lib/types";
+import { BrandMark } from "@/components/BrandMark";
 import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
 
 export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "logs";
@@ -71,12 +71,10 @@ export function Shell({
     <div className="flex h-full min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/60 md:flex">
         <div className="flex items-center gap-2.5 px-5 py-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/10">
-            <Waves className="h-4 w-4 text-emerald-400" />
-          </div>
+          <BrandMark className="h-8 w-8 rounded-lg" />
           <div>
-            <div className="text-sm font-semibold tracking-tight text-zinc-100">tio-server</div>
-            <div className="text-[10px] uppercase tracking-widest text-zinc-500">serial gateway</div>
+            <div className="text-sm font-semibold tracking-tight text-zinc-100">agent-terminal</div>
+            <div className="text-[10px] uppercase tracking-widest text-zinc-500">serial · ssh · mcp</div>
           </div>
         </div>
 
@@ -188,8 +186,8 @@ export function Shell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/40 px-4 py-2.5 backdrop-blur md:hidden">
-          <Waves className="h-4 w-4 text-emerald-400" />
-          <span className="text-sm font-semibold">tio-server</span>
+          <BrandMark className="h-5 w-5 rounded" />
+          <span className="text-sm font-semibold">agent-terminal</span>
           <div className="ml-auto flex items-center gap-2">
             <TerminalSettingsDialog />
             {NAV.map((item) => (

@@ -192,7 +192,7 @@ def test_mcp_end_to_end(app_bundle):
     r = client.post("/mcp", json=init, headers=headers)
     assert r.status_code == 200, r.text
     messages = sse_json(r.text)
-    assert messages[0]["result"]["serverInfo"]["name"] == "tio-server"
+    assert messages[0]["result"]["serverInfo"]["name"] == "agent-terminal"
     sid = r.headers.get("mcp-session-id")
     if sid:
         headers["Mcp-Session-Id"] = sid

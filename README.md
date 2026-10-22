@@ -1,10 +1,11 @@
-# tio-suite
+# agent-terminal
 
-A cross-platform **shared serial-port gateway**: one long-running `tio-server`
-owns the serial port, humans use the **xterm.js Terminal tab**, and agents use
-**MCP** tools. Nobody else opens the port.
+A cross-platform **shared serial/SSH terminal gateway**: one long-running
+`agent-terminal` owns the serial ports and SSH sessions, humans use the
+**xterm.js Terminal tab**, and agents use **MCP** tools. Nobody else opens the
+port.
 
-> Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
+> Implementation of the design in [`agent-terminal-plan.md`](./agent-terminal-plan.md).
 > Verified on Windows 10: **106 tests**, **37/37 end-to-end checks**,
 > **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **25/25 agent-path MCP checks** against a
@@ -34,9 +35,9 @@ serial sessions and SSH sessions together, and switching reattaches to the
 matching xterm view ([mixed Serial + SSH](docs/screenshots/19-terminal-mixed-serial.png),
 [SSH tab](docs/screenshots/20-terminal-mixed-ssh.png)).
 
-**Windows desktop app:** a WebView2 window (`tio-desktop.exe`) with a per-user
+**Windows desktop app:** a WebView2 window (`agent-desktop.exe`) with a per-user
 installer, Start Menu/desktop shortcuts, optional start-with-Windows and its own
-`%LOCALAPPDATA%\tio-server-desktop` data directory. No browser or service needed
+`%LOCALAPPDATA%\agent-terminal` data directory. No browser or service needed
 ([details](docs/desktop.md)).
 
 The **SSH** tab manages saved hosts and opens a full xterm.js PTY terminal with
@@ -55,7 +56,7 @@ shows the last action, exec exit code and latency.
 ## Why
 
 Serial ports are exclusive: an agent and a human cannot both `open()` a board.
-`tio-server` becomes the single owner. It keeps an absolute-cursor ring buffer,
+`agent-terminal` becomes the single owner. It keeps an absolute-cursor ring buffer,
 arbitrates writes between human and agent, records a transcript, and exposes:
 
 | Surface | Endpoint | Purpose |
@@ -75,8 +76,8 @@ All listeners default to `127.0.0.1`.
 python -m venv .venv
 .venv/Scripts/python -m pip install -e .        # Linux: .venv/bin/python
 npm --prefix frontend ci && npm --prefix frontend run build   # only needed after frontend changes
-tio-server init --dir ./run                     # creates config + prints tokens once
-tio-server run --config ./run/config.toml
+agent-terminal init --dir ./run                     # creates config + prints tokens once
+agent-terminal run --config ./run/config.toml
 ```
 
 Open <http://127.0.0.1:8765/> — no login — pick a port and press **Open**.
@@ -93,11 +94,11 @@ cd frontend && npm install && npm run build     # rebuild the SPA into src/tio_s
 ## Design at a glance
 
 ```
-Browser ──WS /ws/console──▶ tio-server ──▶ /dev/ttyUSB0 | COM5
-Agent   ──HTTP────▶ /mcp ───────────────────────────────▶ tio-server
+Browser ──WS /ws/console──▶ agent-terminal ──▶ /dev/ttyUSB0 | COM5
+Agent   ──HTTP────▶ /mcp ───────────────────────────────▶ agent-terminal
 ```
 
-* **Single owner** — only `tio-server` opens the port.
+* **Single owner** — only `agent-terminal` opens the port.
 * **Absolute cursors** — `serial_read(cursor=…)` never loses data silently; gaps
   and lost byte counts are reported.
 * **Write arbitration** — `control_owner` is `human` by default; an agent can

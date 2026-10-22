@@ -3,7 +3,7 @@
     python scripts/verify_packaged.py [--dist dist]
 
 Checks: exe init, service-style run, bundled SPA, admin API, MCP over HTTP, and
-the packaged ``tio-mcp.exe`` stdio shim talking to the packaged server.
+the packaged ``agent-mcp.exe`` stdio shim talking to the packaged server.
 """
 
 from __future__ import annotations
@@ -45,8 +45,8 @@ def sse_json(text: str) -> list[dict]:
 
 def main() -> int:
     dist = ROOT / "dist"
-    server_exe = dist / "tio-server" / "tio-server.exe"
-    shim_exe = dist / "tio-mcp.exe"
+    server_exe = dist / "agent-terminal" / "agent-terminal.exe"
+    shim_exe = dist / "agent-mcp.exe"
     out = ROOT / "artifacts" / "packaged"
     out.mkdir(parents=True, exist_ok=True)
     checks: list[dict] = []
@@ -157,7 +157,7 @@ def main() -> int:
         messages = sse_json(response.text)
         check(
             "MCP initialize on the packaged server",
-            bool(messages) and messages[0].get("result", {}).get("serverInfo", {}).get("name") == "tio-server",
+            bool(messages) and messages[0].get("result", {}).get("serverInfo", {}).get("name") == "agent-terminal",
         )
 
         # Packaged stdio shim against the packaged server
@@ -173,7 +173,7 @@ def main() -> int:
         shim.stdin.write(json.dumps(init_msg) + "\n")
         shim.stdin.flush()
         first = json.loads(shim.stdout.readline())
-        check("packaged tio-mcp.exe initializes", first.get("result", {}).get("serverInfo", {}).get("name") == "tio-server", first)
+        check("packaged agent-mcp.exe initializes", first.get("result", {}).get("serverInfo", {}).get("name") == "agent-terminal", first)
         shim.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         shim.stdin.flush()
         shim.stdin.write(
@@ -190,7 +190,7 @@ def main() -> int:
         shim.stdin.flush()
         status = json.loads(shim.stdout.readline())["result"]
         check(
-            "packaged tio-mcp.exe calls a tool",
+            "packaged agent-mcp.exe calls a tool",
             status.get("isError") is False and status.get("structuredContent", {}).get("state") == "open",
             status.get("structuredContent", {}).get("state"),
         )

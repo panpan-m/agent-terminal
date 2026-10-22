@@ -13,22 +13,22 @@ def is_windows() -> bool:
 
 def default_data_dir() -> Path:
     """Writable directory for config, transcripts, logs and tokens."""
-    override = os.environ.get("TIO_SERVER_HOME")
+    override = os.environ.get("AGENT_TERMINAL_HOME") or os.environ.get("TIO_SERVER_HOME")
     if override:
         return Path(override).expanduser()
     if is_windows():
         base = os.environ.get("ProgramData", r"C:\ProgramData")
-        return Path(base) / "tio-server"
-    return Path("/var/lib/tio-server")
+        return Path(base) / "agent-terminal"
+    return Path("/var/lib/agent-terminal")
 
 
 def default_log_dir() -> Path:
-    override = os.environ.get("TIO_SERVER_LOG_DIR")
+    override = os.environ.get("AGENT_TERMINAL_LOG_DIR") or os.environ.get("TIO_SERVER_LOG_DIR")
     if override:
         return Path(override).expanduser()
     if is_windows():
         return default_data_dir() / "logs"
-    return Path("/var/log/tio-server")
+    return Path("/var/log/agent-terminal")
 
 
 def executable_suffix() -> str:

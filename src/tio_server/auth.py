@@ -6,7 +6,7 @@ browser cross-site attacks by a Host/Origin allow-list in the web app.
 
 * Agents use ``Authorization: Bearer <api_token>`` on ``/mcp``; only the Argon2
   hash of the token is stored in the config file, the raw token lives in a 0600
-  file that ``tio-mcp`` reads.
+  file that ``agent-mcp`` reads.
 """
 
 from __future__ import annotations

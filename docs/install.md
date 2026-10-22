@@ -6,11 +6,11 @@ installs).
 ## 1. From source (development)
 
 ```bash
-git clone <repo> && cd tio-suite
+git clone <repo> && cd agent-terminal
 python -m venv .venv
 .venv/Scripts/python -m pip install -e ".[dev]"     # Linux: .venv/bin/python
 npm --prefix frontend ci && npm --prefix frontend run build   # writes src/tio_server/web/static
-tio-server doctor
+agent-terminal doctor
 ```
 
 Build the SPA whenever the frontend changes; the server serves the prebuilt
@@ -19,8 +19,8 @@ files, so the packaged product needs no Node runtime.
 ## 2. First run
 
 ```bash
-tio-server init --dir ./run
-tio-server run --config ./run/config.toml
+agent-terminal init --dir ./run
+agent-terminal run --config ./run/config.toml
 ```
 
 `init` prints the MCP API token
@@ -32,10 +32,10 @@ Useful commands:
 
 | Command | Purpose |
 |---|---|
-| `tio-server doctor [--config …]` | dependency/port diagnostics (JSON) |
-| `tio-server ports` | enumerate serial ports as JSON |
-| `tio-server check-config --config …` | validate a config without starting |
-| `tio-server version` | version |
+| `agent-terminal doctor [--config …]` | dependency/port diagnostics (JSON) |
+| `agent-terminal ports` | enumerate serial ports as JSON |
+| `agent-terminal check-config --config …` | validate a config without starting |
+| `agent-terminal version` | version |
 
 ## 3. Windows
 
@@ -43,38 +43,38 @@ Useful commands:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build.ps1
-# dist\tio-server\tio-server.exe, dist\tio-mcp.exe, dist\tio-web-bridge.exe
+# dist\agent-terminal\agent-terminal.exe, dist\agent-mcp.exe, dist\tio-web-bridge.exe
 ```
 
 ### Installer
 
 1. Install [Inno Setup](https://jrsoftware.org/isinfo.php) and run
-   `iscc packaging\windows\tio-server.iss`.
-2. The installer creates `C:\ProgramData\tio-server\config.toml`, writes
+   `iscc packaging\windows\agent-terminal.iss`.
+2. The installer creates `C:\ProgramData\agent-terminal\config.toml`, writes
    `first-run-credentials.json` with the MCP API token (delete it after
-   reading), registers the `tio-server` service via `sc.exe`, starts it
+   reading), registers the `agent-terminal` service via `sc.exe`, starts it
    and opens the UI.
 
 Layout:
 
 ```text
-C:\Program Files\tio-server\           tio-server.exe, tio-mcp.exe
-C:\ProgramData\tio-server\             config.toml, api-token, bridge-token, transcripts\, logs\
+C:\Program Files\agent-terminal\           agent-terminal.exe, agent-mcp.exe
+C:\ProgramData\agent-terminal\             config.toml, api-token, bridge-token, transcripts\, logs\
 ```
 
 Service management (WinSW config is also provided in
-`packaging/windows/tio-server.xml`):
+`packaging/windows/agent-terminal.xml`):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Program Files\tio-server\install-service.ps1"
-sc.exe query tio-server
-sc.exe stop tio-server
+powershell -ExecutionPolicy Bypass -File "C:\Program Files\agent-terminal\install-service.ps1"
+sc.exe query agent-terminal
+sc.exe stop agent-terminal
 ```
 
 Notes:
 
 * COM ports are usually accessible to services; if not, run the service under a
-  dedicated local account and grant it access to `C:\ProgramData\tio-server`.
+  dedicated local account and grant it access to `C:\ProgramData\agent-terminal`.
 * Opening some USB-UART bridges (FTDI/CP210x/CH340) pulses DTR/RTS and can reset
   the board. Set `open_mode = "preserve"` (default) and read the warning on the
   session page.
@@ -88,13 +88,13 @@ For a normal desktop install (no service, no browser), use the WebView2 app:
 ```powershell
 pip install -e ".[desktop]"
 powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build_desktop.ps1
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\windows\tio-desktop.iss
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\windows\agent-desktop.iss
 ```
 
-Run `dist\installer\tio-server-desktop-0.1.0-setup.exe`. It installs per-user to
-`%LOCALAPPDATA%\Programs\tio-server`, adds Start Menu/optional desktop shortcuts
+Run `dist\installer\agent-terminal-0.1.0-setup.exe`. It installs per-user to
+`%LOCALAPPDATA%\Programs\agent-terminal`, adds Start Menu/optional desktop shortcuts
 and an optional **Start with Windows** entry. Data lives in
-`%LOCALAPPDATA%\tio-server-desktop`; first launch opens straight into the
+`%LOCALAPPDATA%\agent-terminal`; first launch opens straight into the
 UI (no login); the MCP token is in `api-token` there.
 
 See [desktop.md](desktop.md) for the runtime, uninstall and limitations.
@@ -104,8 +104,8 @@ See [desktop.md](desktop.md) for the runtime, uninstall and limitations.
 ### Bundle layout (produced by CI / PyInstaller)
 
 ```text
-tio-server            onedir executable
-tio-mcp               onefile
+agent-terminal            onedir executable
+agent-mcp               onefile
 _internal/            PyInstaller payload (contains web/static)
 ```
 
@@ -115,18 +115,18 @@ Install with:
 sudo ./packaging/linux/install.sh /path/to/bundle
 ```
 
-That creates the `tio` system user, `/opt/tio-server`, `/var/lib/tio-server`
-(runtime config, tokens, transcripts), `/var/log/tio-server`, adds the user to
-`dialout`, installs `tio-server.service` and starts it.
+That creates the `tio` system user, `/opt/agent-terminal`, `/var/lib/agent-terminal`
+(runtime config, tokens, transcripts), `/var/log/agent-terminal`, adds the user to
+`dialout`, installs `agent-terminal.service` and starts it.
 
-systemd unit highlights (`packaging/linux/tio-server.service`): `Restart=always`,
+systemd unit highlights (`packaging/linux/agent-terminal.service`): `Restart=always`,
 `KillMode=control-group` (child processes die with the service),
-`ProtectSystem=strict` with writable `/var/lib/tio-server` and
-`/var/log/tio-server`, `UMask=0077`, `LimitNOFILE=65536`.
+`ProtectSystem=strict` with writable `/var/lib/agent-terminal` and
+`/var/log/agent-terminal`, `UMask=0077`, `LimitNOFILE=65536`.
 
 ```bash
-systemctl status tio-server
-journalctl -u tio-server -f
+systemctl status agent-terminal
+journalctl -u agent-terminal -f
 ```
 
 Permissions: the service user must be in `dialout` (Debian/Ubuntu) or `uucp`
@@ -177,10 +177,10 @@ agent_permissions = ["read", "write", "command"]
 * Upgrade: replace the program files, keep `config.toml`, restart. `config_version`
   migration runs on load; the old file is kept as `config.toml.bak` when a
   migration changes it.
-* Windows uninstall: `sc.exe stop/delete tio-server` (the installer does this) and
-  optionally delete `C:\ProgramData\tio-server`.
-* Linux uninstall: `systemctl disable --now tio-server`, remove
-  `/opt/tio-server` and the unit; keep `/var/lib/tio-server` if you want to keep
+* Windows uninstall: `sc.exe stop/delete agent-terminal` (the installer does this) and
+  optionally delete `C:\ProgramData\agent-terminal`.
+* Linux uninstall: `systemctl disable --now agent-terminal`, remove
+  `/opt/agent-terminal` and the unit; keep `/var/lib/agent-terminal` if you want to keep
   transcripts and tokens.
 
 ## 8. Troubleshooting
@@ -190,7 +190,7 @@ agent_permissions = ["read", "write", "command"]
 | `PORT_BUSY` | another program (or `tio`) holds the port; close it |
 | permission denied opening `/dev/ttyUSB0` | add the service user to `dialout` |
 | board resets when the session opens | driver pulses DTR/RTS; use `open_mode="preserve"` and check the cable/adapter |
-| MCP 401 | wrong/missing bearer token; `tio-mcp` reads `<data-dir>/api-token` |
+| MCP 401 | wrong/missing bearer token; `agent-mcp` reads `<data-dir>/api-token` |
 | `WRITE_LOCKED` | hand control to the agent in the UI (or take it back) |
 | browser shows a 404 for the UI | frontend not built: `npm --prefix frontend run build` |
-| service starts then exits | run `tio-server check-config --config …`; check `logs/server.log` |
+| service starts then exits | run `agent-terminal check-config --config …`; check `logs/server.log` |

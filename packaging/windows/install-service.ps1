@@ -1,18 +1,18 @@
-# Register and start the tio-server Windows service using sc.exe.
+# Register and start the agent-terminal Windows service using sc.exe.
 # Called by the Inno Setup installer, and usable by hand:
 #   powershell -ExecutionPolicy Bypass -File install-service.ps1
 param(
     [string]$InstallDir = $PSScriptRoot,
-    [string]$DataDir = "$env:ProgramData\tio-server",
-    [string]$ServiceName = "tio-server"
+    [string]$DataDir = "$env:ProgramData\agent-terminal",
+    [string]$ServiceName = "agent-terminal"
 )
 
 $ErrorActionPreference = "Stop"
-$exe = Join-Path $InstallDir "tio-server.exe"
+$exe = Join-Path $InstallDir "agent-terminal.exe"
 $config = Join-Path $DataDir "config.toml"
 
-if (-not (Test-Path $exe)) { throw "tio-server.exe not found at $exe" }
-if (-not (Test-Path $config)) { throw "config not found at $config (run: tio-server init --dir `"$DataDir`")" }
+if (-not (Test-Path $exe)) { throw "agent-terminal.exe not found at $exe" }
+if (-not (Test-Path $config)) { throw "config not found at $config (run: agent-terminal init --dir `"$DataDir`")" }
 
 # sc.exe wants the whole command line as one binPath argument.
 $binPath = '"{0}" run --config "{1}"' -f $exe, $config
@@ -21,7 +21,7 @@ $binPath = '"{0}" run --config "{1}"' -f $exe, $config
 & sc.exe delete $ServiceName 2>$null | Out-Null
 Start-Sleep -Milliseconds 500
 
-& sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "tio-server serial gateway" | Out-Null
+& sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "agent-terminal terminal gateway" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "sc create failed" }
 
 & sc.exe description $ServiceName "Single-owner serial port gateway with MCP and web UI" | Out-Null

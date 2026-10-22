@@ -1,6 +1,6 @@
 [Unit]
-Description=tio-server serial gateway
-Documentation=file:///usr/share/doc/tio-server/README.md
+Description=agent-terminal terminal gateway
+Documentation=file:///usr/share/doc/agent-terminal/README.md
 After=network-online.target
 Wants=network-online.target
 
@@ -8,10 +8,10 @@ Wants=network-online.target
 Type=simple
 User=tio
 Group=dialout
-StateDirectory=tio-server
-LogsDirectory=tio-server
+StateDirectory=agent-terminal
+LogsDirectory=agent-terminal
 # Runtime config is writable by the service; /etc holds only the seed file.
-ExecStart=/opt/tio-server/tio-server run --config /var/lib/tio-server/config.toml
+ExecStart=/opt/agent-terminal/agent-terminal run --config /var/lib/agent-terminal/config.toml
 Restart=always
 RestartSec=2
 KillMode=control-group
@@ -20,7 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/tio-server /var/log/tio-server
+ReadWritePaths=/var/lib/agent-terminal /var/log/agent-terminal
 UMask=0077
 LimitNOFILE=65536
 

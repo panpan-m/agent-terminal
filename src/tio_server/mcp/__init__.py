@@ -1,4 +1,4 @@
-"""MCP endpoint for tio-server."""
+"""MCP endpoint for agent-terminal."""
 
 from .tools import build_mcp_server
 

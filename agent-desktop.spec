@@ -34,7 +34,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='tio-desktop',
+    name='agent-desktop',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -45,7 +45,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['packaging/windows/tio.ico'],
+    icon=['packaging/windows/agent-terminal.ico'],
 )
 coll = COLLECT(
     exe,
@@ -54,5 +54,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='tio-desktop',
+    name='agent-desktop',
 )

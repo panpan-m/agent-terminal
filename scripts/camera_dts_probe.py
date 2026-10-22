@@ -71,7 +71,7 @@ async def main() -> int:
     admin = httpx.Client(base_url="http://127.0.0.1:8765", timeout=30)
 
     params = StdioServerParameters(
-        command=str(ROOT / "dist" / "tio-mcp.exe"),
+        command=str(ROOT / "dist" / "agent-mcp.exe"),
         args=["--url", "http://127.0.0.1:8765/mcp", "--token-file", str(ROOT / "run" / "api-token")],
     )
     results: dict[str, str] = {}

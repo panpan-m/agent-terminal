@@ -8,6 +8,7 @@ import {
   Info,
   Keyboard,
   Loader2,
+  Power,
   RefreshCw,
   Search,
   Trash2,
@@ -290,6 +291,17 @@ export function SshTerminalPage({
     };
   }, [sessionId, generation]);
 
+  const disconnectSession = async () => {
+    if (!window.confirm(`Disconnect ${status?.name ?? sessionId}? The remote shell, SFTP and the SSH transport are closed.`)) return;
+    try {
+      await api.sshDisconnect(sessionId);
+      notify("SSH session disconnected, remote resources released", "success");
+      onBack();
+    } catch (error) {
+      notify(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`, "error");
+    }
+  };
+
   const toggleAgent = async () => {
     setAgentBusy(true);
     try {
@@ -381,6 +393,15 @@ export function SshTerminalPage({
               <EyeOff className="h-3.5 w-3.5" />
             )}
             {status?.agent_visible ? "Agent" : "Private"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void disconnectSession()}
+            title="disconnect this session: closes the remote shell, SFTP and the SSH transport"
+            aria-label="Disconnect"
+          >
+            <Power className="h-3.5 w-3.5 text-red-400" />
           </Button>
           <Button
             size="sm"

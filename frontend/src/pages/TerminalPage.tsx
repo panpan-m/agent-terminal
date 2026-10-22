@@ -5,6 +5,7 @@ import {
   Download,
   Keyboard,
   PanelRight,
+  Power,
   RefreshCw,
   Search,
   SquareTerminal,
@@ -233,6 +234,19 @@ export function TerminalPage({
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
 
+  const releasePort = async () => {
+    if (!session) return;
+    if (!window.confirm(`Close the port and release the device (${session.port})?`)) return;
+    try {
+      await api.closeSession(session.session_id);
+      notify(`port ${session.port} released`, "success");
+      await refresh();
+    } catch (error) {
+      const failure = error as { code?: string; message?: string };
+      notify(`${failure.code ?? "ERROR"}: ${failure.message ?? String(error)}`, "error");
+    }
+  };
+
   const sendBreak = async () => {
     if (!session) return;
     setBusyBreak(true);
@@ -300,6 +314,16 @@ export function TerminalPage({
               Take control
             </Button>
           ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void releasePort()}
+            disabled={!session || session.state !== "open"}
+            title="close the port and release the device for other programs"
+            aria-label="Release port"
+          >
+            <Power className="h-3.5 w-3.5 text-red-400" />
+          </Button>
           <Button
             size="sm"
             variant="ghost"

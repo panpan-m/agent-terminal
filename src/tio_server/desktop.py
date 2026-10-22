@@ -1,8 +1,8 @@
-"""Windows desktop shell for tio-server.
+"""Windows desktop shell for agent-terminal.
 
 The server and the UI run in one process: uvicorn binds an ephemeral loopback
 port, then pywebview hosts the existing SPA in a WebView2 window.  This is the
-entry point used by the ``tio-desktop`` installer; the service/browser install
+entry point used by the ``agent-desktop`` installer; the service/browser install
 remains available separately.
 """
 
@@ -22,18 +22,18 @@ from pathlib import Path
 from .config import CONFIG_FILENAME, Config, init_config
 from .errors import ToolFailure
 
-APP_NAME = "tio-server"
-APP_ID = "tio.server.desktop"
-MUTEX_NAME = "Global\\tio-server-desktop-single-instance"
+APP_NAME = "agent-terminal"
+APP_ID = "agent.terminal.desktop"
+MUTEX_NAME = "Global\\agent-terminal-single-instance"
 _MUTEX = None  # keep the Win32 handle alive
 
 
 def _default_desktop_dir() -> Path:
-    override = os.environ.get("TIO_DESKTOP_HOME")
+    override = os.environ.get("AGENT_DESKTOP_HOME") or os.environ.get("TIO_DESKTOP_HOME")
     if override:
         return Path(override).expanduser()
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or str(Path.home())
-    return Path(base) / "tio-server-desktop"
+    return Path(base) / "agent-terminal"
 
 
 def _log_path(data_dir: Path) -> Path:
@@ -118,7 +118,7 @@ def _start_server(cfg: Config, *, host: str, port: int):
         log_config=None,
     )
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, name="tio-uvicorn", daemon=True)
+    thread = threading.Thread(target=server.run, name="agent-terminal-uvicorn", daemon=True)
     thread.start()
     deadline = time.monotonic() + 20
     while not server.started and time.monotonic() < deadline:
@@ -135,8 +135,8 @@ def _start_server(cfg: Config, *, host: str, port: int):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="tio-desktop", description="tio-server desktop window")
-    parser.add_argument("--data-dir", help="desktop data directory (default: %LOCALAPPDATA%\\tio-server-desktop)")
+    parser = argparse.ArgumentParser(prog="agent-desktop", description="agent-terminal desktop window")
+    parser.add_argument("--data-dir", help="desktop data directory (default: %LOCALAPPDATA%\\agent-terminal)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18765, help="loopback port (default: 18765; 0 picks a free port)")
     parser.add_argument("--smoke", action="store_true", help="start the server, print the URL and exit")
@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
         if not args.smoke and not _single_instance():
-            _message(APP_NAME, "tio-server desktop is already running.")
+            _message(APP_NAME, "agent-terminal desktop is already running.")
             return 0
 
     data_dir = Path(args.data_dir).expanduser() if args.data_dir else _default_desktop_dir()
@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         import webview
 
         window = webview.create_window(
-            "tio-server",
+            "agent-terminal",
             url,
             width=1280,
             height=860,

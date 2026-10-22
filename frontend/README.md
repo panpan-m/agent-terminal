@@ -1,6 +1,6 @@
-# tio-server admin UI
+# agent-terminal admin UI
 
-React 19 + Vite + Tailwind v4 SPA for `tio-server`: sessions, the xterm.js
+React 19 + Vite + Tailwind v4 SPA for `agent-terminal`: sessions, the xterm.js
 terminal workspace, MCP status and the transcript/audit log. The browser never
 touches the serial port — every byte goes through the Python server.
 

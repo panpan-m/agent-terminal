@@ -1,4 +1,4 @@
-"""Frozen entry point for the ``tio-server`` executable."""
+"""Frozen entry point for the ``agent-terminal`` executable."""
 
 import multiprocessing
 import sys

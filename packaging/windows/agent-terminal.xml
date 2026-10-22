@@ -1,0 +1,30 @@
+<service>
+  <!-- WinSW configuration for agent-terminal (https://github.com/winsw/winsw).
+       Copy next to WinSW.exe as agent-terminal.xml and install with:
+         WinSW.exe install
+         WinSW.exe start
+  -->
+  <id>agent-terminal</id>
+  <name>agent-terminal terminal gateway</name>
+  <description>Single-owner serial port gateway with MCP and web UI</description>
+
+  <executable>C:\Program Files\agent-terminal\agent-terminal.exe</executable>
+  <arguments>run --config "C:\ProgramData\agent-terminal\config.toml"</arguments>
+  <workingdirectory>C:\ProgramData\agent-terminal</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <resetfailure>1 day</resetfailure>
+
+  <logpath>C:\ProgramData\agent-terminal\logs\service</logpath>
+  <logmode>rotate</logmode>
+  <logfile>agent-terminal.out.log</logfile>
+  <logfile>agent-terminal.err.log</logfile>
+
+  <env name="TIO_SERVER_HOME" value="C:\ProgramData\agent-terminal" />
+
+  <stopParentFirst>false</stopParentFirst>
+  <killTimeout>15 sec</killTimeout>
+</service>

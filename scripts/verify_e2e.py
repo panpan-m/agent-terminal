@@ -1,6 +1,6 @@
 """End-to-end verification driver.
 
-Starts a real tio-server process against a simulated board, exercises the admin
+Starts a real agent-terminal process against a simulated board, exercises the admin
 API, the MCP endpoint (raw Streamable HTTP), reconnection and transcripts, then
 drives the built SPA in headless Chrome (scripts/ui_probe.mjs).
 
@@ -216,7 +216,7 @@ def main() -> int:
         init = mcp.initialize()
         report.check(
             "MCP initialize over Streamable HTTP",
-            init.get("result", {}).get("serverInfo", {}).get("name") == "tio-server",
+            init.get("result", {}).get("serverInfo", {}).get("name") == "agent-terminal",
             json.dumps(init)[:200],
         )
         mcp.rpc("notifications/initialized", notify=True)

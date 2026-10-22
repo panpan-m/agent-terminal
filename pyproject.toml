@@ -3,9 +3,9 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tio-suite"
+name = "agent-terminal"
 version = "0.1.0"
-description = "tio-server: shared serial-port gateway with MCP and web terminal"
+description = "agent-terminal: shared serial/SSH terminal gateway with MCP and a web terminal"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-2.0-or-later" }
@@ -34,9 +34,9 @@ desktop = [
 ]
 
 [project.scripts]
-tio-server = "tio_server.cli:main"
-tio-mcp = "tio_mcp_shim.__main__:main"
-tio-desktop = "tio_server.desktop:main"
+agent-terminal = "tio_server.cli:main"
+agent-mcp = "tio_mcp_shim.__main__:main"
+agent-desktop = "tio_server.desktop:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tio_server", "src/tio_mcp_shim"]

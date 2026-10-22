@@ -50,7 +50,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ### 2. End-to-end (`scripts/verify_e2e.py`, 38 checks)
 
-Starts `tio-server` as a **separate process** with a simulated board
+Starts `agent-terminal` as a **separate process** with a simulated board
 (`sim://board-a`), then:
 
 * auto-opened session reachable without login; banner captured in the ring
@@ -109,14 +109,14 @@ Screenshot: [`10-terminal-tab`](screenshots/10-terminal-tab.png).
 
 ### 4. Packaged binaries (`scripts/verify_packaged.py`, 11 checks)
 
-`PyInstaller` artifacts (`tio-server.exe` onedir, `tio-mcp.exe`,
+`PyInstaller` artifacts (`agent-terminal.exe` onedir, `agent-mcp.exe`,
 `tio-web-bridge.exe` onefile):
 
 * packaged `init` writes config + one-time credentials;
 * packaged server starts, serves the **bundled SPA and assets**, `/api` answers without login;
 * auto-open session and a serial command;
 * MCP `initialize` over HTTP;
-* **packaged `tio-mcp.exe`** speaks stdio MCP to the packaged server and returns
+* **packaged `agent-mcp.exe`** speaks stdio MCP to the packaged server and returns
   `serial_status` structured content.
 
 ### 5. Live hardware run (`scripts/live_debug.py`, 46 checks)
@@ -128,7 +128,7 @@ Probe (`2E8A:000C`, CMSIS-DAP + CDC-ACM UART) on `COM5` — target:
 Everything was exercised against the live port: open/close/reopen, control
 lines, text/hex/chunked writes, cursor reads, `serial_command` with
 `expect="login:"` matching the real prompt in 15 ms, all eight serial MCP tools through
-the packaged `tio-mcp.exe`, control-owner and permission arbitration, baud
+the packaged `agent-mcp.exe`, control-owner and permission arbitration, baud
 change/reopen, transcript/audit, and the
 DTR/RTS reset sequence.
 
@@ -138,7 +138,7 @@ Screenshot: [`10-terminal-tab`](screenshots/10-terminal-tab.png).
 
 ### 6. Agent path over MCP stdio (`scripts/live_shell_debug.py`, 24 checks)
 
-The packaged `tio-mcp.exe` was driven through the **official MCP SDK stdio
+The packaged `agent-mcp.exe` was driven through the **official MCP SDK stdio
 client** — the same client `@deepseek-ai/dsh-mcp-client` uses — against a
 Raspberry Pi 5 root shell over the same serial port. It ran `uname -a`,
 `/etc/os-release`, `/proc/cpuinfo`, `uptime`, `free -m`, `df -h /`,
@@ -281,15 +281,15 @@ With an agent-visible SSH session:
 
 ### 13. Windows desktop app
 
-1. `packaging/pyinstaller/build_desktop.ps1` built `dist/tio-desktop` (PyInstaller
+1. `packaging/pyinstaller/build_desktop.ps1` built `dist/agent-desktop` (PyInstaller
    onedir, windowed, icon) and its `--smoke` step started the server and exited 0;
-2. `packaging/windows/tio-desktop.iss` produced
-   `dist/installer/tio-server-desktop-0.1.0-setup.exe` (~24.7 MB);
+2. `packaging/windows/agent-desktop.iss` produced
+   `dist/installer/agent-terminal-0.1.0-setup.exe` (~24.7 MB);
 3. silent per-user install exited 0; Start Menu/desktop shortcut
-   `tio-server Desktop` and the installed `tio-desktop.exe` were created under
-   `%LOCALAPPDATA%\Programs\tio-server`;
-4. the installed app opened a WebView2 window titled `tio-server`; first run
-   created `%LOCALAPPDATA%\tio-server-desktop\config.toml` + `api-token`,
+   `agent-terminal Desktop` and the installed `agent-desktop.exe` were created under
+   `%LOCALAPPDATA%\Programs\agent-terminal`;
+4. the installed app opened a WebView2 window titled `agent-terminal`; first run
+   created `%LOCALAPPDATA%\agent-terminal\config.toml` + `api-token`,
    independent from the service data directory;
 5. the desktop server bound `127.0.0.1:18765` (stable MCP endpoint), `/api`
    answered without login, and the app/service used different data dirs and

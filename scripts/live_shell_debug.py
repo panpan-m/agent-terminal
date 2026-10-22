@@ -55,7 +55,7 @@ async def main() -> int:
         print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  — {str(detail)[:170]}" if detail else ""))
 
     params = StdioServerParameters(
-        command=str(ROOT / "dist" / "tio-mcp.exe"),
+        command=str(ROOT / "dist" / "agent-mcp.exe"),
         args=["--url", "http://127.0.0.1:8765/mcp", "--token-file", str(ROOT / "run" / "api-token")],
     )
 
@@ -68,7 +68,7 @@ async def main() -> int:
                 init = await session.initialize()
                 check(
                     "MCP stdio server initializes (DSH client path)",
-                    init.server_info.name == "tio-server",
+                    init.server_info.name == "agent-terminal",
                     f"{init.server_info.name} {init.server_info.version} / {init.protocol_version}",
                 )
                 tools = await session.list_tools()

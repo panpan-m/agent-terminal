@@ -157,7 +157,7 @@ def test_mcp_over_stdio_shim(server):
         shim.stdin.write(json.dumps(init) + "\n")
         shim.stdin.flush()
         response = json.loads(reader.readline())
-        assert response["result"]["serverInfo"]["name"] == "tio-server"
+        assert response["result"]["serverInfo"]["name"] == "agent-terminal"
 
         shim.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         shim.stdin.flush()
@@ -214,7 +214,7 @@ def test_mcp_shim_reports_server_down(tmp_path):
         proc.stdin.flush()
         line = json.loads(reader.readline())
         assert line["error"]["code"] == -32000
-        assert "tio-server is not running" in line["error"]["message"]
+        assert "agent-terminal is not running" in line["error"]["message"]
     finally:
         proc.terminate()
         proc.wait(timeout=5)

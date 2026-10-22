@@ -1,4 +1,4 @@
-# Using tio-server from DSH
+# Using agent-terminal from DSH
 
 DSH is the agent. Register the gateway as a normal MCP server and its tools show
 up as `mcp__tio__serial_*` next to the built-in tools.
@@ -20,7 +20,7 @@ config:
   config:
     serverName: tio
     transport: stdio
-    command: C:\serial_mcp\dist\tio-mcp.exe
+    command: C:\serial_mcp\dist\agent-mcp.exe
     args:
       - --url
       - http://127.0.0.1:8765/mcp
@@ -99,7 +99,7 @@ Works on bash/dash/ash/busybox/ksh/zsh; non-POSIX firmware should use `expect`.
 
 ## Verified client path
 
-`scripts/live_shell_debug.py` drives the packaged `tio-mcp.exe` through the
+`scripts/live_shell_debug.py` drives the packaged `agent-mcp.exe` through the
 official MCP SDK stdio client — the same client `dsh-mcp-client` uses — and ran
 23/23 checks against a Raspberry Pi 5 root shell:
 
@@ -119,7 +119,7 @@ serial_write         -> WRITE_DISABLED after removing the permission
 | Symptom | Check |
 |---|---|
 | no `mcp__tio__*` tools | DSH restarted after editing the patch? YAML valid? |
-| tool calls fail with connection error | `curl http://127.0.0.1:8765/healthz`; is `tio-server` running? |
-| `unauthorized` / 401 | token file path correct and readable; regenerate with `tio-server init` |
+| tool calls fail with connection error | `curl http://127.0.0.1:8765/healthz`; is `agent-terminal` running? |
+| `unauthorized` / 401 | token file path correct and readable; regenerate with `agent-terminal init` |
 | `WRITE_LOCKED` | hand control to the agent in the UI |
 | `TIMEOUT` on write | device stalled (e.g. Debug Probe with DTR low); re-assert DTR |

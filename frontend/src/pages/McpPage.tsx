@@ -10,7 +10,7 @@ import type { McpStatus } from "@/lib/types";
 
 function buildPrompt(status: McpStatus): string {
   const toolNames = status.tools.map((tool) => tool.name).join(", ");
-  return `Install and connect the tio-server MCP server.
+  return `Install and connect the agent-terminal MCP server.
 
 Server:
 - Name: tio

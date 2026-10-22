@@ -3,8 +3,8 @@
 #   pwsh -File packaging/pyinstaller/build.ps1
 #
 # Produces:
-#   dist/tio-server/tio-server.exe      (onedir, serves the SPA from its bundle)
-#   dist/tio-mcp.exe                    (onefile stdio shim)
+#   dist/agent-terminal/agent-terminal.exe      (onedir, serves the SPA from its bundle)
+#   dist/agent-mcp.exe                    (onefile stdio shim)
 param(
     [string]$Python = ".venv\Scripts\python.exe",
     [string]$Venv = ""
@@ -44,21 +44,21 @@ $common = @(
     "--hidden-import", "uvicorn.lifespan.on"
 )
 
-Write-Host "== tio-server (onedir) =="
-& $Python -m PyInstaller @common --onedir --name tio-server `
+Write-Host "== agent-terminal (onedir) =="
+& $Python -m PyInstaller @common --onedir --name agent-terminal `
     --add-data "src\tio_server\web\static;tio_server\web\static" `
     --collect-submodules "tio_server" `
     scripts\entry_server.py
 if ($LASTEXITCODE -ne 0) { throw "server build failed" }
 
-Write-Host "== tio-mcp (onefile) =="
-& $Python -m PyInstaller @common --onefile --name tio-mcp `
+Write-Host "== agent-mcp (onefile) =="
+& $Python -m PyInstaller @common --onefile --name agent-mcp `
     --paths "src" --collect-submodules "tio_server" --collect-submodules "tio_mcp_shim" `
     scripts\entry_shim.py
 if ($LASTEXITCODE -ne 0) { throw "shim build failed" }
 
 Write-Host "== smoke test =="
-& "dist\tio-server\tio-server.exe" doctor | Out-Host
-& "dist\tio-mcp.exe" --help | Out-Host
+& "dist\agent-terminal\agent-terminal.exe" doctor | Out-Host
+& "dist\agent-mcp.exe" --help | Out-Host
 
-Write-Host "Built: dist\tio-server\tio-server.exe, dist\tio-mcp.exe"
+Write-Host "Built: dist\agent-terminal\agent-terminal.exe, dist\agent-mcp.exe"

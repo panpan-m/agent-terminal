@@ -5,15 +5,15 @@ Status: implemented, verified on Windows 10 (see [VERIFICATION.md](./VERIFICATIO
 ## 1. Process model
 
 ```text
-Browser ─HTTP────▶ tio-server (SPA) ────────────────┐
-Agent   ─HTTP────▶ /mcp ────────────────────────────┤──▶ tio-server ──▶ COMx / /dev/ttyUSB0
-Agent   ─stdio───▶ tio-mcp ─HTTP────────────────────┘
+Browser ─HTTP────▶ agent-terminal (SPA) ────────────────┐
+Agent   ─HTTP────▶ /mcp ────────────────────────────┤──▶ agent-terminal ──▶ COMx / /dev/ttyUSB0
+Agent   ─stdio───▶ agent-mcp ─HTTP────────────────────┘
 ```
 
 | Process | Lifetime | Responsibility |
 |---|---|---|
-| `tio-server` | long-running service | sole owner of the serial port, ring buffer, MCP, admin API/SPA, WebSockets, transcripts |
-| `tio-mcp` | per agent | stdio ⇄ HTTP JSON-RPC proxy; never touches the port |
+| `agent-terminal` | long-running service | sole owner of the serial port, ring buffer, MCP, admin API/SPA, WebSockets, transcripts |
+| `agent-mcp` | per agent | stdio ⇄ HTTP JSON-RPC proxy; never touches the port |
 
 ## 2. Module map
 
@@ -97,7 +97,7 @@ untrusted device output; no tool executes or feeds RX into a shell.
 | Plan | Implementation | Why |
 |---|---|---|
 | Admin UI = FastAPI + Jinja2 + HTMX, no Node build | React 19 SPA with an **xterm.js Terminal tab** (the short-lived assistant-ui chat console was removed in v0.4), prebuilt into `web/static`; Node is build-time only | the operator wanted a real terminal, not a chat thread; the packaged server still needs no Node |
-| `tio-suite/` with `server/` subdir | repo root is the Python project (`src/tio_server`) + `frontend/` | simpler repository; process boundaries are unchanged |
+| `agent-terminal/` with `server/` subdir | repo root is the Python project (`src/tio_server`) + `frontend/` | simpler repository; process boundaries are unchanged |
 | Optional `serial_expect` | implemented and enabled | cheap, read-only, useful for boot markers |
 | Virtual serial adapter for `tio` CLI (P6) | not implemented | explicitly optional; out of scope for this deliverable |
 | MCP spec 2026-07-28 + SDK v2 | SDK 2.3.0, Streamable HTTP, stateful transport sessions | matches the target spec; stateless tool state via `session_id` as planned |

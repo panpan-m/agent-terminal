@@ -52,7 +52,7 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 1. Open **Sessions** in the sidebar and switch to the **SSH** tab.
 2. **New SSH host**, fill in name, host, port, username and auth.
-3. For `private key`, enter the key path **on the tio-server machine**, e.g.
+3. For `private key`, enter the key path **on the agent-terminal machine**, e.g.
    `C:\Users\PC\.ssh\id_ed25519`.
 4. `known_hosts` can be left empty to use `~/.ssh/known_hosts`; otherwise give
    the absolute path to the file used for strict verification.
@@ -203,7 +203,7 @@ the same SSH transport:
   prompt (e.g. password then OTP). The backend `auth_interactive` handler maps
   them in order. This path is implemented but not yet validated against a real
   2FA server.
-- **SSH agent**: choose `agent`; Paramiko uses the tio-server process's agent
+- **SSH agent**: choose `agent`; Paramiko uses the agent-terminal process's agent
   (Pageant/OpenSSH agent depending on platform). Covered by a unit test, not by a
   real agent in this environment.
 - **~/.ssh/config import**: the Connections page previews aliases from

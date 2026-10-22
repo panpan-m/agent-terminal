@@ -1,4 +1,4 @@
-"""``tio-server`` command line: init, run, check-config, doctor."""
+"""``agent-terminal`` command line: init, run, check-config, doctor."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         print(f"\nTokens also written to {out}.")
     print()
     print("Next:")
-    print(f"  tio-server run --config \"{secrets['config']}\"")
+    print(f"  agent-terminal run --config \"{secrets['config']}\"")
     return 0
 
 
@@ -132,8 +132,8 @@ def _cmd_version(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="tio-server", description="Shared serial-port gateway")
-    parser.add_argument("--version", action="version", version=f"tio-server {__version__}")
+    parser = argparse.ArgumentParser(prog="agent-terminal", description="Shared serial/SSH terminal gateway")
+    parser.add_argument("--version", action="version", version=f"agent-terminal {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_init = sub.add_parser("init", help="create config + secrets in a data directory")

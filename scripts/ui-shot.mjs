@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Open a running tio-server in headless Chrome and screenshot one hash route.
+ * Open a running agent-terminal in headless Chrome and screenshot one hash route.
  *
  *   node scripts/ui-shot.mjs --url http://127.0.0.1:8765 \
  *        --hash "#/console/board" --out artifacts/live/console.png

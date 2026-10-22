@@ -1,13 +1,13 @@
 # Windows desktop app
 
-`tio-server Desktop` is a self-contained Windows window for the existing SPA and
+`agent-terminal Desktop` is a self-contained Windows window for the existing SPA and
 server. It does **not** require a browser, a Windows service, or an open console:
-one `tio-desktop.exe` process starts uvicorn on a loopback port (18765 by
+one `agent-desktop.exe` process starts uvicorn on a loopback port (18765 by
 default) and hosts the UI in **Microsoft Edge WebView2**.
 
 The service + browser install remains available and independent; desktop data is
-stored under `%LOCALAPPDATA%\tio-server-desktop`, while the service uses
-`C:\ProgramData\tio-server`.
+stored under `%LOCALAPPDATA%\agent-terminal`, while the service uses
+`C:\ProgramData\agent-terminal`.
 
 ## Build
 
@@ -19,17 +19,17 @@ Prerequisites on the build machine:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build_desktop.ps1
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\windows\tio-desktop.iss
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\windows\agent-desktop.iss
 ```
 
 Outputs:
 
 ```text
-dist\tio-desktop\tio-desktop.exe             WebView2 desktop app (onedir)
-dist\installer\tio-server-desktop-0.1.0-setup.exe
+dist\agent-desktop\agent-desktop.exe             WebView2 desktop app (onedir)
+dist\installer\agent-terminal-0.1.0-setup.exe
 ```
 
-`build_desktop.ps1` also runs `tio-desktop.exe --smoke --data-dir <temp>`, which
+`build_desktop.ps1` also runs `agent-desktop.exe --smoke --data-dir <temp>`, which
 starts the server, prints the URL, and shuts down without opening a window.
 
 ## Install and first run
@@ -37,7 +37,7 @@ starts the server, prints the URL, and shuts down without opening a window.
 Run the setup. It installs per-user to:
 
 ```text
-%LOCALAPPDATA%\Programs\tio-server\
+%LOCALAPPDATA%\Programs\agent-terminal\
 ```
 
 and creates Start Menu + optional desktop shortcuts and an optional
@@ -46,7 +46,7 @@ and creates Start Menu + optional desktop shortcuts and an optional
 On first launch it creates:
 
 ```text
-%LOCALAPPDATA%\tio-server-desktop\
+%LOCALAPPDATA%\agent-terminal\
   config.toml
   api-token                        MCP bearer token (also shown in the MCP tab)
   logs\, transcripts\, webview\
@@ -62,17 +62,17 @@ stale fields are ignored.
   across desktop restarts (`http://127.0.0.1:18765/mcp`). Pass `--port 0` for an
   ephemeral test port; if 18765 is occupied, launch with another free port.
 * Closing the window stops the server; the app is single-instance.
-* The desktop app is independent from a running `tio-server` service.
+* The desktop app is independent from a running `agent-terminal` service.
 * WebView2 Runtime is required; it is present on current Windows 10/11. If it is
   missing, the app shows the URL and points to the log instead of crashing.
 * Serial and SSH sessions, MCP, SFTP and the rest of the UI are unchanged.
 
-Logs: `%LOCALAPPDATA%\tio-server-desktop\desktop.log`.
+Logs: `%LOCALAPPDATA%\agent-terminal\desktop.log`.
 
 ## Uninstall
 
 Use **Apps & features** / the Start Menu uninstaller. The uninstaller asks whether
-to delete `%LOCALAPPDATA%\tio-server-desktop`; choose No to keep configuration and
+to delete `%LOCALAPPDATA%\agent-terminal`; choose No to keep configuration and
 transcripts for a reinstall.
 
 ## Limitations

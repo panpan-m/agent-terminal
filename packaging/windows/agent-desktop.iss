@@ -1,21 +1,21 @@
-; Per-user desktop installer for tio-server (Windows x64).
+; Per-user desktop installer for agent-terminal (Windows x64).
 ;
 ; Build:
 ;   powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build_desktop.ps1
-;   iscc packaging\windows\tio-desktop.iss
+;   iscc packaging\windows\agent-desktop.iss
 ;
 ; This installs a WebView2 desktop window, NOT a Windows service.  The user's
-; data lives in %LOCALAPPDATA%\tio-server-desktop and is independent from the
-; service install in C:\ProgramData\tio-server.
+; data lives in %LOCALAPPDATA%\agent-terminal-desktop and is independent from the
+; service install in C:\ProgramData\agent-terminal.
 
-#define AppName "tio-server Desktop"
-#define AppShortName "tio-server"
+#define AppName "Agent Terminal"
+#define AppShortName "agent-terminal"
 #define AppVersion "0.1.0"
-#define AppPublisher "tio-suite contributors"
-#define AppExe "tio-desktop.exe"
+#define AppPublisher "agent-terminal contributors"
+#define AppExe "agent-desktop.exe"
 
 [Setup]
-AppId={{A3E7F26D-4A6B-4A77-9D0A-6A2B8F9C41D2}
+AppId={{E1DD9D41-DA85-4F2D-BC03-84DE3423AA32}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -27,11 +27,11 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\dist\installer
-OutputBaseFilename=tio-server-desktop-{#AppVersion}-setup
+OutputBaseFilename=agent-terminal-desktop-{#AppVersion}-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=..\..\packaging\windows\tio.ico
+SetupIconFile=..\..\packaging\windows\agent-terminal.ico
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 LicenseFile=..\..\LICENSE
@@ -40,7 +40,7 @@ CloseApplications=yes
 SetupLogging=yes
 
 [Files]
-Source: "..\..\dist\tio-desktop\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\..\dist\agent-desktop\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
@@ -49,10 +49,10 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
-Name: "startup"; Description: "Start tio-server Desktop when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
+Name: "startup"; Description: "Start agent-terminal Desktop when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "tio-server Desktop"; ValueData: """{app}\{#AppExe}"""; Flags: uninsdeletevalue; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "agent-terminal Desktop"; ValueData: """{app}\{#AppExe}"""; Flags: uninsdeletevalue; Tasks: startup
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
@@ -67,7 +67,7 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    DataDir := ExpandConstant('{localappdata}\tio-server-desktop');
+    DataDir := ExpandConstant('{localappdata}\agent-terminal-desktop');
     if DirExists(DataDir) then
     begin
       if MsgBox('Delete the desktop configuration, transcripts and tokens in:' + #13#10 +

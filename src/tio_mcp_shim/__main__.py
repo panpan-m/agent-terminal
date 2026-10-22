@@ -1,10 +1,10 @@
-"""``tio-mcp``: a stdio MCP server that proxies to tio-server's HTTP endpoint.
+"""``agent-mcp``: a stdio MCP server that proxies to agent-terminal's HTTP endpoint.
 
 Agents that only speak stdio MCP can point at this program; it forwards every
 JSON-RPC message to ``http(s)://…/mcp`` with the bearer token and streams the
 answers back.  It never opens a serial port and caches nothing.
 
-    {"mcpServers": {"tio": {"command": "tio-mcp",
+    {"mcpServers": {"tio": {"command": "agent-mcp",
                             "args": ["--url", "http://127.0.0.1:8765/mcp",
                                      "--token-file", "/path/to/api-token"]}}}
 """
@@ -81,8 +81,8 @@ class Proxy:
                     self._error(
                         request_id,
                         -32000,
-                        "tio-server is not running or not reachable; start it with "
-                        "`tio-server run --config <path>`",
+                        "agent-terminal is not running or not reachable; start it with "
+                        "`agent-terminal run --config <path>`",
                     )
                 ]
             return []
@@ -97,7 +97,7 @@ class Proxy:
             return []
         if response.status_code == 404:
             if is_request:
-                return [self._error(request_id, -32601, "method not found on tio-server")]
+                return [self._error(request_id, -32601, "method not found on agent-terminal")]
             return []
         if response.status_code in (502, 503, 504) and not response.text.strip():
             # A local proxy/loopback guard answering for a port nobody listens on.
@@ -106,8 +106,8 @@ class Proxy:
                     self._error(
                         request_id,
                         -32000,
-                        "tio-server is not running or not reachable; start it with "
-                        "`tio-server run --config <path>`",
+                        "agent-terminal is not running or not reachable; start it with "
+                        "`agent-terminal run --config <path>`",
                     )
                 ]
             return []
@@ -162,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-    parser = argparse.ArgumentParser(prog="tio-mcp", description="stdio MCP proxy for tio-server")
+    parser = argparse.ArgumentParser(prog="agent-mcp", description="stdio MCP proxy for agent-terminal")
     parser.add_argument("--url", default="http://127.0.0.1:8765/mcp")
     parser.add_argument("--token-file")
     parser.add_argument("--timeout", type=float, default=120.0)
@@ -173,18 +173,18 @@ def main(argv: list[str] | None = None) -> int:
         try:
             token = Path(args.token_file).read_text(encoding="utf-8").strip()
         except OSError as exc:
-            sys.stderr.write(f"tio-mcp: cannot read token file: {exc}\n")
+            sys.stderr.write(f"agent-mcp: cannot read token file: {exc}\n")
             return 2
     else:
         import os
 
-        token = os.environ.get("TIO_SERVER_TOKEN")
+        token = os.environ.get("AGENT_TERMINAL_TOKEN") or os.environ.get("TIO_SERVER_TOKEN")
         if not token:
             fallback = _default_token_file()
             if fallback is not None:
                 token = fallback.read_text(encoding="utf-8").strip()
     if not token:
-        sys.stderr.write("tio-mcp: no api token (use --token-file or TIO_SERVER_TOKEN)\n")
+        sys.stderr.write("agent-mcp: no api token (use --token-file or TIO_SERVER_TOKEN)\n")
         return 2
 
     proxy = Proxy(args.url, token, timeout=args.timeout)

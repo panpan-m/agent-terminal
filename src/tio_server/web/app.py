@@ -36,11 +36,11 @@ __version__ = "0.1.0"
 
 
 def _mcp_shim_path() -> str:
-    """Best-effort path of tio-mcp for the copy-paste install prompt."""
-    override = os.environ.get("TIO_MCP_SHIM")
+    """Best-effort path of agent-mcp for the copy-paste install prompt."""
+    override = os.environ.get("AGENT_MCP_SHIM") or os.environ.get("TIO_MCP_SHIM")
     if override:
         return override
-    exe = "tio-mcp.exe" if sys.platform == "win32" else "tio-mcp"
+    exe = "agent-mcp.exe" if sys.platform == "win32" else "agent-mcp"
     if getattr(sys, "frozen", False):
         candidate = Path(sys.executable).parent / exe
         if candidate.exists():
@@ -205,7 +205,7 @@ class _BearerAuth:
                     "status": 401,
                     "headers": [
                         (b"content-type", b"application/json"),
-                        (b"www-authenticate", b'Bearer realm="tio-server"'),
+                        (b"www-authenticate", b'Bearer realm="agent-terminal"'),
                         (b"content-length", str(len(body)).encode()),
                     ],
                 }
@@ -376,7 +376,7 @@ def create_app(config: Config) -> FastAPI:
             manager.stop()
 
     app = FastAPI(
-        title="tio-server",
+        title="agent-terminal",
         version=__version__,
         lifespan=lifespan,
         docs_url=None,
@@ -817,7 +817,7 @@ def create_app(config: Config) -> FastAPI:
             "api_token_present": config.api_token_file.exists(),
             "shim": _mcp_shim_path(),
             "server": {
-                "name": getattr(mcp_server, "name", "tio-server"),
+                "name": getattr(mcp_server, "name", "agent-terminal"),
                 "version": getattr(mcp_server, "version", __version__),
             },
             "tools": [
@@ -1043,7 +1043,7 @@ def create_app(config: Config) -> FastAPI:
             return FileResponse(file, headers={"Cache-Control": "no-cache"})
         return HTMLResponse(
             "<html><body style='font-family:system-ui;padding:2rem'>"
-            "<h1>tio-server is running</h1><p>The admin UI has not been built yet. "
+            "<h1>agent-terminal is running</h1><p>The admin UI has not been built yet. "
             "Run <code>npm --prefix frontend ci &amp;&amp; npm --prefix frontend run build</code>.</p>"
             "<p>MCP endpoint: <code>/mcp</code> · health: <code>/healthz</code></p>"
             "</body></html>"

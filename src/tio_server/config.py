@@ -237,7 +237,7 @@ class Config:
         if s.log_level.lower() not in ("debug", "info", "warning", "error"):
             raise _fail("server.log_level must be debug|info|warning|error")
         if not a.api_token_hash:
-            raise _fail("auth.api_token_hash is empty (run `tio-server init`)")
+            raise _fail("auth.api_token_hash is empty (run `agent-terminal init`)")
         if sec.max_sessions < 1:
             raise _fail("security.max_sessions must be >= 1")
         if not (1024 <= sec.max_read_bytes <= 1024 * 1024):

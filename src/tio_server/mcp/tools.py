@@ -148,7 +148,7 @@ def build_mcp_server(
     ssh_manager: SshManager | None = None,
 ) -> MCPServer:
     mcp = MCPServer(
-        name="tio-server",
+        name="agent-terminal",
         instructions=INSTRUCTIONS,
         version="0.1.0",
     )

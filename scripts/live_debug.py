@@ -1,4 +1,4 @@
-"""Live hardware debug run against a real port on a running tio-server.
+"""Live hardware debug run against a real port on a running agent-terminal.
 
 The attached board is a Raspberry Pi serial console (getty).  The run never
 types a username or password: writes are bare Enter presses, and the tests match
@@ -73,7 +73,7 @@ class Runner:
     def mcp_start(self) -> None:
         self.mcp = subprocess.Popen(
             [
-                str(ROOT / "dist" / "tio-mcp.exe"),
+                str(ROOT / "dist" / "agent-mcp.exe"),
                 "--url",
                 f"{self.base}/mcp",
                 "--token-file",
@@ -95,8 +95,8 @@ class Runner:
         )
         self.mcp_notify("notifications/initialized")
         self.check(
-            "MCP initialize through packaged tio-mcp.exe",
-            init.get("result", {}).get("serverInfo", {}).get("name") == "tio-server",
+            "MCP initialize through packaged agent-mcp.exe",
+            init.get("result", {}).get("serverInfo", {}).get("name") == "agent-terminal",
             json.dumps(init)[:160],
         )
 
@@ -109,7 +109,7 @@ class Runner:
         assert self.mcp and self.mcp.stdout
         line = self.mcp.stdout.readline()
         if not line:
-            raise RuntimeError("tio-mcp closed unexpectedly")
+            raise RuntimeError("agent-mcp closed unexpectedly")
         return json.loads(line)
 
     def mcp_notify(self, method: str) -> None:

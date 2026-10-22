@@ -600,7 +600,7 @@ export function ConnectionsPage({
               />
             </Field>
             {form.auth === "key" ? (
-              <Field label="Private key file" hint="path on the tio-server machine; never uploaded">
+              <Field label="Private key file" hint="path on the agent-terminal machine; never uploaded">
                 <Input
                   value={form.key_file ?? ""}
                   required
@@ -718,7 +718,7 @@ export function ConnectionsPage({
                 </Field>
               ) : (
                 <p className="rounded border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-[11px] text-zinc-400">
-                  Authentication uses the SSH agent of the tio-server process.
+                  Authentication uses the SSH agent of the agent-terminal process.
                 </p>
               )}
 

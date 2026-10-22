@@ -182,18 +182,18 @@ Business failures are `isError: true` **and** carry structured content:
 {
   "mcpServers": {
     "tio": {
-      "command": "tio-mcp",
+      "command": "agent-mcp",
       "args": [
         "--url", "http://127.0.0.1:8765/mcp",
-        "--token-file", "C:\\ProgramData\\tio-server\\api-token"
+        "--token-file", "C:\\ProgramData\\agent-terminal\\api-token"
       ]
     }
   }
 }
 ```
 
-`tio-mcp` refuses to start without a token, reports connection failures as JSON-RPC
-`-32000` ("tio-server is not running…"), forwards `Mcp-Session-Id` and
+`agent-mcp` refuses to start without a token, reports connection failures as JSON-RPC
+`-32000` ("agent-terminal is not running…"), forwards `Mcp-Session-Id` and
 `MCP-Protocol-Version`, and never opens the serial port.
 
 ## Control ownership
