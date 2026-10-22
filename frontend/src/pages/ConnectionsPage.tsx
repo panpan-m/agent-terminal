@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Activity,
   KeyRound,
   Loader2,
   Pencil,
@@ -17,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { ApiFailure, api } from "@/lib/api";
-import type { SshHost, SshHostInput, SshSessionStatus } from "@/lib/types";
+import type { SshHost, SshHostInput, SshSessionStatus, SshTestResult } from "@/lib/types";
 import { formatBytes, formatTime } from "@/lib/utils";
 
 const EMPTY: SshHostInput = {
@@ -60,6 +61,9 @@ export function ConnectionsPage({
   const [connectError, setConnectError] = useState<string | null>(null);
   const [connectDetails, setConnectDetails] = useState<Record<string, unknown> | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<SshTestResult | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -185,6 +189,20 @@ export function ConnectionsPage({
     }
   };
 
+  const testHost = async (host: SshHost) => {
+    setTestingId(host.id);
+    setTestResult(null);
+    setTestError(null);
+    try {
+      setTestResult(await api.sshTestHost(host.id));
+    } catch (error) {
+      const failure = error as ApiFailure;
+      setTestError(`${failure.code ?? "ERROR"}: ${failure.message}`);
+    } finally {
+      setTestingId(null);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-5 py-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -251,6 +269,19 @@ export function ConnectionsPage({
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <Button size="sm" variant="primary" onClick={() => startConnect(host)}>
                     <Play className="h-3.5 w-3.5" /> Connect
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void testHost(host)}
+                    disabled={testingId === host.id}
+                  >
+                    {testingId === host.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Activity className="h-3.5 w-3.5" />
+                    )}
+                    Test
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => openEdit(host)}>
                     <Pencil className="h-3.5 w-3.5" /> Edit
@@ -488,6 +519,82 @@ export function ConnectionsPage({
                 </Button>
               </div>
             </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(testResult || testError)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTestResult(null);
+            setTestError(null);
+          }
+        }}
+      >
+        <DialogContent title="SSH connection test" description="TCP + SSH handshake only; no authentication or command was performed.">
+          {testError ? <p className="text-xs text-red-400">{testError}</p> : null}
+          {testResult ? (
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="text-zinc-200">reachable</span>
+                <span className="text-zinc-500">{testResult.remote_version}</span>
+              </div>
+              <dl className="space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 font-mono text-[10px] text-zinc-400">
+                <div className="flex justify-between gap-2">
+                  <dt>host</dt>
+                  <dd className="text-zinc-200">
+                    {testResult.host}:{testResult.port}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt>key type</dt>
+                  <dd className="text-zinc-200">{testResult.host_key_type}</dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt>fingerprint</dt>
+                  <dd className="break-all text-zinc-200">{testResult.fingerprint}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt>known_hosts</dt>
+                  <dd
+                    className={
+                      testResult.known_hosts_status === "known"
+                        ? "text-emerald-300"
+                        : testResult.known_hosts_status === "changed"
+                          ? "text-red-400"
+                          : "text-amber-300"
+                    }
+                  >
+                    {testResult.known_hosts_status}
+                  </dd>
+                </div>
+              </dl>
+              {testResult.known_hosts_status !== "known" ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-zinc-400">
+                    Verify the fingerprint out of band, then add it to{" "}
+                    <span className="font-mono">{testResult.known_hosts}</span>:
+                  </p>
+                  <pre className="overflow-x-auto rounded border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-[10px] text-zinc-300">
+                    {`ssh-keyscan -p ${testResult.port} ${testResult.host} >> ${testResult.known_hosts}`}
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(
+                        `ssh-keyscan -p ${testResult.port} ${testResult.host} >> ${testResult.known_hosts}`,
+                      );
+                      notify("ssh-keyscan command copied", "success");
+                    }}
+                  >
+                    Copy command
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>

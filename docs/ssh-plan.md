@@ -279,13 +279,12 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 6. transcript/audit 有记录；
 7. 不破坏串口测试与打包。
 
-### Phase 2 — 体验对齐
+### Phase 2 — 体验对齐（部分完成）
 
-- 搜索、日志导出、主题、Keys 提示；
-- 多标签/多会话；
-- 自动重连（transport 掉线）；
-- host key 指纹页面/known_hosts 导入提示；
-- 连接测试（仅 TCP/握手，不执行命令）。
+- ✅ 搜索、日志导出、主题、Keys 提示；
+- ✅ host key 指纹/known_hosts 提示、`ssh-keyscan` 复制；
+- ✅ 连接测试（仅 TCP/握手，不认证、不执行命令）；
+- ⏳ 多标签/多会话切换、transport 掉线自动重连。
 
 ### Phase 3 — MCP ✅ 已实现（2026-10-22）
 

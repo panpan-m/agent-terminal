@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, RefreshCw, Search, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Keyboard, Loader2, RefreshCw, Search, Square, Trash2 } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal, type ITheme } from "@xterm/xterm";
@@ -73,6 +73,7 @@ export function SshTerminalPage({
   const [dropped, setDropped] = useState(0);
   const [received, setReceived] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [generation, setGeneration] = useState(0);
@@ -318,6 +319,19 @@ export function SshTerminalPage({
           >
             <RefreshCw className="h-3.5 w-3.5" /> Reconnect
           </Button>
+          <Button size="sm" variant="ghost" asChild title="download raw bytes with timestamps">
+            <a href={`/api/ssh/sessions/${encodeURIComponent(sessionId)}/export?format=txt`} download>
+              <Download className="h-3.5 w-3.5" /> Log
+            </a>
+          </Button>
+          <Button
+            size="sm"
+            variant={keysOpen ? "outline" : "ghost"}
+            onClick={() => setKeysOpen((value) => !value)}
+            title="browser-reserved keys and alternatives"
+          >
+            <Keyboard className="h-3.5 w-3.5" /> Keys
+          </Button>
           <Button size="sm" variant="danger" onClick={() => void disconnect()} disabled={busy}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
             Disconnect
@@ -355,6 +369,47 @@ export function SshTerminalPage({
           <Button size="sm" variant="ghost" onClick={() => setSearchOpen(false)}>
             Close
           </Button>
+        </div>
+      ) : null}
+
+      {keysOpen ? (
+        <div className="absolute right-3 top-12 z-20 w-[27rem] rounded-md border border-zinc-700 bg-zinc-950/95 p-3 text-[11px] text-zinc-300 shadow-2xl">
+          <p className="mb-2 font-semibold text-zinc-100">Browser-reserved keys</p>
+          <p className="mb-2 text-zinc-400">
+            These never reach the remote shell in a browser terminal. Use the alternative or a native SSH client.
+          </p>
+          <table className="w-full">
+            <tbody className="align-top">
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+W</td>
+                <td>closes the tab → <span className="font-mono">Alt+Backspace</span> deletes a word</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+N / Ctrl+P</td>
+                <td>new window / print → use ↓ / ↑ for history</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+T</td>
+                <td>new tab → transpose chars needs a native terminal</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+L</td>
+                <td>address bar → type <span className="font-mono">clear</span></td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">F5 / F11 / F12</td>
+                <td>reload / fullscreen / devtools → browser-bound</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+F</td>
+                <td>search this scrollback</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+C / V</td>
+                <td>copy / paste through the browser clipboard</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       ) : null}
 

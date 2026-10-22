@@ -4,7 +4,7 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **103 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **104 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
@@ -30,7 +30,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 103 passed + 1 skipped)
+### 1. Test suite (`pytest`, 104 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -120,7 +120,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (103 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (104 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -197,6 +197,17 @@ Transcripts (`run/transcripts/ssh-*.jsonl`) and audit events (`ssh.connect`,
 [14-ssh-terminal](screenshots/14-ssh-terminal.png),
 [15-ssh-typed](screenshots/15-ssh-typed.png).
 
+Phase 2 additions were verified on the same Pi host:
+
+- **connection test** (`POST /api/ssh/hosts/{id}/test`) returned `reachable=true`,
+  `OpenSSH_10.0p2`, `ssh-ed25519`, SHA256 fingerprint and
+  `known_hosts_status=unknown` without authenticating;
+- **log export** (`GET /api/ssh/sessions/{id}/export?format=txt`) returned the
+  timestamped RX transcript (`RX` + `Linux raspberry...`);
+- the SSH terminal header now exposes **Log** and **Keys**, and host cards expose
+  **Test**; screenshot [14-ssh-terminal](screenshots/14-ssh-terminal.png) was
+  refreshed.
+
 ### 8. SSH MCP tools (7 checks)
 
 Through the live `/mcp` endpoint (Bearer + `Mcp-Session-Id`), with an
@@ -223,6 +234,7 @@ operator-opened SSH session to the Pi:
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
 | SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 15 tools total |
+| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 104 |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |
 | Replug reconnects, cursor continues, gap reported | ✅ | reconnect test, gap unit tests, HIL enumeration |

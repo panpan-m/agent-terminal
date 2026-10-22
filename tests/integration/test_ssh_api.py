@@ -57,6 +57,29 @@ def test_ssh_host_crud_and_auth_gate(tmp_path):
         assert client.get("/api/ssh/hosts").json()["hosts"] == []
 
 
+def test_ssh_test_endpoint_is_structured(tmp_path):
+    app, _, secrets = make_app(tmp_path)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        csrf = login(client, secrets)
+        created = client.post(
+            "/api/ssh/hosts",
+            json={
+                "id": "closed",
+                "name": "Closed port",
+                "host": "127.0.0.1",
+                "port": 1,
+                "username": "root",
+                "auth": "password",
+                "connect_timeout_s": 1,
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert created.status_code == 201, created.text
+        response = client.post("/api/ssh/hosts/closed/test", headers={"X-CSRF-Token": csrf})
+        assert response.status_code == 502, response.text
+        assert response.json()["error"]["code"] == "SSH_UNREACHABLE"
+
+
 def test_ssh_connect_failure_is_structured(tmp_path):
     app, _, secrets = make_app(tmp_path)
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:

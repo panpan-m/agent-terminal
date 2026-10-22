@@ -8,6 +8,7 @@ import type {
   SshHost,
   SshHostInput,
   SshSessionStatus,
+  SshTestResult,
   SystemInfo,
   TranscriptEvent,
 } from "./types";
@@ -158,6 +159,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  sshTestHost: (id: string) =>
+    request<SshTestResult>(`/api/ssh/hosts/${encodeURIComponent(id)}/test`, { method: "POST" }),
   sshSessions: () => request<{ sessions: SshSessionStatus[] }>("/api/ssh/sessions"),
   sshSession: (id: string) =>
     request<SshSessionStatus>(`/api/ssh/sessions/${encodeURIComponent(id)}`),

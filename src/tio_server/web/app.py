@@ -516,6 +516,28 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_get_session(session_id: str, rec: AdminSession = Depends(admin_session)):
         return ssh_manager.get(session_id).status()
 
+    @app.get("/api/ssh/sessions/{session_id}/export")
+    async def ssh_export_session(
+        session_id: str,
+        format: str = "txt",
+        limit: int = 5000,
+        rec: AdminSession = Depends(admin_session),
+    ):
+        sess = ssh_manager.get(session_id)
+        if format not in ("txt", "hex"):
+            raise ToolFailure("INVALID_ARGUMENT", "format must be txt or hex")
+        body = _export_transcript(sess.transcript, format, limit)
+        return Response(
+            content=body,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{session_id}-raw-{format}.log"'},
+        )
+
+    @app.post("/api/ssh/hosts/{host_id}/test")
+    async def ssh_test_host(host_id: str, rec: AdminSession = Depends(csrf_guard)):
+        result = await asyncio.to_thread(ssh_manager.test, host_id)
+        return result
+
     @app.post("/api/ssh/sessions/{session_id}/disconnect")
     async def ssh_disconnect(session_id: str, rec: AdminSession = Depends(csrf_guard)):
         await asyncio.to_thread(ssh_manager.disconnect, session_id)
@@ -652,38 +674,10 @@ def create_app(config: Config) -> FastAPI:
         rec: AdminSession = Depends(admin_session),
     ):
         """Raw byte log with per-chunk timestamps, like a native terminal capture."""
-        from collections import deque
-
         sess = manager.get(session_id)
         if format not in ("txt", "hex"):
             raise ToolFailure("INVALID_ARGUMENT", "format must be txt or hex")
-        keep: deque[str] = deque(maxlen=max(1, min(int(limit), 200_000)))
-        path = sess.transcript.path
-        if path.exists():
-            with path.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    try:
-                        event = json.loads(line)
-                    except ValueError:
-                        continue
-                    if event.get("dir") not in ("rx", "tx"):
-                        continue
-                    data = base64.b64decode(event.get("data_b64") or "")
-                    if format == "hex":
-                        payload = data.hex(" ")
-                    else:
-                        payload = (
-                            data.decode("utf-8", "backslashreplace")
-                            .replace("\\", "\\\\")
-                            .replace("\r", "\\r")
-                            .replace("\n", "\\n")
-                            .replace("\t", "\\t")
-                        )
-                    keep.append(
-                        f"{event.get('ts', '')}\t{event['dir'].upper()}\t"
-                        f"{event.get('source', '')}\t{event.get('offset', '')}\t{payload}"
-                    )
-        body = "\n".join(keep) + ("\n" if keep else "")
+        body = _export_transcript(sess.transcript, format, limit)
         return Response(
             content=body,
             media_type="text/plain; charset=utf-8",
@@ -1044,6 +1038,39 @@ def create_app(config: Config) -> FastAPI:
         )
 
     return app
+
+
+def _export_transcript(writer, format: str, limit: int) -> str:
+    """Render a transcript writer as timestamped text, shared by serial and SSH."""
+    from collections import deque
+
+    keep: deque[str] = deque(maxlen=max(1, min(int(limit), 200_000)))
+    path = writer.path
+    if path.exists():
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if event.get("dir") not in ("rx", "tx"):
+                    continue
+                data = base64.b64decode(event.get("data_b64") or "")
+                if format == "hex":
+                    payload = data.hex(" ")
+                else:
+                    payload = (
+                        data.decode("utf-8", "backslashreplace")
+                        .replace("\\", "\\\\")
+                        .replace("\r", "\\r")
+                        .replace("\n", "\\n")
+                        .replace("\t", "\\t")
+                    )
+                keep.append(
+                    f"{event.get('ts', '')}\t{event['dir'].upper()}\t"
+                    f"{event.get('source', '')}\t{event.get('offset', '')}\t{payload}"
+                )
+    return "\n".join(keep) + ("\n" if keep else "")
 
 
 def _save_config(config: Config) -> None:

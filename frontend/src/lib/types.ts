@@ -227,3 +227,15 @@ export interface SshConnectInput {
   cols?: number;
   rows?: number;
 }
+
+export interface SshTestResult {
+  host_id: string;
+  host: string;
+  port: number;
+  reachable: boolean;
+  remote_version: string;
+  host_key_type: string;
+  fingerprint: string;
+  known_hosts_status: "known" | "unknown" | "changed";
+  known_hosts: string;
+}

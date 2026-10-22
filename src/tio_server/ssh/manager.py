@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 import threading
 from typing import Any
 
+import paramiko
+
 from ..config import Config
-from ..errors import CONFLICT, NOT_FOUND, ToolFailure
+from ..errors import CONFLICT, NOT_FOUND, SSH_UNREACHABLE, ToolFailure
 from ..transcript import AuditLog, TranscriptRegistry
 from .profiles import SshHost, SshProfileStore
-from .session import SshSession
+from .session import SshSession, _fingerprint
 
 
 class SshManager:
@@ -54,6 +57,59 @@ class SshManager:
                 self._sessions.pop(session_id, None)
             raise
         return session
+
+    def test(self, host_id: str) -> dict[str, Any]:
+        """TCP + SSH handshake only: no auth, no command, no side effects."""
+        host = self.profiles.get(host_id)
+        transport = None
+        try:
+            transport = paramiko.Transport((host.host, int(host.port)))
+            transport.start_client(timeout=int(host.connect_timeout_s))
+            key = transport.get_remote_server_key()
+            known = paramiko.HostKeys()
+            system_known = os.path.expanduser("~/.ssh/known_hosts")
+            if os.path.isfile(system_known):
+                known.load(system_known)
+            if host.known_hosts and os.path.isfile(os.path.expanduser(host.known_hosts)):
+                known.load(os.path.expanduser(host.known_hosts))
+            lookup = host.host if int(host.port) == 22 else f"[{host.host}]:{host.port}"
+            entry = known.lookup(lookup)
+            if not entry:
+                known_status = "unknown"
+            else:
+                expected = entry.get(key.get_name())
+                known_status = "known" if expected is not None and expected.asbytes() == key.asbytes() else "changed"
+            result = {
+                "host_id": host.id,
+                "host": host.host,
+                "port": int(host.port),
+                "reachable": True,
+                "remote_version": transport.remote_version,
+                "host_key_type": key.get_name(),
+                "fingerprint": _fingerprint(key),
+                "known_hosts_status": known_status,
+                "known_hosts": os.path.expanduser(host.known_hosts) if host.known_hosts else system_known,
+            }
+            self.audit.write(
+                "ssh.test",
+                host_id=host.id,
+                host=host.host,
+                port=int(host.port),
+                known_hosts=known_status,
+            )
+            return result
+        except Exception as exc:
+            raise ToolFailure(
+                SSH_UNREACHABLE,
+                f"cannot reach {host.host}:{host.port}: {exc}",
+                {"host_id": host.id, "host": host.host, "port": int(host.port)},
+            ) from exc
+        finally:
+            if transport is not None:
+                try:
+                    transport.close()
+                except Exception:
+                    pass
 
     def get(self, session_id: str) -> SshSession:
         with self._lock:

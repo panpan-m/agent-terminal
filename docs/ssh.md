@@ -71,8 +71,10 @@ ssh-keyscan -p 22 192.168.124.23 >> ~/.ssh/known_hosts
 | PUT | `/api/ssh/hosts/{id}` | update, CSRF required |
 | DELETE | `/api/ssh/hosts/{id}` | refused while a session for it is open |
 | POST | `/api/ssh/hosts/{id}/connect` | body `{password?, passphrase?, cols, rows}` |
+| POST | `/api/ssh/hosts/{id}/test` | TCP + SSH handshake, fingerprint + known_hosts status |
 | GET | `/api/ssh/sessions` | active sessions |
 | GET | `/api/ssh/sessions/{id}` | status, host-key fingerprint, cipher, counters |
+| GET | `/api/ssh/sessions/{id}/export?format=txt\|hex` | timestamped raw TX/RX log |
 | POST | `/api/ssh/sessions/{id}/disconnect` | close the SSH transport |
 
 ### WebSocket `/ws/ssh/{session_id}`
@@ -93,6 +95,12 @@ terminal replays the last 64 KiB.
 
 - The SSH session lives on the server; closing the browser tab does **not**
   disconnect it. Reopen from the **Open SSH sessions** table.
+- **Log** downloads a timestamped raw TX/RX transcript (`/api/ssh/sessions/{id}/export`).
+- **Test** performs a TCP + SSH handshake only (no auth, no command), reports the
+  SHA256 host-key fingerprint and whether it is `known` / `unknown` / `changed`
+  in known_hosts, and offers a copyable `ssh-keyscan` command.
+- **Keys** shows browser-reserved shortcuts and alternatives (same list as the
+  serial terminal).
 - Resize is sent to the remote PTY (`stty size` changes); xterm's `FitAddon`
   drives it.
 - The status panel shows the host key fingerprint, cipher/MAC, remote version,
@@ -124,6 +132,8 @@ the same SSH connection without touching the interactive shell.
 Real Raspberry Pi 5 over SSH (OpenSSH 10.0p2, `aes128-ctr`/`hmac-sha2-256`):
 
 - key login, `uname -a`, `stty size` after a 120×40 resize → `40 120`;
+- connection test → reachable, SHA256 fingerprint, `known_hosts_status`;
+- log export → 508-byte timestamped RX transcript containing the kernel banner;
 - unknown host key → `SSH_HOST_UNKNOWN` + SHA256 fingerprint;
 - wrong known_hosts entry → `SSH_HOST_KEY_CHANGED` with expected/actual
   fingerprints;
