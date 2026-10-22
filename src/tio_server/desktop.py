@@ -12,9 +12,11 @@ import argparse
 import ctypes
 import logging
 import os
+import socket
 import sys
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 from .config import CONFIG_FILENAME, Config, init_config
@@ -88,6 +90,19 @@ def _make_config(data_dir: Path) -> Config:
     return Config.load(config_path)
 
 
+def _pick_port(requested: int) -> int:
+    """Resolve ``--port 0`` to a concrete free port before the app is built.
+
+    The Host/Origin guard allow-list is derived from ``server.port`` when the
+    app is created, so the real port must be known by then.
+    """
+    if requested:
+        return requested
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 def _start_server(cfg: Config, *, host: str, port: int):
     import uvicorn
 
@@ -143,7 +158,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         cfg = _make_config(data_dir)
-        server, thread, port = _start_server(cfg, host=args.host, port=args.port)
+        # The guard's Host/Origin allow-list is built from server.bind/port at
+        # app creation, so reflect the actual desktop bind address here.
+        cfg.server.bind = args.host
+        cfg.server.port = _pick_port(args.port)
+        server, thread, port = _start_server(cfg, host=args.host, port=cfg.server.port)
     except (ToolFailure, OSError, RuntimeError) as exc:
         logging.exception("desktop startup failed")
         _message(APP_NAME, f"Could not start: {exc}\n\nSee {_log_path(data_dir)}", error=True)
@@ -152,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
     url = f"http://{args.host}:{port}/"
     logging.info("desktop server listening at %s (data=%s)", url, data_dir)
     if args.smoke:
+        # Hit the API the way the WebView2 window will (real Host header).
+        with urllib.request.urlopen(f"{url}api/system", timeout=10) as response:
+            if response.status != 200:
+                raise RuntimeError(f"smoke /api/system returned {response.status}")
         print(url)
         server.should_exit = True
         thread.join(timeout=5)
