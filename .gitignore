@@ -15,6 +15,9 @@ frontend/dist/
 artifacts/
 tools/ttyd/ttyd.exe
 
+# Design exploration scratch (candidates, local shots, font mirrors)
+design-lab/
+
 # Runtime data
 run/
 *.log

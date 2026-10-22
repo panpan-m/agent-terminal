@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
-import { Terminal, type ITheme } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
 import { Button } from "@/components/ui/button";
@@ -26,47 +26,9 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api, sshConsoleUrl } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
+import { terminalTheme } from "@/lib/termTheme";
 import { b64ToBytes, bytesToB64, cn, formatBytes, formatTime } from "@/lib/utils";
 import type { SshFileList, SshSessionStatus } from "@/lib/types";
-
-const DARK_TERM_THEME: ITheme = {
-  background: "#09090b",
-  foreground: "#e4e4e7",
-  cursor: "#34d399",
-  selectionBackground: "#3f3f46",
-  black: "#18181b",
-  red: "#f87171",
-  green: "#4ade80",
-  yellow: "#facc15",
-  blue: "#60a5fa",
-  magenta: "#c084fc",
-  cyan: "#22d3ee",
-  white: "#f4f4f5",
-};
-
-const LIGHT_TERM_THEME: ITheme = {
-  background: "#ffffff",
-  foreground: "#18181b",
-  cursor: "#047857",
-  cursorAccent: "#ffffff",
-  selectionBackground: "#bfdbfe",
-  black: "#18181b",
-  red: "#b91c1c",
-  green: "#15803d",
-  yellow: "#a16207",
-  blue: "#1d4ed8",
-  magenta: "#7e22ce",
-  cyan: "#0e7490",
-  white: "#e4e4e7",
-  brightBlack: "#52525b",
-  brightRed: "#dc2626",
-  brightGreen: "#16a34a",
-  brightYellow: "#ca8a04",
-  brightBlue: "#2563eb",
-  brightMagenta: "#9333ea",
-  brightCyan: "#0891b2",
-  brightWhite: "#18181b",
-};
 
 export function SshTerminalPage({
   sessionId,
@@ -242,7 +204,7 @@ export function SshTerminalPage({
       fontSize: 13,
       lineHeight: 1.2,
       scrollback: 5000,
-      theme: themeRef.current === "light" ? LIGHT_TERM_THEME : DARK_TERM_THEME,
+      theme: terminalTheme(themeRef.current),
     });
     const fit = new FitAddon();
     const search = new SearchAddon();
@@ -304,7 +266,7 @@ export function SshTerminalPage({
 
   useEffect(() => {
     if (termRef.current) {
-      termRef.current.options.theme = theme === "light" ? LIGHT_TERM_THEME : DARK_TERM_THEME;
+      termRef.current.options.theme = terminalTheme(theme);
     }
   }, [theme]);
 

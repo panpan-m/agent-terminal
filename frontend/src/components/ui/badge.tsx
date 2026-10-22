@@ -15,6 +15,7 @@ const stateStyles: Record<SessionState, string> = {
 export function StateBadge({ state, className }: { state: SessionState; className?: string }) {
   return (
     <span
+      data-badge=""
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
         stateStyles[state] ?? stateStyles.unconfigured,
@@ -40,6 +41,7 @@ export function Badge({
   };
   return (
     <span
+      data-badge=""
       className={cn(
         "inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
         tones[tone],

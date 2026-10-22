@@ -4,19 +4,23 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#09090b" />
+    <meta name="theme-color" content="#070a07" />
     <meta
       name="description"
       content="tio-server — a shared serial-port gateway with MCP tools and an interactive browser terminal."
     />
     <script>
       try {
-        if (localStorage.getItem("tio-theme") === "light") {
-          document.documentElement.classList.add("light");
-          document.documentElement.style.colorScheme = "light";
-        }
+        // only trust tio-theme once this build has written the version marker;
+        // older values are the leftovers of the dark/light toggle
+        var ready = localStorage.getItem("tio-theme-v2") === "1";
+        var saved = ready ? localStorage.getItem("tio-theme") : null;
+        var theme = saved === "sheet" || saved === "dark" || saved === "light" ? saved : "pixel";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme =
+          theme === "sheet" || theme === "light" ? "light" : "dark";
       } catch (error) {
-        /* storage disabled */
+        document.documentElement.dataset.theme = "pixel";
       }
     </script>
     <title>tio-server</title>

@@ -5,6 +5,7 @@ import { cn } from "../../lib/utils";
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      data-panel=""
       className={cn("rounded-xl border border-zinc-800 bg-zinc-900/60 backdrop-blur-sm", className)}
       {...props}
     />

@@ -13,10 +13,13 @@ owns the serial port, humans use the **xterm.js Terminal tab**, and agents use
 > [`docs/live-debug-report.md`](./docs/live-debug-report.md) and
 > [`docs/dsh.md`](./docs/dsh.md).
 
-![Sessions page](docs/screenshots/17-sessions-serial.png)
+![Serial sessions in the pixel theme](docs/screenshots/25-pixel-sessions.png)
 
-Light theme is available from the sidebar toggle and persists per browser
-([preview](docs/screenshots/11-light-sessions.png)); the xterm palette follows.
+Four themes — **pixel** (8-bit phosphor, the default), **sheet** (paper engineering
+drawing), **dark** and **light** — are switched from the shell and persist per
+browser ([terminal](docs/screenshots/26-pixel-terminal.png),
+[sheet](docs/screenshots/27-sheet-sessions.png)); the xterm palette follows. The
+webfonts are self-hosted, so the UI renders the same offline.
 
 The **MCP** tab shows the endpoint, bearer/token status and tool list, and
 generates a universal copy-paste install prompt for any MCP client (DSH row
