@@ -24,9 +24,18 @@ import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TerminalSearchBar } from "@/components/TerminalSearchBar";
+import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
 import { api, sshConsoleUrl } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { terminalTheme } from "@/lib/termTheme";
+import {
+  applyTerminalSettings,
+  attachTerminalEnhancements,
+  terminalOptions,
+  type Enhancements,
+} from "@/lib/terminal-setup";
+import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
 import { b64ToBytes, bytesToB64, cn, formatBytes, formatTime } from "@/lib/utils";
 import type { SshFileList, SshSessionStatus } from "@/lib/types";
 
@@ -46,7 +55,7 @@ export function SshTerminalPage({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const enhancementsRef = useRef<Enhancements | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const cursorRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
@@ -58,7 +67,6 @@ export function SshTerminalPage({
   const [received, setReceived] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [generation, setGeneration] = useState(0);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -197,15 +205,7 @@ export function SshTerminalPage({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const term = new Terminal({
-      cursorBlink: true,
-      convertEol: false,
-      fontFamily: '"JetBrains Mono", "Cascadia Mono", Consolas, monospace',
-      fontSize: 13,
-      lineHeight: 1.2,
-      scrollback: 5000,
-      theme: terminalTheme(themeRef.current),
-    });
+    const term = new Terminal(terminalOptions(getTerminalSettings(), terminalTheme(themeRef.current)));
     const fit = new FitAddon();
     const search = new SearchAddon();
     term.loadAddon(fit);
@@ -222,6 +222,7 @@ export function SshTerminalPage({
       socket.send(JSON.stringify({ type: "input", data_b64: bytesToB64(data) }));
     };
     const disposable = term.onData(sendInput);
+    enhancementsRef.current = attachTerminalEnhancements(term, host, notify, sendInput);
 
     const sendResize = () => {
       const socket = socketRef.current;
@@ -239,7 +240,6 @@ export function SshTerminalPage({
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setSearchOpen(true);
-        window.setTimeout(() => searchInputRef.current?.focus(), 0);
       } else if (event.key === "Escape") {
         setSearchOpen(false);
         term.focus();
@@ -257,12 +257,21 @@ export function SshTerminalPage({
       window.clearInterval(refreshTimer);
       window.removeEventListener("keydown", onKey);
       observer.disconnect();
+      enhancementsRef.current?.dispose();
+      enhancementsRef.current = null;
       disposable.dispose();
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    return subscribeTerminalSettings(() => {
+      const term = termRef.current;
+      if (term) applyTerminalSettings(term, getTerminalSettings());
+    });
+  }, []);
 
   useEffect(() => {
     if (termRef.current) {
@@ -373,12 +382,6 @@ export function SshTerminalPage({
     };
   }, [sessionId, generation]);
 
-  const find = (backwards: boolean) => {
-    if (!query) return;
-    if (backwards) searchRef.current?.findPrevious(query);
-    else searchRef.current?.findNext(query, { incremental: true });
-  };
-
   const toggleAgent = async () => {
     setAgentBusy(true);
     try {
@@ -433,10 +436,7 @@ export function SshTerminalPage({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => {
-              setSearchOpen((value) => !value);
-              window.setTimeout(() => searchInputRef.current?.focus(), 0);
-            }}
+            onClick={() => setSearchOpen((value) => !value)}
             title="search scrollback (Ctrl+Shift+F)"
           >
             <Search className="h-3.5 w-3.5" /> Find
@@ -488,6 +488,7 @@ export function SshTerminalPage({
           >
             <Keyboard className="h-3.5 w-3.5" /> Keys
           </Button>
+          <TerminalSettingsDialog />
         </div>
       </header>
 
@@ -535,43 +536,21 @@ export function SshTerminalPage({
       ) : null}
 
       {searchOpen ? (
-        <div className="flex items-center gap-2 border-b border-zinc-800/80 bg-zinc-900/40 px-4 py-1.5">
-          <Search className="h-3.5 w-3.5 text-zinc-500" />
-          <Input
-            ref={searchInputRef}
-            value={query}
-            autoFocus
-            onChange={(event) => {
-              setQuery(event.target.value);
-              if (event.target.value) searchRef.current?.findNext(event.target.value, { incremental: true });
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") find(event.shiftKey);
-              if (event.key === "Escape") {
-                setSearchOpen(false);
-                termRef.current?.focus();
-              }
-            }}
-            placeholder="search scrollback"
-            className="h-7 w-64 text-xs"
-          />
-          <Button size="sm" variant="ghost" onClick={() => find(false)} disabled={!query}>
-            Next
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => find(true)} disabled={!query}>
-            Prev
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setSearchOpen(false)}>
-            Close
-          </Button>
-        </div>
+        <TerminalSearchBar
+          searchRef={searchRef}
+          onClose={() => {
+            setSearchOpen(false);
+            termRef.current?.focus();
+          }}
+        />
       ) : null}
 
       {keysOpen ? (
         <div className="absolute right-3 top-12 z-20 w-[27rem] rounded-md border border-zinc-700 bg-zinc-950/95 p-3 text-[11px] text-zinc-300 shadow-2xl">
-          <p className="mb-2 font-semibold text-zinc-100">Browser-reserved keys</p>
+          <p className="mb-2 font-semibold text-zinc-100">Browser keys vs this terminal</p>
           <p className="mb-2 text-zinc-400">
-            These never reach the remote shell in a browser terminal. Use the alternative or a native SSH client.
+            Some keys are eaten by the browser. Where Settings ▸ Keyboard capture offers a fix, it is listed
+            below; everything else needs a native terminal.
           </p>
           <table className="w-full">
             <tbody className="align-top">
@@ -593,15 +572,27 @@ export function SshTerminalPage({
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-amber-300">F5 / F11 / F12</td>
-                <td>reload / fullscreen / devtools → browser-bound</td>
+                <td>reload / fullscreen / devtools → add to capture keys in Settings if needed</td>
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+F</td>
-                <td>search this scrollback</td>
+                <td>search this scrollback (case / regex / whole word)</td>
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+C / V</td>
-                <td>copy / paste through the browser clipboard</td>
+                <td>copy / paste via the browser clipboard (toggle in Settings ▸ Clipboard)</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Escape</td>
+                <td>enable <span className="font-mono">Capture Escape</span> in Settings if vi loses it</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+B</td>
+                <td>enable <span className="font-mono">Capture Ctrl+B</span> for the tmux prefix</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Shift+Enter</td>
+                <td>optionally sends ESC+CR (newline) for TUIs — Settings ▸ Keyboard capture</td>
               </tr>
             </tbody>
           </table>

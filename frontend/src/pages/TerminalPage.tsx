@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Circle,
@@ -19,9 +19,18 @@ import "@xterm/xterm/css/xterm.css";
 import { Badge, StateBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusPanel } from "@/components/StatusPanel";
+import { TerminalSearchBar } from "@/components/TerminalSearchBar";
+import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
 import { api } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { terminalTheme } from "@/lib/termTheme";
+import {
+  applyTerminalSettings,
+  attachTerminalEnhancements,
+  terminalOptions,
+  type Enhancements,
+} from "@/lib/terminal-setup";
+import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
 import { b64ToBytes, cn, formatBytes } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
 
@@ -58,14 +67,13 @@ export function TerminalPage({
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
   const cursorRef = useRef<number | null>(null);
   const sessionKeyRef = useRef<string | undefined>(undefined);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const enhancementsRef = useRef<Enhancements | null>(null);
   const [connected, setConnected] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [dropped, setDropped] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [busyBreak, setBusyBreak] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [infoOpen, setInfoOpen] = useState(true);
@@ -90,18 +98,9 @@ export function TerminalPage({
       bytesRef.current = 0;
       setReceived(0);
       setDropped(0);
-      setQuery("");
     }
 
-    const term = new Terminal({
-      cursorBlink: true,
-      convertEol: false,
-      fontFamily: '"JetBrains Mono", "Cascadia Mono", Consolas, monospace',
-      fontSize: 13,
-      lineHeight: 1.2,
-      scrollback: 5000,
-      theme: terminalTheme(themeRef.current),
-    });
+    const term = new Terminal(terminalOptions(getTerminalSettings(), terminalTheme(themeRef.current)));
     const fit = new FitAddon();
     const search = new SearchAddon();
     term.loadAddon(fit);
@@ -126,6 +125,7 @@ export function TerminalPage({
         });
     };
     const disposable = term.onData(send);
+    enhancementsRef.current = attachTerminalEnhancements(term, host, notify, send);
 
     let disposed = false;
     let retry: number | undefined;
@@ -192,6 +192,8 @@ export function TerminalPage({
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
+      enhancementsRef.current?.dispose();
+      enhancementsRef.current = null;
     };
   }, [session?.session_id, generation]);
 
@@ -209,11 +211,17 @@ export function TerminalPage({
   }, [theme]);
 
   useEffect(() => {
+    return subscribeTerminalSettings(() => {
+      const term = termRef.current;
+      if (term) applyTerminalSettings(term, getTerminalSettings());
+    });
+  }, []);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setSearchOpen(true);
-        window.setTimeout(() => searchInputRef.current?.focus(), 0);
       } else if (event.key === "Escape" && searchOpen) {
         setSearchOpen(false);
         termRef.current?.focus();
@@ -222,16 +230,6 @@ export function TerminalPage({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
-
-  const find = useCallback(
-    (backwards: boolean) => {
-      const addon = searchRef.current;
-      if (!addon || !query) return;
-      if (backwards) addon.findPrevious(query);
-      else addon.findNext(query);
-    },
-    [query],
-  );
 
   const sendBreak = async () => {
     if (!session) return;
@@ -312,10 +310,7 @@ export function TerminalPage({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => {
-              setSearchOpen((value) => !value);
-              window.setTimeout(() => searchInputRef.current?.focus(), 0);
-            }}
+            onClick={() => setSearchOpen((value) => !value)}
             title="search the scrollback (Ctrl+Shift+F)"
           >
             <Search className="h-3.5 w-3.5" /> Find
@@ -354,49 +349,26 @@ export function TerminalPage({
           >
             <PanelRight className="h-3.5 w-3.5" /> Info
           </Button>
+          <TerminalSettingsDialog />
         </div>
       </header>
 
       {searchOpen ? (
-        <div className="flex items-center gap-2 border-b border-zinc-800/80 bg-zinc-900/40 px-4 py-1.5">
-          <Search className="h-3.5 w-3.5 text-zinc-500" />
-          <input
-            ref={searchInputRef}
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              if (event.target.value) searchRef.current?.findNext(event.target.value, { incremental: true });
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                find(event.shiftKey);
-              } else if (event.key === "Escape") {
-                setSearchOpen(false);
-                termRef.current?.focus();
-              }
-            }}
-            placeholder="search scrollback"
-            className="h-7 w-64 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
-          />
-          <Button size="sm" variant="ghost" onClick={() => find(false)} disabled={!query}>
-            Next
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => find(true)} disabled={!query}>
-            Prev
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setSearchOpen(false)}>
-            Close
-          </Button>
-          <span className="text-[11px] text-zinc-500">Enter next · Shift+Enter previous</span>
-        </div>
+        <TerminalSearchBar
+          searchRef={searchRef}
+          onClose={() => {
+            setSearchOpen(false);
+            termRef.current?.focus();
+          }}
+        />
       ) : null}
 
       {keysOpen ? (
         <div className="absolute right-3 top-12 z-20 w-[27rem] rounded-md border border-zinc-700 bg-zinc-950/95 p-3 text-[11px] text-zinc-300 shadow-2xl">
-          <p className="mb-2 font-semibold text-zinc-100">Browser-reserved keys</p>
+          <p className="mb-2 font-semibold text-zinc-100">Browser keys vs this terminal</p>
           <p className="mb-2 text-zinc-400">
-            These never reach the device in a browser terminal. Use the listed alternative instead.
+            Some keys are eaten by the browser. Where Settings ▸ Keyboard capture offers a fix, it is listed
+            below; everything else needs a native terminal.
           </p>
           <table className="w-full">
             <tbody className="align-top">
@@ -418,15 +390,27 @@ export function TerminalPage({
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-amber-300">F5 / F11 / F12</td>
-                <td>reload / fullscreen / devtools → full terminal still browser-bound</td>
+                <td>reload / fullscreen / devtools → add to capture keys in Settings if needed</td>
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+F</td>
-                <td>search this scrollback</td>
+                <td>search this scrollback (case / regex / whole word)</td>
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+C / V</td>
-                <td>copy / paste through the browser clipboard</td>
+                <td>copy / paste via the browser clipboard (toggle in Settings ▸ Clipboard)</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Escape</td>
+                <td>enable <span className="font-mono">Capture Escape</span> in Settings if the device misses it</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+B</td>
+                <td>enable <span className="font-mono">Capture Ctrl+B</span> for the tmux prefix</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Shift+Enter</td>
+                <td>optionally sends ESC+CR (newline) for TUIs — Settings ▸ Keyboard capture</td>
               </tr>
             </tbody>
           </table>

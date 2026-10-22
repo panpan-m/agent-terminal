@@ -174,9 +174,12 @@ async function main() {
     await cdp.evaluate("location.hash = '#/sessions'");
     await sleep(1800);
     const bodyText = await cdp.evaluate("document.body.innerText");
+    // the pixel theme uppercases labels via CSS, and innerText returns the
+    // transformed text -- compare case-insensitively.
+    const lowerBody = bodyText.toLowerCase();
     check(
       "sessions page renders",
-      bodyText.includes("Sessions") && bodyText.includes("New session"),
+      lowerBody.includes("sessions") && lowerBody.includes("new session"),
       bodyText.slice(0, 120),
     );
     await cdp.screenshot(join(OUT, "02-sessions.png"));
@@ -269,7 +272,7 @@ async function main() {
     const agentState = await cdp.evaluate("document.body.innerText");
     check(
       "toolbar offers Take control while the agent owns write",
-      agentState.includes("Take control"),
+      agentState.toLowerCase().includes("take control"),
       agentState.slice(0, 160),
     );
     await clickByText("Take control");
@@ -277,7 +280,7 @@ async function main() {
     const humanState = await cdp.evaluate("document.body.innerText");
     check(
       "toolbar takes control back for the operator",
-      !humanState.includes("Take control"),
+      !humanState.toLowerCase().includes("take control"),
       humanState.slice(0, 160),
     );
 
