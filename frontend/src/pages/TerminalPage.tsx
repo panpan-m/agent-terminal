@@ -31,7 +31,7 @@ import {
   type Enhancements,
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
-import { b64ToBytes, cn, formatBytes } from "@/lib/utils";
+import { b64ToBytes, cn, formatBytes, isModalOpen } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
 
 /**
@@ -219,6 +219,7 @@ export function TerminalPage({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (isModalOpen()) return; // dialogs own Escape/shortcuts; never steal focus behind them
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setSearchOpen(true);

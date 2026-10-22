@@ -36,7 +36,7 @@ import {
   type Enhancements,
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
-import { b64ToBytes, bytesToB64, cn, formatBytes, formatTime } from "@/lib/utils";
+import { b64ToBytes, bytesToB64, cn, formatBytes, formatTime, isModalOpen } from "@/lib/utils";
 import type { SshFileList, SshSessionStatus } from "@/lib/types";
 
 export function SshTerminalPage({
@@ -237,6 +237,7 @@ export function SshTerminalPage({
     });
     observer.observe(host);
     const onKey = (event: KeyboardEvent) => {
+      if (isModalOpen()) return; // dialogs own Escape/shortcuts; never steal focus behind them
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         setSearchOpen(true);

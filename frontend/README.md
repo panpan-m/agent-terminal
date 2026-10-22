@@ -21,7 +21,8 @@ src/
 ├── assets/fonts/            woff2 files (pixel + sheet themes)
 ├── components/
 │   ├── Shell.tsx            the single shell — every theme shares this layout
-│   ├── ThemeSwitch.tsx      pixel / sheet / dark / light / custom + JSON editor
+│   ├── TerminalSettingsDialog.tsx  the Settings dialog: theme dropdown + custom
+│   │                        JSON editor, terminal, keyboard capture, clipboard
 │   ├── StatusPanel.tsx      live session rail
 │   └── ui/                  button, card, badge, input, dialog+switch
 ├── pages/                   Sessions (overview + SSH hosts), Terminal workspace, MCP, Logs

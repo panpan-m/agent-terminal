@@ -17,7 +17,9 @@ owns the serial port, humans use the **xterm.js Terminal tab**, and agents use
 
 Themes are pure data: **pixel** (8-bit phosphor, the default), **sheet** (paper
 engineering drawing), **dark** and **light** share one layout and differ only in
-colors, fonts and effects. They switch from the shell and persist per browser
+colors, fonts and effects. Switch them from the **Settings** dialog (a dropdown;
+the dialog also holds the terminal, keyboard-capture and clipboard options) and
+they persist per browser
 ([terminal](docs/screenshots/26-pixel-terminal.png),
 [sheet](docs/screenshots/27-sheet-sessions.png)); the xterm palette follows. A
 **custom** theme can be pasted as JSON (webssh2-style) and merges over the dark

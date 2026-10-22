@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import type { SessionStatus, SshSessionStatus, SystemInfo } from "@/lib/types";
-import { ThemeSwitch } from "@/components/ThemeSwitch";
+import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
 
 export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "logs";
 
@@ -181,7 +181,7 @@ export function Shell({
             </span>
           </div>
           <div className="mt-1.5 flex justify-end">
-            <ThemeSwitch />
+            <TerminalSettingsDialog />
           </div>
         </div>
       </aside>
@@ -191,7 +191,7 @@ export function Shell({
           <Waves className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-semibold">tio-server</span>
           <div className="ml-auto flex items-center gap-2">
-            <ThemeSwitch />
+            <TerminalSettingsDialog />
             {NAV.map((item) => (
               <button
                 key={item.page}

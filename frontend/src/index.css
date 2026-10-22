@@ -150,54 +150,7 @@ html[data-theme="sheet"] [data-input] {
   border-radius: 0;
 }
 
-/* ---------------------------------------------------------------- theme switch */
-.theme-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.theme-switch button {
-  cursor: pointer;
-  background: none;
-  border: 1px solid transparent;
-  color: var(--color-zinc-500);
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 3px 5px;
-}
-.theme-switch button:hover {
-  color: var(--color-zinc-100);
-}
-.theme-switch button[aria-pressed="true"] {
-  color: var(--color-zinc-100);
-  border-color: var(--color-zinc-700);
-  background: color-mix(in oklab, var(--color-zinc-100) 8%, transparent);
-}
 
-html[data-theme="pixel"] .theme-switch button {
-  font-family: "Silkscreen", monospace;
-  border: 1px solid #24351f;
-  color: var(--color-zinc-400);
-}
-html[data-theme="pixel"] .theme-switch button[aria-pressed="true"] {
-  color: #0c1209;
-  background: var(--color-emerald-500);
-  border-color: #b7ffab;
-}
-
-html[data-theme="sheet"] .theme-switch button {
-  border: 1px solid #d8d2c3;
-  color: #6b6d66;
-}
-html[data-theme="sheet"] .theme-switch button[aria-pressed="true"] {
-  color: #f7f4ed;
-  background: #191b1a;
-  border-color: #191b1a;
-}
-
-/* ---------------------------------------------------------------- narrow screens */
 
 *::-webkit-scrollbar {
   width: 10px;

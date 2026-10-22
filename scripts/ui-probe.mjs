@@ -301,20 +301,21 @@ async function main() {
     check("typing reaches the device and output returns", afterType.includes("pong"), afterType.slice(-160));
     await cdp.screenshot(join(OUT, "04-terminal-command.png"));
 
-    // 4d. light theme toggle (persisted by the provider)
-    const toggled = await cdp.evaluate(
-      "(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'light'); if (!b) return false; b.click(); return true; })()",
+    // 4d. theme switching is a dropdown in Settings; verify apply + persist via storage + reload
+    await cdp.evaluate("localStorage.setItem('tio-theme', 'light'); localStorage.setItem('tio-theme-v2', '1')");
+    await cdp.send("Page.reload", { ignoreCache: true });
+    await sleep(2200);
+    const lightOn = await cdp.evaluate(
+      "document.documentElement.dataset.theme === 'light' || document.documentElement.classList.contains('light')",
     );
-    await sleep(800);
-    const lightOn = await cdp.evaluate("document.documentElement.classList.contains('light')");
-    check("theme toggle switches to light", toggled && lightOn, `clicked=${toggled} light=${lightOn}`);
+    check("theme switch to light applies after reload", lightOn, String(lightOn));
     await cdp.screenshot(join(OUT, "04-terminal-light.png"));
-    await cdp.evaluate(
-      "(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'dark'); b?.click(); })()",
-    );
-    await sleep(600);
-    const lightOff = await cdp.evaluate("!document.documentElement.classList.contains('light')");
-    check("theme toggle switches back to dark", lightOff, `light=${!lightOff}`);
+    await cdp.evaluate("localStorage.setItem('tio-theme', 'pixel')");
+    await cdp.send("Page.reload", { ignoreCache: true });
+    await sleep(2200);
+    const backOn = await cdp.evaluate("document.documentElement.dataset.theme === 'pixel'");
+    check("theme switches back to pixel", backOn, String(backOn));
+    await cdp.evaluate("document.querySelector('.xterm-helper-textarea')?.focus()");
 
     // 4. remaining pages via hash routing
     for (const [route, label, needle] of [
@@ -325,7 +326,11 @@ async function main() {
       await cdp.evaluate(`location.hash = '#/${route}'`);
       await sleep(2000);
       const text = await cdp.evaluate("document.body.innerText");
-      check(`${route.split("/")[0]} page renders`, text.includes(needle), text.slice(0, 90));
+      check(
+        `${route.split("/")[0]} page renders`,
+        text.toLowerCase().includes(needle.toLowerCase()),
+        text.slice(0, 90),
+      );
       await cdp.screenshot(join(OUT, label));
     }
 

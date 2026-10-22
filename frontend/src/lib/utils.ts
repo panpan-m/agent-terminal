@@ -72,3 +72,8 @@ export function cleanTerminalText(text: string): string {
     .replace(/\r/g, "\n")
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
 }
+
+/** True while a Radix dialog (settings, editor, SFTP…) is open. */
+export function isModalOpen(): boolean {
+  return document.querySelector('[role="dialog"][data-state="open"]') !== null;
+}
