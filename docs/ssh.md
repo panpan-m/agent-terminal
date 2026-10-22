@@ -16,7 +16,7 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 ![Agent activity in the SSH terminal](screenshots/22-ssh-agent-activity.png)
 
-![Agent command and output above the terminal](screenshots/23-ssh-agent-output.png)
+![Agent typing directly into the PTY](screenshots/24-ssh-agent-pty.png)
 
 ![Serial and SSH sessions in one Terminal workspace](screenshots/19-terminal-mixed-serial.png)
 
@@ -141,14 +141,12 @@ terminal replays the last 64 KiB.
   reports `reconnecting`, then resumes the same ring/cursor. Credentials needed
   for the retry are kept in process memory only and cleared on disconnect.
 - **Log** downloads a timestamped raw TX/RX transcript (`/api/ssh/sessions/{id}/export`).
-- **Agent activity is visible live.** When MCP `ssh_write`/`ssh_exec` acts on a
-  session, the header shows an amber `agent write/exec` pulse, the LIVE bar shows
-  the last action/exit/elapsed time, and the sidebar has an **AGENT ACTIVITY**
-  card (last writer, action, write count, last exec). For `ssh_exec` a panel above
-  the terminal shows the command, exit code/latency and stdout/stderr preview;
-  `ssh_write` shows the written text. `ssh_exec` uses a separate channel, so it
-  still does not echo into the PTY, but the operator now sees what ran and what
-  it returned.
+- **Agent activity is visible live.** MCP `ssh_write` sends raw input to the PTY,
+  so the command and the remote response appear in the terminal exactly like
+  human typing. The header shows an amber `agent write/exec` pulse, the LIVE bar
+  shows the last action/exit/elapsed time, and the sidebar has an **AGENT
+  ACTIVITY** card. `ssh_exec` is a separate channel and still does not echo into
+  the PTY; use `ssh_write` for interactive work.
 - **Test** performs a TCP + SSH handshake only (no auth, no command), reports the
   SHA256 host-key fingerprint and whether it is `known` / `unknown` / `changed`
   in known_hosts, and offers a copyable `ssh-keyscan` command. It tests the

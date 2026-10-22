@@ -287,18 +287,19 @@ With one SSH session to the Pi (default `agent_visible=false`):
 
 With an agent-visible SSH session:
 
-1. MCP `ssh_write` wrote `echo agent-activity` to the PTY; the session status
-   became `last_write_source=agent`;
-2. MCP `ssh_exec("uname -r")` set `agent_last_action=exec`,
-   `agent_action_count=2`, `last_exec_exit_code=0`, `last_exec_elapsed_ms=172`;
-3. the web UI showed `agent exec exit 0 · 172ms` in the LIVE bar, an
-   **AGENT ACTIVITY** card (last writer/action/writes/last exec) and a 5 s
-   `agent exec` pulse in the header
-   ([22-ssh-agent-activity](screenshots/22-ssh-agent-activity.png));
-4. a second run (`uname -r; echo agent-output-visible; pwd`) showed the command
-   and its stdout in a panel directly above the terminal, plus exit 0/77 ms
-   ([23-ssh-agent-output](screenshots/23-ssh-agent-output.png));
-5. the session/profile/key were removed afterwards.
+1. MCP `ssh_write(data="ls", newline="lf")` wrote **3 bytes to the PTY**;
+   the terminal showed `ls` and the directory listing exactly as if typed by a
+   human, and `ssh_read` returned the same listing from the session ring;
+2. the session status became `last_write_source=agent`,
+   `agent_last_action=write`; the LIVE bar/AGENT ACTIVITY card and the 5 s header
+   pulse reported the action, while the terminal showed the command and output
+   directly with no separate agent panel
+   ([24-ssh-agent-pty](screenshots/24-ssh-agent-pty.png));
+3. MCP `ssh_exec` remains a separate channel: it does not echo into the PTY, but
+   still updates the activity card with action/exit/latency; use `ssh_write` for
+   transparent interactive operation;
+4. the verification session was left open for the operator; no files were
+   changed by the commands.
 
 ## Plan acceptance criteria (plan §14.3)
 
@@ -317,7 +318,7 @@ With an agent-visible SSH session:
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
 | SSH remembered credentials | ✅ | encrypted at rest; second connect without password; Forget clears |
 | SSH agent visibility | ✅ | default private; marked session listed/executable; unmarked denied |
-| SSH agent activity in web UI | ✅ | command + stdout/stderr panel, LIVE bar, agent card, pulse |
+| SSH agent activity in web UI | ✅ | `ssh_write` PTY input visible in terminal; activity card; exec separate |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |

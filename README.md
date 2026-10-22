@@ -37,8 +37,9 @@ auto-reconnect, transcript and reattach
 [mixed tabs](docs/screenshots/20-terminal-mixed-ssh.png)).
 SSH sessions stay on the server when the browser tab closes. They are **private
 to agents by default**; mark a session **Agent visible** to expose it to MCP.
-Agent writes and `ssh_exec` calls show a live **AGENT ACTIVITY** panel above the
-terminal with the command, stdout/stderr preview, exit code and latency.
+Agent `ssh_write` input goes straight into the PTY, so commands and output appear
+in the terminal exactly like human typing; the LIVE bar/AGENT ACTIVITY card still
+shows the last action, exec exit code and latency.
 
 ## Why
 
