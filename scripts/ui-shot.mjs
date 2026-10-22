@@ -30,6 +30,7 @@ const PORT = Number(arg("port", "9444"));
 const WAIT = Number(arg("wait", "2500"));
 const EVAL = arg("eval", "");
 const SEND = arg("send", "");
+const THEME = arg("theme", "");
 
 class CDP {
   constructor(url) {
@@ -130,6 +131,9 @@ async function main() {
         body: JSON.stringify({username:'admin', password:${JSON.stringify(PASSWORD)}})}).then(r => r.status)`,
     );
     if (login !== 200) throw new Error(`login failed: ${login}`);
+    if (THEME) {
+      await cdp.evaluate(`localStorage.setItem('tio-theme', ${JSON.stringify(THEME)})`);
+    }
     await cdp.send("Page.reload", { ignoreCache: true });
     await sleep(2200);
     await cdp.evaluate(`location.hash = ${JSON.stringify(HASH)}`);

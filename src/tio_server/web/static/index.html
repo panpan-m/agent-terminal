@@ -7,11 +7,21 @@
     <meta name="theme-color" content="#09090b" />
     <meta
       name="description"
-      content="tio-server — a shared serial-port gateway with MCP tools, an operator console and a browser terminal."
+      content="tio-server — a shared serial-port gateway with MCP tools and an interactive browser terminal."
     />
+    <script>
+      try {
+        if (localStorage.getItem("tio-theme") === "light") {
+          document.documentElement.classList.add("light");
+          document.documentElement.style.colorScheme = "light";
+        }
+      } catch (error) {
+        /* storage disabled */
+      }
+    </script>
     <title>tio-server</title>
-    <script type="module" crossorigin src="/assets/index-BBMR9P07.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CTkYDFKR.css">
+    <script type="module" crossorigin src="/assets/index-D0ijI4yW.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BmWbDugf.css">
   </head>
   <body>
     <div id="root"></div>

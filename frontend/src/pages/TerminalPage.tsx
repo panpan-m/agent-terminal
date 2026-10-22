@@ -14,15 +14,55 @@ import {
 } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
 import { Badge, StateBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusPanel } from "@/components/StatusPanel";
 import { api } from "@/lib/api";
+import { useTheme } from "@/lib/theme";
 import { b64ToBytes, cn, formatBytes } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
+
+const DARK_TERM_THEME: ITheme = {
+  background: "#09090b",
+  foreground: "#e4e4e7",
+  cursor: "#34d399",
+  selectionBackground: "#3f3f46",
+  black: "#18181b",
+  red: "#f87171",
+  green: "#4ade80",
+  yellow: "#facc15",
+  blue: "#60a5fa",
+  magenta: "#c084fc",
+  cyan: "#22d3ee",
+  white: "#f4f4f5",
+};
+
+const LIGHT_TERM_THEME: ITheme = {
+  background: "#ffffff",
+  foreground: "#18181b",
+  cursor: "#047857",
+  cursorAccent: "#ffffff",
+  selectionBackground: "#bfdbfe",
+  black: "#18181b",
+  red: "#b91c1c",
+  green: "#15803d",
+  yellow: "#a16207",
+  blue: "#1d4ed8",
+  magenta: "#7e22ce",
+  cyan: "#0e7490",
+  white: "#e4e4e7",
+  brightBlack: "#52525b",
+  brightRed: "#dc2626",
+  brightGreen: "#16a34a",
+  brightYellow: "#ca8a04",
+  brightBlue: "#2563eb",
+  brightMagenta: "#9333ea",
+  brightCyan: "#0891b2",
+  brightWhite: "#18181b",
+};
 
 /**
  * Full-page interactive terminal for the serial console.
@@ -70,6 +110,9 @@ export function TerminalPage({
   const autoScrollRef = useRef(true);
   const bytesRef = useRef(0);
   autoScrollRef.current = autoScroll;
+  const { theme } = useTheme();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   sessionRef.current = session;
   const canType = Boolean(session && session.state === "open" && session.control_owner === "human");
@@ -95,20 +138,7 @@ export function TerminalPage({
       fontSize: 13,
       lineHeight: 1.2,
       scrollback: 5000,
-      theme: {
-        background: "#09090b",
-        foreground: "#e4e4e7",
-        cursor: "#34d399",
-        selectionBackground: "#3f3f46",
-        black: "#18181b",
-        red: "#f87171",
-        green: "#4ade80",
-        yellow: "#facc15",
-        blue: "#60a5fa",
-        magenta: "#c084fc",
-        cyan: "#22d3ee",
-        white: "#f4f4f5",
-      },
+      theme: themeRef.current === "light" ? LIGHT_TERM_THEME : DARK_TERM_THEME,
     });
     const fit = new FitAddon();
     const search = new SearchAddon();
@@ -209,6 +239,12 @@ export function TerminalPage({
     }, 400);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.theme = theme === "light" ? LIGHT_TERM_THEME : DARK_TERM_THEME;
+    }
+  }, [theme]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

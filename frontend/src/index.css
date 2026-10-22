@@ -2,9 +2,57 @@
 
 :root {
   color-scheme: dark;
+  --app-bg: #09090b;
+  --app-fg: #f4f4f5;
+  --scroll-thumb: #27272a;
+  --scroll-thumb-hover: #3f3f46;
+  --scroll-border: #09090b;
+  --glow-emerald: rgba(16, 185, 129, 0.08);
+  --glow-blue: rgba(59, 130, 246, 0.07);
   font-family:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "Noto Sans SC", sans-serif;
+}
+
+/*
+ * Light theme: Tailwind v4 emits `var(--color-zinc-*)` for the palette, so
+ * inverting the scale here re-themes every utility without touching components.
+ * (Some `/opacity` fallbacks are literal; modern browsers use the color-mix
+ * branch that reads these variables.)
+ */
+html.light {
+  color-scheme: light;
+  --app-bg: #f8fafc;
+  --app-fg: #0f172a;
+  --scroll-thumb: #cbd5e1;
+  --scroll-thumb-hover: #94a3b8;
+  --scroll-border: #f8fafc;
+  --glow-emerald: rgba(16, 185, 129, 0.12);
+  --glow-blue: rgba(59, 130, 246, 0.1);
+
+  --color-zinc-50: #020617;
+  --color-zinc-100: #0f172a;
+  --color-zinc-200: #1e293b;
+  --color-zinc-300: #334155;
+  --color-zinc-400: #475569;
+  --color-zinc-500: #64748b;
+  --color-zinc-600: #94a3b8;
+  --color-zinc-700: #cbd5e1;
+  --color-zinc-800: #e2e8f0;
+  --color-zinc-900: #f1f5f9;
+  --color-zinc-950: #f8fafc;
+
+  /* accent text needs to be darker on white */
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-emerald-500: #047857;
+  --color-emerald-600: #065f46;
+  --color-red-400: #b91c1c;
+  --color-amber-300: #b45309;
+  --color-amber-400: #b45309;
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #1d4ed8;
 }
 
 html,
@@ -16,10 +64,10 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 600px at 15% -10%, rgba(16, 185, 129, 0.08), transparent 60%),
-    radial-gradient(900px 500px at 110% 10%, rgba(59, 130, 246, 0.07), transparent 55%),
-    #09090b;
-  color: #f4f4f5;
+    radial-gradient(1200px 600px at 15% -10%, var(--glow-emerald), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, var(--glow-blue), transparent 55%),
+    var(--app-bg);
+  color: var(--app-fg);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -38,12 +86,12 @@ code {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: var(--scroll-thumb);
   border-radius: 999px;
-  border: 2px solid #09090b;
+  border: 2px solid var(--scroll-border);
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: var(--scroll-thumb-hover);
 }
 
 @keyframes pulse-dot {

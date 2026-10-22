@@ -317,6 +317,21 @@ async function main() {
     check("typing reaches the device and output returns", afterType.includes("pong"), afterType.slice(-160));
     await cdp.screenshot(join(OUT, "04-terminal-command.png"));
 
+    // 4d. light theme toggle (persisted by the provider)
+    const toggled = await cdp.evaluate(
+      "(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'light'); if (!b) return false; b.click(); return true; })()",
+    );
+    await sleep(800);
+    const lightOn = await cdp.evaluate("document.documentElement.classList.contains('light')");
+    check("theme toggle switches to light", toggled && lightOn, `clicked=${toggled} light=${lightOn}`);
+    await cdp.screenshot(join(OUT, "04-terminal-light.png"));
+    await cdp.evaluate(
+      "(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'dark'); b?.click(); })()",
+    );
+    await sleep(600);
+    const lightOff = await cdp.evaluate("!document.documentElement.classList.contains('light')");
+    check("theme toggle switches back to dark", lightOff, `light=${!lightOff}`);
+
     // 4. remaining pages via hash routing
     for (const [route, label, needle] of [
       ["config/board-a", "05-config.png", "Configuration"],

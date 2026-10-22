@@ -5,7 +5,7 @@
 | Suite | Result | Artifact |
 |---|---|---|
 | `pytest` (unit + integration + protocol + security + HIL) | **93 passed, 1 skipped** | `pytest -q` |
-| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **38 / 38 checks** | `artifacts/e2e/report.json` |
+| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **40 / 40 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
@@ -48,7 +48,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 * **HIL** — real COM port open/configure/control-lines/read-timeout/close via
   pyserial (`COM3`), plus the pyserial `loop://` transport.
 
-### 2. End-to-end (`scripts/verify_e2e.py`, 38 checks)
+### 2. End-to-end (`scripts/verify_e2e.py`, 40 checks)
 
 Starts `tio-server` as a **separate process** with a simulated board
 (`sim://board-a`), then:
@@ -69,8 +69,8 @@ Starts `tio-server` as a **separate process** with a simulated board
 * **browser UI** (headless Chrome over CDP): login screen, login through the real
   API, sessions page, **create-session dialog** (typed, submitted, session
   appears open), terminal page with LIVE RX and STATUS, hand control to the agent
-  and take it back, type `ping` into xterm and see `pong`, configuration/logs/system
-  pages render, no JS console errors.
+  and take it back, type `ping` into xterm and see `pong`, **toggle light/dark
+  theme** (and back), configuration/logs/system pages render, no JS console errors.
 
 Screenshots: [`01-login`](screenshots/01-login.png) ·
 [`02-sessions`](screenshots/02-sessions.png) ·
@@ -78,7 +78,9 @@ Screenshots: [`01-login`](screenshots/01-login.png) ·
 [`04-terminal-command`](screenshots/04-terminal-command.png) ·
 [`05-config`](screenshots/05-config.png) ·
 [`06-logs`](screenshots/06-logs.png) ·
-[`07-system`](screenshots/07-system.png)
+[`07-system`](screenshots/07-system.png) ·
+[`11-light-sessions`](screenshots/11-light-sessions.png) ·
+[`12-light-terminal`](screenshots/12-light-terminal.png)
 
 ### 3. ttyd (`scripts/ttyd_check.py`, 13 checks)
 

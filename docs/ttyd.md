@@ -30,7 +30,9 @@ Browser ─HTTP/WS─▶ ttyd ─PTY/ConPTY─▶ tio-web-bridge ─WS─▶ tio
   duplicated; lost bytes are reported by the server as `overflow`;
 * **Log** downloads the raw TX/RX byte log with per-chunk timestamps
   (`/api/sessions/{id}/export?format=txt`, or `format=hex`);
-* a **Keys** panel lists browser-reserved shortcuts and alternatives.
+* a **Keys** panel lists browser-reserved shortcuts and alternatives;
+* a **light/dark theme** toggle (sidebar and login, persisted per browser); the
+  xterm palette switches without recreating the terminal.
 
 ## Why the tab is not an iframe of ttyd
 

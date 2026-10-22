@@ -2,14 +2,17 @@ import {
   Cpu,
   LayoutDashboard,
   LogOut,
+  Moon,
   ScrollText,
   SlidersHorizontal,
   SquareTerminal,
+  Sun,
   Waves,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 import type { SessionStatus, SystemInfo } from "@/lib/types";
 import { StateBadge } from "@/components/ui/badge";
 
@@ -44,6 +47,8 @@ export function Shell({
   onLogout: () => void;
   children: ReactNode;
 }) {
+  const { theme, toggle } = useTheme();
+  const themeTitle = theme === "light" ? "switch to dark theme" : "switch to light theme";
   return (
     <div className="flex h-full min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/60 md:flex">
@@ -134,13 +139,24 @@ export function Shell({
           </div>
           <div className="mt-2 flex items-center justify-between">
             <span className="text-xs text-zinc-400">{username}</span>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
-            >
-              <LogOut className="h-3 w-3" /> sign out
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggle}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+                title={themeTitle}
+              >
+                {theme === "light" ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
+                {theme === "light" ? "dark" : "light"}
+              </button>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+              >
+                <LogOut className="h-3 w-3" /> sign out
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -150,6 +166,14 @@ export function Shell({
           <Waves className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-semibold">tio-server</span>
           <div className="ml-auto flex gap-1">
+            <button
+              type="button"
+              onClick={toggle}
+              title={themeTitle}
+              className="rounded px-2 py-1 text-[11px] text-zinc-400"
+            >
+              {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+            </button>
             {NAV.map((item) => (
               <button
                 key={item.page}

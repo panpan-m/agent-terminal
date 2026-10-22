@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Loader2, Waves } from "lucide-react";
+import { Loader2, Moon, Sun, Waves } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { useTheme } from "@/lib/theme";
 
 export function LoginPage({
   onSubmit,
@@ -14,6 +15,7 @@ export function LoginPage({
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const { theme, toggle } = useTheme();
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -26,7 +28,16 @@ export function LoginPage({
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="relative flex min-h-screen items-center justify-center px-4">
+      <button
+        type="button"
+        onClick={toggle}
+        title={theme === "light" ? "switch to dark theme" : "switch to light theme"}
+        className="absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 text-[11px] text-zinc-400 hover:text-zinc-100"
+      >
+        {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+        {theme === "light" ? "dark" : "light"}
+      </button>
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10">
