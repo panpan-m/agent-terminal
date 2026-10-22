@@ -84,6 +84,7 @@ Agent   ──HTTP────▶ /mcp ─────────────�
 * [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) — how this build was verified
 * [`docs/live-debug-report.md`](./docs/live-debug-report.md) — real Raspberry Pi over a Debug Probe
 * [`docs/dsh.md`](./docs/dsh.md) — registering the gateway as a DSH MCP server
+* [`docs/kernel-debug-questions.md`](./docs/kernel-debug-questions.md) — Linux kernel debugging exercises with real Pi 5 evidence
 
 ## License
 
