@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import json
 import logging
 import os
 import sys
@@ -18,7 +17,6 @@ import threading
 import time
 from pathlib import Path
 
-from .auth import write_secret_file
 from .config import CONFIG_FILENAME, Config, init_config
 from .errors import ToolFailure
 
@@ -65,39 +63,29 @@ def _message(title: str, text: str, *, error: bool = False) -> None:
             return
         except Exception:
             pass
-    print(f"{title}: {text}", file=sys.stderr)
+    if sys.stderr is not None:
+        print(f"{title}: {text}", file=sys.stderr)
 
 
 def _single_instance() -> bool:
     global _MUTEX
     if sys.platform != "win32":
         return True
-    _MUTEX = ctypes.windll.kernel32.CreateMutexW(None, False, MUTEX_NAME)
-    return ctypes.windll.kernel32.GetLastError() != 183
+    # use_last_error: ctypes' own Win32 calls can clobber the thread's last
+    # error, so GetLastError via windll is unreliable across the two calls.
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _MUTEX = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    if not _MUTEX:
+        return True  # creation failed; do not block startup
+    return ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS
 
 
-def _make_config(data_dir: Path, *, interactive: bool = True) -> tuple[Config, dict | None]:
+def _make_config(data_dir: Path) -> Config:
+    """Create the config on first run; the MCP token lands in ``api-token``."""
     config_path = data_dir / CONFIG_FILENAME
-    created = None
     if not config_path.exists():
-        cfg, secrets = init_config(data_dir)
-        created = secrets
-        cred_path = data_dir / "first-run-credentials.json"
-        write_secret_file(cred_path, json.dumps(secrets, indent=2))
-        if interactive:
-            try:
-                os.startfile(str(cred_path))  # type: ignore[attr-defined]
-            except Exception:
-                pass
-            _message(
-                "tio-server first run",
-                "A local admin account was created.\n\n"
-                f"Credentials: {cred_path}\n\n"
-                "The file has been opened. Read the password, delete the file after "
-                "first login, then sign in in the window that follows.",
-            )
-    cfg = Config.load(config_path)
-    return cfg, created
+        init_config(data_dir)
+    return Config.load(config_path)
 
 
 def _start_server(cfg: Config, *, host: str, port: int):
@@ -154,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     _setup_logging(_log_path(data_dir))
 
     try:
-        cfg, created = _make_config(data_dir, interactive=not args.smoke)
+        cfg = _make_config(data_dir)
         server, thread, port = _start_server(cfg, host=args.host, port=args.port)
     except (ToolFailure, OSError, RuntimeError) as exc:
         logging.exception("desktop startup failed")
@@ -180,7 +168,6 @@ def main(argv: list[str] | None = None) -> int:
             min_size=(1000, 680),
             text_select=True,
         )
-        del window
         webview.start(
             gui="edgechromium",
             debug=args.debug,

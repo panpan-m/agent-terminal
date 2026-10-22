@@ -20,13 +20,8 @@ def app_bundle(tmp_path):
     app.state.manager.stop()
 
 
-def login(client: TestClient, secrets: dict) -> str:
-    r = client.post("/api/auth/login", json={"username": "admin", "password": secrets["admin_password"]})
-    assert r.status_code == 200, r.text
-    return r.json()["csrf"]
 
-
-def create_session(client: TestClient, csrf: str, **overrides) -> dict:
+def create_session(client: TestClient, **overrides) -> dict:
     body = {
         "id": "board-a",
         "name": "Board A",
@@ -36,7 +31,7 @@ def create_session(client: TestClient, csrf: str, **overrides) -> dict:
         "agent_permissions": ["read", "write", "command"],
     }
     body.update(overrides)
-    r = client.post("/api/sessions", json=body, headers={"X-CSRF-Token": csrf})
+    r = client.post("/api/sessions", json=body)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -49,66 +44,55 @@ def sse_json(text: str) -> list[dict]:
     return out
 
 
-def test_health_and_auth_gate(app_bundle):
+def test_health_and_open_api(app_bundle):
     client, _, secrets = app_bundle
     assert client.get("/healthz").json() == {"status": "ok"}
     assert client.get("/readyz").status_code == 200
-    assert client.get("/api/sessions").status_code == 401
-    bad = client.post("/api/auth/login", json={"username": "admin", "password": "nope"})
-    assert bad.status_code == 401
-    login(client, secrets)
-    me = client.get("/api/auth/me")
-    assert me.status_code == 200
-    assert me.json()["username"] == "admin"
+    assert client.get("/api/sessions").status_code == 200
 
 
-def test_csrf_required_and_origin_checked(app_bundle):
+def test_origin_guard(app_bundle):
     client, _, secrets = app_bundle
-    csrf = login(client, secrets)
     r = client.post("/api/sessions", json={"id": "x", "port": "sim://x"})
-    assert r.status_code == 403
+    assert r.status_code == 201
     r = client.post(
         "/api/sessions",
         json={"id": "x", "port": "sim://x"},
-        headers={"X-CSRF-Token": csrf, "Origin": "http://evil.example"},
+        headers={"Origin": "http://evil.example"},
     )
-    assert r.status_code == 403
-    r = client.post("/api/sessions", json={"id": "x", "port": "sim://x"}, headers={"X-CSRF-Token": "wrong"})
     assert r.status_code == 403
 
 
 def test_session_lifecycle(app_bundle):
     client, cfg, secrets = app_bundle
-    csrf = login(client, secrets)
-    created = create_session(client, csrf)
+    created = create_session(client)
     assert created["state"] == "open"
     sessions = client.get("/api/sessions").json()["sessions"]
     assert sessions[0]["session_id"] == "board-a"
 
-    r = client.post("/api/sessions/board-a/close", headers={"X-CSRF-Token": csrf})
+    r = client.post("/api/sessions/board-a/close")
     assert r.json()["state"] == "closed"
-    r = client.post("/api/sessions/board-a/open", headers={"X-CSRF-Token": csrf})
+    r = client.post("/api/sessions/board-a/open")
     assert r.json()["state"] == "open"
 
     r = client.put(
-        "/api/sessions/board-a/permissions", json={"permissions": ["read"]}, headers={"X-CSRF-Token": csrf}
+        "/api/sessions/board-a/permissions", json={"permissions": ["read"]}
     )
     assert r.json()["agent_permissions"] == ["read"]
-    r = client.put("/api/sessions/board-a/control", json={"owner": "agent"}, headers={"X-CSRF-Token": csrf})
+    r = client.put("/api/sessions/board-a/control", json={"owner": "agent"})
     assert r.json()["control_owner"] == "agent"
 
-    r = client.post("/api/sessions/board-a/write", json={"text": "ping", "newline": "cr"}, headers={"X-CSRF-Token": csrf})
+    r = client.post("/api/sessions/board-a/write", json={"text": "ping", "newline": "cr"})
     assert r.status_code == 409  # agent owns control, humans are locked out
 
-    client.put("/api/sessions/board-a/control", json={"owner": "human"}, headers={"X-CSRF-Token": csrf})
-    r = client.post("/api/sessions/board-a/write", json={"text": "ping", "newline": "cr"}, headers={"X-CSRF-Token": csrf})
+    client.put("/api/sessions/board-a/control", json={"owner": "human"})
+    r = client.post("/api/sessions/board-a/write", json={"text": "ping", "newline": "cr"})
     assert r.status_code == 200
     assert r.json()["bytes_written"] == 5
 
     r = client.post(
         "/api/sessions/board-a/command",
         json={"command": "echo hi", "expect": "hi", "timeout_ms": 2000},
-        headers={"X-CSRF-Token": csrf},
     )
     assert r.json()["matched"] is True
 
@@ -121,26 +105,21 @@ def test_session_lifecycle(app_bundle):
 
 def test_invalid_session_rejected(app_bundle):
     client, _, secrets = app_bundle
-    csrf = login(client, secrets)
     r = client.post(
         "/api/sessions",
         json={"id": "bad id!", "port": "COM3"},
-        headers={"X-CSRF-Token": csrf},
     )
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "CONFIG_INVALID"
     r = client.post(
         "/api/sessions",
         json={"id": "ok", "port": "/dev/zero"},
-        headers={"X-CSRF-Token": csrf},
     )
     assert r.status_code == 400
 
 
 def test_mcp_status_endpoint(app_bundle):
     client, _, secrets = app_bundle
-    assert client.get("/api/mcp").status_code == 401
-    login(client, secrets)
     r = client.get("/api/mcp")
     assert r.status_code == 200
     data = r.json()
@@ -175,7 +154,6 @@ def test_mcp_status_endpoint(app_bundle):
 
 def test_ports_endpoint(app_bundle):
     client, _, secrets = app_bundle
-    login(client, secrets)
     r = client.get("/api/ports")
     assert r.status_code == 200
     assert isinstance(r.json()["ports"], list)
@@ -195,8 +173,7 @@ def test_mcp_requires_bearer(app_bundle):
 
 def test_mcp_end_to_end(app_bundle):
     client, _, secrets = app_bundle
-    csrf = login(client, secrets)
-    create_session(client, csrf)
+    create_session(client)
     headers = {
         "Authorization": f"Bearer {secrets['api_token']}",
         "Accept": "application/json, text/event-stream",
@@ -233,16 +210,10 @@ def test_mcp_end_to_end(app_bundle):
     assert "board=board-a" in result["structuredContent"]["text"]
 
 
-def ws_cookie(client: TestClient) -> dict[str, str]:
-    jar = "; ".join(f"{c.name}={c.value}" for c in client.cookies.jar)
-    return {"cookie": jar}
-
-
 def test_console_websocket(app_bundle):
     client, _, secrets = app_bundle
-    csrf = login(client, secrets)
-    create_session(client, csrf)
-    with client.websocket_connect("/ws/console/board-a", headers=ws_cookie(client)) as ws:
+    create_session(client)
+    with client.websocket_connect("/ws/console/board-a") as ws:
         hello = ws.receive_json()
         assert hello["type"] in ("hello", "status")
         # drain until we can send
@@ -260,37 +231,13 @@ def test_console_websocket(app_bundle):
             pytest.fail("no result frame")
 
 
-def test_console_websocket_requires_login(app_bundle):
+def test_console_websocket_rejects_foreign_origin(app_bundle):
     client, _, secrets = app_bundle
-    csrf = login(client, secrets)
-    create_session(client, csrf)
-    client.cookies.clear()
+    create_session(client)
     with pytest.raises(Exception):
-        with client.websocket_connect("/ws/console/board-a", headers={"cookie": ""}) as ws:
+        with client.websocket_connect("/ws/console/board-a", headers={"origin": "http://evil.example"}) as ws:
             ws.receive_json()
 
-
-def test_bridge_websocket_token_and_bytes(app_bundle):
-    client, cfg, secrets = app_bundle
-    csrf = login(client, secrets)
-    create_session(client, csrf)
-    token = cfg.bridge_token_file.read_text(encoding="utf-8").strip()
-    # Without a token the socket is refused.
-    with pytest.raises(Exception):
-        with client.websocket_connect("/ws/bridge/board-a?mode=rw") as ws:
-            ws.receive()
-    with client.websocket_connect(f"/ws/bridge/board-a?mode=rw&token={token}") as ws:
-        hello = ws.receive_json()
-        assert hello["session_id"] == "board-a"
-        ws.send_bytes(b"ping\r")
-        got = b""
-        for _ in range(20):
-            message = ws.receive()
-            if message.get("bytes"):
-                got += message["bytes"]
-                if b"pong" in got:
-                    break
-        assert b"pong" in got
 
 
 def test_runtime_state_resets_on_restart(tmp_path):
@@ -299,9 +246,8 @@ def test_runtime_state_resets_on_restart(tmp_path):
     cfg.sessions = []
     app = create_app(cfg)
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:
-        csrf = login(client, secrets)
-        create_session(client, csrf)
-        client.put("/api/sessions/board-a/control", json={"owner": "agent"}, headers={"X-CSRF-Token": csrf})
+        create_session(client)
+        client.put("/api/sessions/board-a/control", json={"owner": "agent"})
         saved = client.get("/api/sessions").json()["sessions"][0]
         assert saved["control_owner"] == "agent"
     app.state.manager.stop()
@@ -320,17 +266,14 @@ def test_runtime_state_resets_on_restart(tmp_path):
 
 def test_break_and_raw_export(app_bundle):
     client, cfg, secrets = app_bundle
-    csrf = login(client, secrets)
-    create_session(client, csrf)
+    create_session(client)
     client.post(
         "/api/sessions/board-a/write",
         json={"text": "ping", "newline": "cr"},
-        headers={"X-CSRF-Token": csrf},
     )
     r = client.post(
         "/api/sessions/board-a/break",
         json={"duration_ms": 120},
-        headers={"X-CSRF-Token": csrf},
     )
     assert r.status_code == 200, r.text
     assert r.json()["duration_ms"] == 120
@@ -348,11 +291,9 @@ def test_break_and_raw_export(app_bundle):
 
 def test_console_ws_resumes_from_cursor_without_replaying(app_bundle):
     client, cfg, secrets = app_bundle
-    csrf = login(client, secrets)
-    create_session(client, csrf)
-    cookie = "; ".join(f"{item.name}={item.value}" for item in client.cookies.jar)
+    create_session(client)
 
-    with client.websocket_connect("/ws/console/board-a?replay=65536", headers={"cookie": cookie}) as ws:
+    with client.websocket_connect("/ws/console/board-a?replay=65536") as ws:
         hello = ws.receive_json()
         assert hello["type"] == "hello"
         replay = ws.receive_json()
@@ -361,7 +302,7 @@ def test_console_ws_resumes_from_cursor_without_replaying(app_bundle):
         ws.receive_json()  # status
 
     # New subscriber at head, before any new data: no replay of the old buffer.
-    with client.websocket_connect(f"/ws/console/board-a?cursor={head}", headers={"cookie": cookie}) as ws:
+    with client.websocket_connect(f"/ws/console/board-a?cursor={head}") as ws:
         assert ws.receive_json()["type"] == "hello"
         first = ws.receive_json()
         assert first["type"] != "replay", first
@@ -369,11 +310,10 @@ def test_console_ws_resumes_from_cursor_without_replaying(app_bundle):
     client.post(
         "/api/sessions/board-a/write",
         json={"text": "ping", "newline": "cr"},
-        headers={"X-CSRF-Token": csrf},
     )
     # Catching up from the old cursor returns only what came after it: the new
     # reply, not the boot banner that was already on screen.
-    with client.websocket_connect(f"/ws/console/board-a?cursor={head}", headers={"cookie": cookie}) as ws:
+    with client.websocket_connect(f"/ws/console/board-a?cursor={head}") as ws:
         ws.receive_json()  # hello
         received = b""
         for _ in range(20):

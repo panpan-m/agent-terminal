@@ -5,7 +5,6 @@
 # Produces:
 #   dist/tio-server/tio-server.exe      (onedir, serves the SPA from its bundle)
 #   dist/tio-mcp.exe                    (onefile stdio shim)
-#   dist/tio-web-bridge.exe             (onefile ttyd bridge)
 param(
     [string]$Python = ".venv\Scripts\python.exe",
     [string]$Venv = ""
@@ -58,15 +57,8 @@ Write-Host "== tio-mcp (onefile) =="
     scripts\entry_shim.py
 if ($LASTEXITCODE -ne 0) { throw "shim build failed" }
 
-Write-Host "== tio-web-bridge (onefile) =="
-& $Python -m PyInstaller @common --onefile --name tio-web-bridge `
-    --paths "src" --collect-submodules "tio_web_bridge" `
-    scripts\entry_bridge.py
-if ($LASTEXITCODE -ne 0) { throw "bridge build failed" }
-
 Write-Host "== smoke test =="
 & "dist\tio-server\tio-server.exe" doctor | Out-Host
 & "dist\tio-mcp.exe" --help | Out-Host
-& "dist\tio-web-bridge.exe" --help | Out-Host
 
-Write-Host "Built: dist\tio-server\tio-server.exe, dist\tio-mcp.exe, dist\tio-web-bridge.exe"
+Write-Host "Built: dist\tio-server\tio-server.exe, dist\tio-mcp.exe"

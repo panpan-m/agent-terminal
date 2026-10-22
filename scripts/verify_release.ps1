@@ -2,13 +2,12 @@
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\verify_release.ps1
 #
-# 1. build the SPA            4. ttyd (real ConPTY)
-# 2. pytest                   5. PyInstaller build
-# 3. server + MCP + UI e2e    6. packaged-binary e2e
+# 1. build the SPA
+# 2. pytest                   4. PyInstaller build
+# 3. server + MCP + UI e2e    5. packaged-binary e2e
 param(
     [string]$Python = ".venv\Scripts\python.exe",
-    [switch]$SkipBuild,
-    [switch]$SkipTtyd
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,10 +32,6 @@ if (-not $SkipBuild) {
 Step "pytest" { & $Python -m pytest -q }
 Step "end-to-end + browser UI" { & $Python -X utf8 scripts\verify_e2e.py }
 
-if (-not $SkipTtyd -and (Test-Path "tools\ttyd\ttyd.exe")) {
-    Step "ttyd (ConPTY)" { & $Python -X utf8 scripts\ttyd_check.py }
-}
-
 Step "pyinstaller" { powershell.exe -NoProfile -ExecutionPolicy Bypass -File packaging\pyinstaller\build.ps1 }
 Step "packaged binaries" { & $Python -X utf8 scripts\verify_packaged.py }
 
@@ -46,4 +41,4 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 Write-Host "release verification passed" -ForegroundColor Green
-Write-Host "reports: artifacts\e2e\report.json, artifacts\ttyd\report.json, artifacts\packaged\report.json"
+Write-Host "reports: artifacts\e2e\report.json, artifacts\packaged\report.json"

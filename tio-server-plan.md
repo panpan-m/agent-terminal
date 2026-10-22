@@ -1,5 +1,11 @@
 # tio-server 跨平台方案（Windows + Linux）
 
+> **历史设计记录（2026-10-22 更新）**：本文是原始设计稿。当前实现已与本文有三处重大偏差：
+> ① ttyd 浏览器终端与 `tio-web-bridge` 已**整体移除**，操作员终端统一为内置 xterm.js
+> Terminal 页（串口 + SSH）；② 管理员登录/账号体系已移除，Web UI 免登录（本地
+> Host/Origin 防护），仅 MCP 端点保留 bearer token；③ 新增 SSH 终端与 Windows 桌面应用。
+> 现行架构以 `docs/architecture.md` 为准，本文仅作设计过程存档。
+>
 > 状态：设计稿 v0.2（ttyd-only、tio-suite、tio CLI 可选虚拟串口）  
 > 日期：2026-10-21  
 > 范围：在**不改动 tio C 代码**的前提下，新增一个长期运行的串口服务，提供 MCP、管理界面和 ttyd 浏览器终端。  

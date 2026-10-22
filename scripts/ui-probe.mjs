@@ -3,12 +3,11 @@
  * UI verification probe.
  *
  * Drives the built SPA in headless Chrome over the DevTools protocol:
- * logs in through the real API, seeds a simulated session, types one command
+ * opens the (login-free) UI, seeds a simulated session, types one command
  * into the xterm terminal, and captures screenshots of every page.
  *
  * Usage:
- *   node scripts/ui-probe.mjs --url http://127.0.0.1:8765 \
- *        --user admin --password <pw> --out artifacts/ui
+ *   node scripts/ui-probe.mjs --url http://127.0.0.1:8765 --out artifacts/ui
  */
 
 import { spawn } from "node:child_process";
@@ -30,8 +29,6 @@ function arg(name, fallback) {
 }
 
 const BASE = arg("url", "http://127.0.0.1:8765").replace(/\/$/, "");
-const USER = arg("user", "admin");
-const PASSWORD = arg("password", "");
 const OUT = arg("out", "artifacts/ui");
 const DEBUG_PORT = Number(arg("port", "9333"));
 
@@ -171,23 +168,8 @@ async function main() {
       }
     }, 100);
 
-    // 1. login screen
+    // 1. the SPA opens straight into the sessions page (no login)
     await cdp.send("Page.navigate", { url: BASE + "/" });
-    await sleep(2000);
-    const loginText = await cdp.evaluate("document.body.innerText");
-    check("login page renders", loginText.includes("Operator sign in"), loginText.slice(0, 80));
-    await cdp.screenshot(join(OUT, "01-login.png"));
-
-    // 2. log in through the real endpoint, reload so the SPA sees the cookie
-    const loginStatus = await cdp.evaluate(
-      `fetch('/api/auth/login', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({username:${JSON.stringify(USER)}, password:${JSON.stringify(PASSWORD)}})})
-        .then(async r => ({status: r.status, body: await r.text()}))`,
-    );
-    check("login api accepted", loginStatus.status === 200, `status ${loginStatus.status}`);
-    const csrf = JSON.parse(loginStatus.body).csrf;
-
-    await cdp.send("Page.reload", { ignoreCache: true });
     await sleep(2600);
     await cdp.evaluate("location.hash = '#/sessions'");
     await sleep(1800);
@@ -241,16 +223,15 @@ async function main() {
         afterCreate.slice(0, 120),
       );
       await cdp.evaluate(
-        `fetch('/api/sessions/ui-dialog', {method:'DELETE', headers:{'X-CSRF-Token': ${JSON.stringify(csrf)}}})`,
+        `fetch('/api/sessions/ui-dialog', {method:'DELETE'})`,
       );
       await sleep(500);
     }
 
-    // 3. seed the simulated session through the real API (same origin, with CSRF)
+    // 3. seed the simulated session through the real API (same origin)
     const sessionSetup = await cdp.evaluate(
       `(async () => {
-        const csrf = ${JSON.stringify(csrf)};
-        const headers = {'Content-Type':'application/json','X-CSRF-Token':csrf};
+        const headers = {'Content-Type':'application/json'};
         let list = await (await fetch('/api/sessions')).json();
         if (!list.sessions.some(s => s.session_id === 'board-a')) {
           await fetch('/api/sessions', {method:'POST', headers,
@@ -282,7 +263,7 @@ async function main() {
 
     // 4b. hand control to the agent via the API, then take it back in the toolbar
     await cdp.evaluate(
-      `fetch('/api/sessions/board-a/control', {method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':${JSON.stringify(csrf)}}, body: JSON.stringify({owner:'agent'})})`,
+      `fetch('/api/sessions/board-a/control', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({owner:'agent'})})`,
     );
     await sleep(3600);
     const agentState = await cdp.evaluate("document.body.innerText");
@@ -335,9 +316,8 @@ async function main() {
     // 4. remaining pages via hash routing
     for (const [route, label, needle] of [
       ["mcp", "08-mcp.png", "Streamable HTTP"],
-      ["config/board-a", "05-config.png", "Configuration"],
-      ["logs/board-a", "06-logs.png", "Logs"],
-      ["system", "07-system.png", "MCP"],
+      ["logs/board-a", "06-logs.png", "transcript"],
+      ["sessions", "02-sessions.png", "New session"],
     ]) {
       await cdp.evaluate(`location.hash = '#/${route}'`);
       await sleep(2000);

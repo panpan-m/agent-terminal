@@ -2,8 +2,8 @@
 
 `tio-server Desktop` is a self-contained Windows window for the existing SPA and
 server. It does **not** require a browser, a Windows service, or an open console:
-one `tio-desktop.exe` process starts uvicorn on an ephemeral loopback port and
-hosts the UI in **Microsoft Edge WebView2**.
+one `tio-desktop.exe` process starts uvicorn on a loopback port (18765 by
+default) and hosts the UI in **Microsoft Edge WebView2**.
 
 The service + browser install remains available and independent; desktop data is
 stored under `%LOCALAPPDATA%\tio-server-desktop`, while the service uses
@@ -48,15 +48,13 @@ On first launch it creates:
 ```text
 %LOCALAPPDATA%\tio-server-desktop\
   config.toml
-  first-run-credentials.json     admin password, API/bridge/ttyd tokens
-  api-token
-  bridge-token
-  ttyd-control.pass
+  api-token                        MCP bearer token (also shown in the MCP tab)
   logs\, transcripts\, webview\
 ```
 
-The credentials file is opened once and must be deleted after the first login.
-The login screen appears in the desktop window; no browser tab is opened.
+The window opens straight into the UI; there is no login and no browser tab.
+Existing configs from older versions (with `admin_*` fields) still load; the
+stale fields are ignored.
 
 ## Runtime
 
@@ -83,5 +81,3 @@ transcripts for a reinstall.
 * No tray icon or auto-update yet; **Start with Windows** is the only autostart
   option.
 * The installer/executable are unsigned; add Authenticode before distribution.
-* The desktop app does not install `ttyd`; the browser-tab ttyd feature remains a
-  service install option.

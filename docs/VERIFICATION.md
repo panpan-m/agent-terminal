@@ -4,9 +4,8 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **112 passed, 1 skipped** | `pytest -q` |
-| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
-| ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
+| `pytest` (unit + integration + protocol + security + HIL) | **106 passed, 1 skipped** | `pytest -q` |
+| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **37 / 37 checks** | `artifacts/e2e/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
 | **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | `artifacts/live-shell/report.json` |
@@ -24,38 +23,38 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 | OS | Windows 10 家庭版 10.0.19045 (x64) |
 | Python | 3.12.14 (venv) |
 | Node / npm | 22.14.0 |
-| ttyd | 1.7.7 (`ttyd.win32.exe`, SHA-256 `e33a2750…832b37`, matches release `SHA256SUMS`) |
 | Browser (automation) | Google Chrome, headless, driven over CDP |
 | Hardware | 2 real COM ports (Bluetooth SPP: COM3, COM4); no USB-UART board attached |
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 111 passed + 1 skipped)
+### 1. Test suite (`pytest`, 106 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
-  save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
+  save, Argon2 token checks + origin allow-list, transcript rotation
   and redaction.
 * **Integration** — session state machine, reader/writer arbitration of
   `control_owner`, permissions, `serial_command` (expect/regex/timeout/settle),
   unplug→reconnect with the buffer preserved, reset sequence; MCP tools called
   through `MCPServer` with schema/annotation checks and structured errors; HTTP
-  API + CSRF + WebSockets; MCP end-to-end over Streamable HTTP.
+  API + WebSockets; MCP end-to-end over Streamable HTTP.
 * **Protocol** — raw JSON-RPC `initialize` / `notifications/initialized` /
   `tools/list` / `tools/call` (SSE responses), `Mcp-Session-Id` handling,
   `outputSchema` and annotations on all fifteen tools.
-* **Security** — auth required on every admin route, forged cookie, strict bearer
-  token, foreign `Origin`, CSRF, payload cap, path traversal, regex DoS
+* **Security** — open `/api` rejects foreign `Origin` and foreign `Host`,
+  strict MCP bearer token, payload cap, path traversal, regex DoS
   (catastrophic pattern bounded by the 500 ms matcher timeout), pattern-length
   cap, WS origin rejection.
 * **HIL** — real COM port open/configure/control-lines/read-timeout/close via
   pyserial (`COM3`), plus the pyserial `loop://` transport.
 
-### 2. End-to-end (`scripts/verify_e2e.py`, 41 checks)
+### 2. End-to-end (`scripts/verify_e2e.py`, 38 checks)
 
 Starts `tio-server` as a **separate process** with a simulated board
 (`sim://board-a`), then:
 
-* admin login; auto-opened session; banner captured in the ring buffer;
+* auto-opened session reachable without login; banner captured in the ring
+  buffer;
 * human `command` with `expect` over the simulated UART;
 * MCP `initialize`, `tools/list` (exactly fifteen tools, schemas + annotations),
   `serial_sessions`, `serial_read`, `serial_write`, `serial_command`;
@@ -68,45 +67,24 @@ Starts `tio-server` as a **separate process** with a simulated board
 * transcript contains RX bytes with offsets and lengths; audit contains
   `session.open` / `session.control_owner`;
 * SPA index + hashed JS bundle served by the server;
-* **browser UI** (headless Chrome over CDP): login screen, login through the real
-  API, sessions page, **create-session dialog** (typed, submitted, session
+* **browser UI** (headless Chrome over CDP): sessions page renders directly
+  (no login), **create-session dialog** (typed, submitted, session
   appears open), terminal page with LIVE RX and STATUS, hand control to the agent
   and take it back, type `ping` into xterm and see `pong`, **toggle light/dark
   theme** (and back), **MCP page** (status, endpoint, fifteen tools, install
   prompt), configuration/logs/system pages render, no JS console errors.
 
-The `/api/mcp` status endpoint is covered by its own pytest case: auth required,
-Streamable HTTP URL, bearer mode, token/shim paths, and the fifteen-tool list.
+The `/api/mcp` status endpoint is covered by its own pytest case: open without
+login, Streamable HTTP URL, bearer mode, token/shim paths, and the fifteen-tool
+list.
 
-Screenshots: [`01-login`](screenshots/01-login.png) ·
-[`02-sessions`](screenshots/02-sessions.png) ·
+Screenshots: [`02-sessions`](screenshots/02-sessions.png) ·
 [`03-terminal`](screenshots/03-terminal.png) ·
 [`04-terminal-command`](screenshots/04-terminal-command.png) ·
-[`05-config`](screenshots/05-config.png) ·
 [`06-logs`](screenshots/06-logs.png) ·
-[`07-system`](screenshots/07-system.png) ·
 [`08-mcp`](screenshots/08-mcp.png) ·
 [`11-light-sessions`](screenshots/11-light-sessions.png) ·
 [`12-light-terminal`](screenshots/12-light-terminal.png)
-
-### 3. ttyd (`scripts/ttyd_check.py`, 13 checks)
-
-The server is started with `ttyd.enabled=true`; the **supervisor** (not the test)
-allocates ports, builds the bridge command and launches both entries:
-
-* entries start for a session configured at boot, and the session API exposes
-  `terminal.view_url` / `terminal.control_url`;
-* page served; `xterm`/ttyd assets present;
-* device boot banner reaches the browser terminal;
-* typed bytes reach the simulated UART and the `help` output returns (raw bytes
-  through ConPTY);
-* `Ctrl-C` forwarded as `0x03` and the bridge stays alive;
-* basic-auth control entry: `401` without credentials, `200` with them;
-* creating a session through the API auto-starts its entries and the new terminal
-  is reachable;
-* deleting the session stops those entries again.
-
-This clears the plan's **P0 Windows ttyd go/no-go**.
 
 ### 3b. In-app Terminal tab (xterm.js + CDP)
 
@@ -120,7 +98,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (112 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (106 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -135,7 +113,7 @@ Screenshot: [`10-terminal-tab`](screenshots/10-terminal-tab.png).
 `tio-web-bridge.exe` onefile):
 
 * packaged `init` writes config + one-time credentials;
-* packaged server starts, serves the **bundled SPA and assets**, login works;
+* packaged server starts, serves the **bundled SPA and assets**, `/api` answers without login;
 * auto-open session and a serial command;
 * MCP `initialize` over HTTP;
 * **packaged `tio-mcp.exe`** speaks stdio MCP to the packaged server and returns
@@ -150,8 +128,8 @@ Probe (`2E8A:000C`, CMSIS-DAP + CDC-ACM UART) on `COM5` — target:
 Everything was exercised against the live port: open/close/reopen, control
 lines, text/hex/chunked writes, cursor reads, `serial_command` with
 `expect="login:"` matching the real prompt in 15 ms, all eight serial MCP tools through
-the packaged `tio-mcp.exe`, control-owner and permission arbitration, ttyd
-entries (HTTP + raw WebSocket), baud change/reopen, transcript/audit, and the
+the packaged `tio-mcp.exe`, control-owner and permission arbitration, baud
+change/reopen, transcript/audit, and the
 DTR/RTS reset sequence.
 
 Details, including the DTR-gating behaviour of the probe and the three product
@@ -311,11 +289,28 @@ With an agent-visible SSH session:
    `tio-server Desktop` and the installed `tio-desktop.exe` were created under
    `%LOCALAPPDATA%\Programs\tio-server`;
 4. the installed app opened a WebView2 window titled `tio-server`; first run
-   created `%LOCALAPPDATA%\tio-server-desktop\config.toml` and
-   `first-run-credentials.json`, independent from the service data directory;
-5. the desktop server bound `127.0.0.1:18765` (stable MCP endpoint), login with
-   the generated first-run password returned HTTP 200, and the app/service used
-   different data dirs and ports; no service was installed or modified.
+   created `%LOCALAPPDATA%\tio-server-desktop\config.toml` + `api-token`,
+   independent from the service data directory;
+5. the desktop server bound `127.0.0.1:18765` (stable MCP endpoint), `/api`
+   answered without login, and the app/service used different data dirs and
+   ports; no service was installed or modified.
+
+### 14. Login-free rework (this build)
+
+The admin account, login page, cookie sessions, CSRF and the login rate
+limiter were removed; the product is now a local terminal tool plus MCP
+service:
+
+1. `pytest` — **106 passed, 1 skipped**: new security cases reject a foreign
+   `Origin` (HTTP + WS) and a foreign `Host` on `/api`; the MCP bearer-token
+   checks are unchanged;
+2. `scripts/verify_e2e.py` — **37/37 checks** against a fresh server process:
+   the SPA opens straight into the sessions page (no login), the full browser
+   flow (dialog, terminal, control handover, xterm typing, theme, MCP page)
+   passes, and the MCP endpoint still demands a bearer token;
+3. `init` now prints only the MCP API token; old `config.toml` files with
+   `admin_*`/`session_*`/`[ttyd]` fields still load (unknown keys are ignored);
+4. the MCP `TransportSecuritySettings` DNS-rebinding allow-list is unchanged.
 
 ## Plan acceptance criteria (plan §14.3)
 
@@ -325,10 +320,9 @@ With an agent-visible SSH session:
 | UI selects port/baud and opens a session | ✅ | browser CDP check "session created from the dialog is listed and open" |
 | Real device end to end | ✅ | live run 46/46 + agent-path MCP run 25/25 on a Raspberry Pi 5 shell through a Debug Probe |
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
-| Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
 | SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 16 tools total; host_info contract tested |
-| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 112 |
+| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; covered by pytest |
 | SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
 | Unified Terminal: serial + SSH in one tab bar | ✅ | COM5 + two SSH sessions; screenshots 19/20; per-tab × disconnect verified |
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
@@ -337,13 +331,12 @@ With an agent-visible SSH session:
 | SSH agent activity in web UI | ✅ | `ssh_write` PTY input visible in terminal; activity card; exec separate |
 | Windows desktop app/installer | ✅ | WebView2 onedir + per-user setup; installed, launched, first-run data verified |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
-| ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |
 | Replug reconnects, cursor continues, gap reported | ✅ | reconnect test, gap unit tests, HIL enumeration |
 | Config changes never leave a half-open state | ✅ | config validation + update/reopen path tests |
 | Unauthenticated/unauthorised/illegal port requests rejected + audited | ✅ | security suite (10 tests) |
 | 24 h soak without leaks/data loss | ⚠️ not run | short connection/soak behaviour only; no 24 h run in this environment |
-| Docs for install/config/MCP/ttyd/troubleshooting | ✅ | `docs/install.md`, `mcp.md`, `ttyd.md`, `ssh.md`, `architecture.md` |
+| Docs for install/config/MCP/troubleshooting | ✅ | `docs/install.md`, `mcp.md`, `ssh.md`, `architecture.md` |
 
 ## Defects found and fixed during verification
 
@@ -381,13 +374,10 @@ npm --prefix frontend ci ; npm --prefix frontend run build
 # 3. server + MCP + UI (needs Chrome or Edge)
 .venv\Scripts\python scripts\verify_e2e.py
 
-# 4. ttyd (put ttyd.exe 1.7.7 in tools\ttyd\)
-.venv\Scripts\python scripts\ttyd_check.py
-
-# 5. packaged binaries (after packaging/pyinstaller/build.ps1)
+# 4. packaged binaries (after packaging/pyinstaller/build.ps1)
 .venv\Scripts\python scripts\verify_packaged.py
 
-# 6. live hardware (device attached, server running with a session)
+# 5. live hardware (device attached, server running with a session)
 .venv\Scripts\python scripts\live_debug.py --session board
 
 # 7. agent path over MCP stdio against a logged-in shell

@@ -112,15 +112,11 @@ def main() -> int:
             return 2
 
         client = httpx.Client(base_url=base, timeout=30)
-        login = client.post("/api/auth/login", json={"username": "admin", "password": creds["admin_password"]})
-        check("packaged server login", login.status_code == 200)
-        headers = {"X-CSRF-Token": login.json()["csrf"]}
         sessions = client.get("/api/sessions").json()["sessions"]
         check("auto_open session is open", sessions and sessions[0]["state"] == "open", sessions[0]["state"] if sessions else "")
         command = client.post(
             "/api/sessions/board-a/command",
             json={"command": "version", "expect": "tiosim", "timeout_ms": 4000},
-            headers=headers,
         )
         check("serial command through the packaged server", command.status_code == 200 and command.json().get("matched"))
 

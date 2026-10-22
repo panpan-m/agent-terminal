@@ -1,11 +1,10 @@
 import {
   Cpu,
   LayoutDashboard,
-  LogOut,
   Moon,
   Plug,
   ScrollText,
-  SlidersHorizontal,
+  Server,
   SquareTerminal,
   Sun,
   Waves,
@@ -14,39 +13,39 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
-import type { SessionStatus, SystemInfo } from "@/lib/types";
+import type { SessionStatus, SshSessionStatus, SystemInfo } from "@/lib/types";
 import { StateBadge } from "@/components/ui/badge";
 
-export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "config" | "logs" | "system";
+export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "logs";
 
 const NAV: { page: Page; label: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", icon: LayoutDashboard },
   { page: "terminal", label: "Terminal", icon: SquareTerminal },
   { page: "mcp", label: "MCP", icon: Plug },
-  { page: "config", label: "Configuration", icon: SlidersHorizontal },
   { page: "logs", label: "Logs & audit", icon: ScrollText },
-  { page: "system", label: "System", icon: Cpu },
 ];
 
 export function Shell({
   page,
   onNavigate,
   onSelectSession,
+  onSelectSsh,
   sessions,
+  sshSessions,
   selectedId,
+  selectedSshId,
   system,
-  username,
-  onLogout,
   children,
 }: {
   page: Page;
   onNavigate: (page: Page) => void;
   onSelectSession: (id: string) => void;
+  onSelectSsh: (id: string) => void;
   sessions: SessionStatus[];
+  sshSessions: SshSessionStatus[];
   selectedId?: string;
+  selectedSshId?: string;
   system: SystemInfo | null;
-  username: string;
-  onLogout: () => void;
   children: ReactNode;
 }) {
   const { theme, toggle } = useTheme();
@@ -91,7 +90,7 @@ export function Shell({
 
         <div className="mt-6 flex-1 overflow-y-auto px-3">
           <div className="px-3 pb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-600">
-            Sessions
+            Serial sessions
           </div>
           <div className="flex flex-col gap-1">
             {sessions.length === 0 ? (
@@ -131,6 +130,53 @@ export function Shell({
               </button>
             ))}
           </div>
+
+          <div className="mt-4 px-3 pb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-600">
+            SSH sessions
+          </div>
+          <div className="flex flex-col gap-1">
+            {sshSessions.length === 0 ? (
+              <p className="px-3 text-xs text-zinc-600">none connected</p>
+            ) : null}
+            {sshSessions.map((session) => (
+              <button
+                key={session.session_id}
+                type="button"
+                onClick={() => {
+                  onSelectSsh(session.session_id);
+                  onNavigate("ssh");
+                }}
+                className={cn(
+                  "flex flex-col gap-1 rounded-lg px-3 py-2 text-left transition-colors",
+                  selectedSshId === session.session_id
+                    ? "bg-zinc-900 ring-1 ring-inset ring-zinc-700"
+                    : "hover:bg-zinc-900/70",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1 truncate text-xs font-medium text-zinc-200">
+                    <Server className="h-3 w-3 shrink-0 text-sky-400" />
+                    {session.name}
+                  </span>
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 shrink-0 rounded-full",
+                      session.state === "open"
+                        ? "live-dot bg-emerald-400"
+                        : session.state === "reconnecting"
+                          ? "bg-amber-400"
+                          : session.state === "error"
+                            ? "bg-red-400"
+                            : "bg-zinc-600",
+                    )}
+                  />
+                </div>
+                <span className="truncate font-mono text-[10px] text-zinc-500">
+                  {session.username}@{session.host}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="border-t border-zinc-800/80 px-4 py-3">
@@ -141,8 +187,7 @@ export function Shell({
               {system?.health.sessions_open ?? 0} open
             </span>
           </div>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-zinc-400">{username}</span>
+          <div className="mt-2 flex items-center justify-end">
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -152,13 +197,6 @@ export function Shell({
               >
                 {theme === "light" ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
                 {theme === "light" ? "dark" : "light"}
-              </button>
-              <button
-                type="button"
-                onClick={onLogout}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
-              >
-                <LogOut className="h-3 w-3" /> sign out
               </button>
             </div>
           </div>

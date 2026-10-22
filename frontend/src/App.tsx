@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
 
 import { Shell, type Page } from "@/components/Shell";
-import { LoginPage } from "@/pages/LoginPage";
 import { TerminalWorkspacePage } from "@/pages/TerminalWorkspacePage";
 import { McpPage } from "@/pages/McpPage";
-import { ConfigPage } from "@/pages/ConfigPage";
 import { SessionsPage } from "@/pages/SessionsPage";
 import { LogsPage } from "@/pages/LogsPage";
-import { SystemPage } from "@/pages/SystemPage";
 import { ApiFailure, api } from "@/lib/api";
-import type { SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
+import type { SessionInput, SessionStatus, SshSessionStatus, SystemInfo } from "@/lib/types";
 
-const PAGES: Page[] = ["sessions", "terminal", "connections", "ssh", "mcp", "config", "logs", "system"];
+const PAGES: Page[] = ["sessions", "terminal", "connections", "ssh", "mcp", "logs"];
 
 interface Toast {
   id: number;
@@ -24,16 +20,15 @@ function parseHash(): { page: Page; sessionId?: string } {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const [pageRaw, id] = raw.split("/");
   const normalized = pageRaw === "console" ? "terminal" : pageRaw; // old chat links
-  const page = (PAGES as string[]).includes(normalized) ? (normalized as Page) : "sessions";
+  const legacy = pageRaw === "config" ? "sessions" : pageRaw === "system" ? "sessions" : normalized;
+  const page = (PAGES as string[]).includes(legacy) ? (legacy as Page) : "sessions";
   return { page, sessionId: id || undefined };
 }
 
 export default function App() {
-  const [me, setMe] = useState<{ username: string } | null>(null);
-  const [booting, setBooting] = useState(true);
-  const [loginError, setLoginError] = useState<string | null>(null);
   const [route, setRoute] = useState(parseHash());
   const [sessions, setSessions] = useState<SessionStatus[]>([]);
+  const [sshSessions, setSshSessions] = useState<SshSessionStatus[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
 
@@ -48,14 +43,6 @@ export default function App() {
   }, [toast]);
 
   useEffect(() => {
-    api
-      .me()
-      .then((value) => setMe({ username: value.username }))
-      .catch(() => setMe(null))
-      .finally(() => setBooting(false));
-  }, []);
-
-  useEffect(() => {
     const onHash = () => setRoute(parseHash());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -63,22 +50,24 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [sessionList, sys] = await Promise.all([api.sessions(), api.system()]);
+      const [sessionList, sshList, sys] = await Promise.all([
+        api.sessions(),
+        api.sshSessions().catch(() => ({ sessions: [] })),
+        api.system(),
+      ]);
       setSessions(sessionList.sessions);
+      setSshSessions(sshList.sessions);
       setSystem(sys);
-    } catch (error) {
-      if (error instanceof ApiFailure && error.status === 401) {
-        setMe(null);
-      }
+    } catch {
+      // server restarting; keep the last known state
     }
   }, []);
 
   useEffect(() => {
-    if (!me) return;
     void refresh();
     const timer = setInterval(() => void refresh(), 3000);
     return () => clearInterval(timer);
-  }, [me, refresh]);
+  }, [refresh]);
 
   const navigate = useCallback((page: Page, sessionId?: string) => {
     const target = sessionId ? `#/${page}/${sessionId}` : `#/${page}`;
@@ -95,7 +84,12 @@ export default function App() {
     return sessions[0]?.session_id;
   }, [route.sessionId, sessions]);
 
-  const selected = sessions.find((session) => session.session_id === selectedId);
+  const selectedSshId = useMemo(() => {
+    if (route.sessionId && sshSessions.some((session) => session.session_id === route.sessionId)) {
+      return route.sessionId;
+    }
+    return sshSessions[0]?.session_id;
+  }, [route.sessionId, sshSessions]);
 
   const guard = useCallback(
     async (action: () => Promise<unknown>, success?: string) => {
@@ -113,40 +107,6 @@ export default function App() {
     [notify, refresh],
   );
 
-  const login = async (username: string, password: string) => {
-    setLoginError(null);
-    try {
-      const result = await api.login(username, password);
-      setMe({ username: result.username });
-      void refresh();
-    } catch (error) {
-      const failure = error as ApiFailure;
-      setLoginError(failure.message || "login failed");
-    }
-  };
-
-  const logout = async () => {
-    try {
-      await api.logout();
-    } finally {
-      setMe(null);
-      setSessions([]);
-      setSystem(null);
-    }
-  };
-
-  if (booting) {
-    return (
-      <div className="flex min-h-screen items-center justify-center gap-2 text-sm text-zinc-500">
-        <Loader2 className="h-4 w-4 animate-spin" /> connecting…
-      </div>
-    );
-  }
-
-  if (!me) {
-    return <LoginPage onSubmit={login} error={loginError} />;
-  }
-
   const createSession = async (input: SessionInput) => {
     const ok = await guard(() => api.createSession(input), `session ${input.id} created`);
     if (ok && input.id) navigate("terminal", input.id);
@@ -162,11 +122,12 @@ export default function App() {
         page={route.page}
         onNavigate={navigate}
         onSelectSession={(id) => navigate("terminal", id)}
+        onSelectSsh={(id) => navigate("ssh", id)}
         sessions={sessions}
-        selectedId={selectedId}
+        sshSessions={sshSessions}
+        selectedId={route.page === "terminal" ? selectedId : undefined}
+        selectedSshId={route.page === "ssh" ? selectedSshId : undefined}
         system={system}
-        username={me.username}
-        onLogout={logout}
       >
         {route.page === "sessions" || route.page === "connections" ? (
           <SessionsPage
@@ -176,6 +137,7 @@ export default function App() {
             refresh={refresh}
             notify={notify}
             onCreate={createSession}
+            onUpdate={updateSession}
             onTerminal={(id) => navigate("terminal", id)}
             onControl={(id, owner) => guard(() => api.setControl(id, owner), `control → ${owner}`)}
             onOpenSession={(id) => guard(() => api.openSession(id), "session opened")}
@@ -223,27 +185,13 @@ export default function App() {
           />
         ) : null}
 
-        {route.page === "config" ? (
-          <ConfigPage
-            sessions={sessions}
-            session={selected}
-            selectedId={selectedId}
-            onSelect={(id) => navigate("config", id)}
-            onSave={updateSession}
-            notify={notify}
-          />
-        ) : null}
-
         {route.page === "logs" ? (
           <LogsPage
             sessions={sessions}
-            session={selected}
+            sshSessions={sshSessions}
             selectedId={selectedId}
-            onSelect={(id) => navigate("logs", id)}
           />
         ) : null}
-
-        {route.page === "system" ? <SystemPage system={system} sessions={sessions} refresh={refresh} /> : null}
       </Shell>
 
       {toast ? (

@@ -22,6 +22,7 @@ export function SessionsPage({
   refresh,
   notify,
   onCreate,
+  onUpdate,
   onTerminal,
   onControl,
   onOpenSession,
@@ -36,6 +37,7 @@ export function SessionsPage({
   refresh: () => Promise<void>;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
   onCreate: (input: SessionInput) => Promise<void>;
+  onUpdate: (id: string, input: SessionInput) => Promise<void>;
   onTerminal: (id: string) => void;
   onControl: (id: string, owner: "human" | "agent") => Promise<boolean>;
   onOpenSession: (id: string) => Promise<boolean>;
@@ -101,6 +103,7 @@ export function SessionsPage({
           refresh={refresh}
           notify={notify}
           onCreate={onCreate}
+          onUpdate={onUpdate}
           onTerminal={onTerminal}
           onControl={onControl}
           onOpenSession={onOpenSession}

@@ -1,10 +1,9 @@
-"""FastAPI application: admin API, browser console, ttyd bridge, MCP mount."""
+"""FastAPI application: admin API, browser console, MCP mount."""
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import hmac
 import json
 import os
 import platform as platform_mod
@@ -17,13 +16,13 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 
-from ..auth import AuthManager, AdminSession, read_secret_file
+from ..auth import AuthManager
 from ..config import Config, ResetStep, SessionConfig
 from ..errors import CONFLICT, UNAUTHORIZED, ToolFailure
 from ..mcp import build_mcp_server
@@ -32,7 +31,6 @@ from ..sessions import Session, SessionManager
 from ..ssh import SshManager, SshProfileStore, SshSecretStore
 from ..ssh.importers import parse_ssh_config
 from ..transcript import now_iso
-from .ttyd_supervisor import TtydSupervisor
 
 __version__ = "0.1.0"
 
@@ -70,7 +68,6 @@ def _static_dir() -> Path:
 
 
 STATIC_DIR = _static_dir()
-COOKIE = AuthManager.COOKIE_NAME
 
 
 # --------------------------------------------------------------------- helpers
@@ -85,6 +82,79 @@ def _allowed_origins(config: Config) -> set[str]:
     if config.server.public_url:
         origins.add(config.server.public_url.rstrip("/"))
     return {o for o in origins if o}
+
+
+def _allowed_hosts(config: Config) -> set[str]:
+    """Host headers the unauthenticated API may serve (DNS-rebinding guard)."""
+    hosts = [config.server.bind, f"{config.server.bind}:{config.server.port}"]
+    for host in ("localhost", "127.0.0.1", "[::1]"):
+        hosts += [host, f"{host}:{config.server.port}"]
+    if config.server.public_url:
+        parsed = urlparse(config.server.public_url)
+        if parsed.hostname:
+            hosts.append(parsed.hostname)
+            if parsed.port:
+                hosts.append(f"{parsed.hostname}:{parsed.port}")
+    return set(hosts)
+
+
+class _LocalRequestGuard:
+    """Host/Origin allow-list for the unauthenticated ``/api`` and ``/ws`` surface.
+
+    With no admin sessions there are no ambient credentials to steal, so the
+    remaining browser threat is cross-site abuse: a foreign ``Origin`` header
+    or a DNS-rebinding ``Host``. Both are rejected here. Non-browser local
+    clients (curl, the MCP shim) are unaffected.
+    """
+
+    def __init__(self, app: Any, *, allowed_hosts: set[str] | None = None,
+                 allowed_origins: set[str] | None = None) -> None:
+        self.app = app
+        self.allowed_hosts = allowed_hosts or set()
+        self.allowed_origins = allowed_origins or set()
+
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        if scope["type"] == "websocket":
+            path = scope.get("path", "")
+            if path == "/ws" or path.startswith("/ws/"):
+                headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+                origin = headers.get("origin")
+                # Browsers always send Origin on WebSockets, which is what
+                # catches cross-site and DNS-rebinding WS attacks; the Host
+                # check below stays HTTP-only.
+                if origin and origin.rstrip("/") not in self.allowed_origins:
+                    await self._reject(scope, send)
+                    return
+        elif scope["type"] == "http":
+            path = scope.get("path", "")
+            if path == "/api" or path.startswith("/api/") or path == "/ws" or path.startswith("/ws/"):
+                headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+                host = headers.get("host", "")
+                origin = headers.get("origin")
+                if (host and host not in self.allowed_hosts) or (
+                    origin and origin.rstrip("/") not in self.allowed_origins
+                ):
+                    await self._reject(scope, send)
+                    return
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _reject(scope, send) -> None:  # type: ignore[no-untyped-def]
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 4403, "reason": "origin or host not allowed"})
+            return
+        body = json.dumps({"error": {"code": "FORBIDDEN", "message": "origin or host not allowed"}}).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 403,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
 
 class _RootPath:
@@ -146,11 +216,6 @@ class _BearerAuth:
 
 
 # ------------------------------------------------------------------- API models
-class LoginBody(BaseModel):
-    username: str
-    password: str
-
-
 class ResetStepBody(BaseModel):
     dtr: bool | None = None
     rts: bool | None = None
@@ -280,60 +345,18 @@ def create_app(config: Config) -> FastAPI:
         audit=manager.audit,
         secrets=ssh_secrets,
     )
-    auth = AuthManager(
-        session_secret=config.auth.session_secret,
-        admin_username=config.auth.admin_username,
-        admin_password_hash=config.auth.admin_password_hash,
-        api_token_hash=config.auth.api_token_hash,
-        session_ttl_hours=config.auth.session_ttl_hours,
-        secure_cookie=config.public_url.startswith("https://"),
-        bridge_token=read_secret_file(config.bridge_token_file),
-    )
+    auth = AuthManager(api_token_hash=config.auth.api_token_hash)
     auth.allowed_origins = _allowed_origins(config)
-    ttyd = TtydSupervisor(config, manager.audit)
     started_at = time.time()
 
     def session_payload(sess) -> dict:
-        data = sess.status()
-        data["terminal"] = ttyd.info(sess.id)
-        return data
-
-    def ensure_ttyd(session_id: str) -> None:
-        if not config.ttyd.enabled or not ttyd.available:
-            return
-        info = ttyd.info(session_id)
-        if info.get("view_url") and info.get("control_url"):
-            return
-        try:
-            ttyd.start_for(session_id)
-        except Exception as exc:  # ttyd is optional; never fail the API for it
-            logger.warning("ttyd start failed for %s: %s", session_id, exc)
-
-    async def ttyd_reconcile_loop() -> None:
-        """Recreate entries that died (crash, port takeover, manual kill)."""
-        while True:
-            await asyncio.sleep(20)
-            if not config.ttyd.enabled or not ttyd.available:
-                continue
-            for session_id in list(manager.sessions):
-                try:
-                    await asyncio.to_thread(ensure_ttyd, session_id)
-                except Exception:  # pragma: no cover - best effort
-                    pass
+        return sess.status()
 
     mcp_server = build_mcp_server(manager, config, ssh_manager)
-    allowed_hosts = [config.server.bind, f"{config.server.bind}:{config.server.port}"]
-    for host in ("localhost", "127.0.0.1", "[::1]"):
-        allowed_hosts += [host, f"{host}:{config.server.port}"]
-    if config.server.public_url:
-        parsed = urlparse(config.server.public_url)
-        if parsed.hostname:
-            allowed_hosts.append(parsed.hostname)
-            if parsed.port:
-                allowed_hosts.append(f"{parsed.hostname}:{parsed.port}")
+    allowed_hosts = _allowed_hosts(config)
     transport = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
-        allowed_hosts=sorted(set(allowed_hosts)),
+        allowed_hosts=sorted(allowed_hosts),
         allowed_origins=sorted(auth.allowed_origins),
     )
     mcp_asgi = mcp_server.streamable_http_app(
@@ -345,14 +368,10 @@ def create_app(config: Config) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         manager.start()
-        ttyd.ensure_for_all(list(manager.sessions))
-        reconcile = asyncio.create_task(ttyd_reconcile_loop(), name="ttyd-reconcile")
         try:
             async with mcp_server.session_manager.run():
                 yield
         finally:
-            reconcile.cancel()
-            ttyd.stop_all()
             ssh_manager.stop()
             manager.stop()
 
@@ -370,9 +389,13 @@ def create_app(config: Config) -> FastAPI:
     app.state.ssh_profiles = ssh_profiles
     app.state.ssh_secrets = ssh_secrets
     app.state.auth = auth
-    app.state.ttyd = ttyd
     app.state.logger = logger
     app.add_middleware(_McpPathRewrite)
+    app.add_middleware(
+        _LocalRequestGuard,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=auth.allowed_origins,
+    )
 
     # ------------------------------------------------------------------ plumbing
     @app.exception_handler(ToolFailure)
@@ -409,26 +432,6 @@ def create_app(config: Config) -> FastAPI:
             )
         return response
 
-    # ---------------------------------------------------------------- auth deps
-    def admin_session(request: Request) -> AdminSession:
-        sid = auth.read_cookie(request.cookies.get(COOKIE))
-        rec = auth.get_session(sid)
-        if rec is None:
-            raise HTTPException(status_code=401, detail="not signed in")
-        return rec
-
-    def csrf_guard(request: Request, rec: AdminSession = Depends(admin_session)) -> AdminSession:
-        origin = request.headers.get("origin")
-        if origin and not auth.origin_allowed(origin):
-            raise HTTPException(status_code=403, detail="origin not allowed")
-        token = request.headers.get("x-csrf-token", "")
-        if not token or not hmac.compare_digest(token, rec.csrf):
-            raise HTTPException(status_code=403, detail="invalid CSRF token")
-        return rec
-
-    def client_ip(request: Request) -> str:
-        return request.client.host if request.client else "unknown"
-
     # ------------------------------------------------------------------- health
     @app.get("/healthz")
     async def healthz():
@@ -451,50 +454,14 @@ def create_app(config: Config) -> FastAPI:
             "config_version": config.config_version,
         }
 
-    # --------------------------------------------------------------------- auth
-    @app.post("/api/auth/login")
-    async def login(body: LoginBody, request: Request, response: Response):
-        ip = client_ip(request)
-        if not auth.limiter.allow(ip):
-            manager.audit.write("auth.rate_limited", remote=ip)
-            raise HTTPException(status_code=429, detail="too many login attempts")
-        if not auth.check_password(body.username, body.password):
-            auth.limiter.record_failure(ip)
-            manager.audit.write("auth.login_failed", remote=ip, username=body.username)
-            raise HTTPException(status_code=401, detail="invalid credentials")
-        auth.limiter.reset(ip)
-        rec = auth.create_session(body.username, ip)
-        response.set_cookie(
-            COOKIE,
-            auth.sign_cookie(rec.sid),
-            httponly=True,
-            samesite="lax",
-            secure=auth.secure_cookie,
-            max_age=auth.session_ttl,
-            path="/",
-        )
-        manager.audit.write("auth.login", remote=ip, username=body.username)
-        return {"username": rec.username, "csrf": rec.csrf, "expires_at": int(rec.expires)}
-
-    @app.post("/api/auth/logout")
-    async def logout(request: Request, response: Response, rec: AdminSession = Depends(csrf_guard)):
-        auth.destroy_session(rec.sid)
-        response.delete_cookie(COOKIE, path="/")
-        manager.audit.write("auth.logout", username=rec.username, remote=rec.remote)
-        return {"ok": True}
-
-    @app.get("/api/auth/me")
-    async def me(rec: AdminSession = Depends(admin_session)):
-        return {"username": rec.username, "csrf": rec.csrf, "expires_at": int(rec.expires)}
-
     # -------------------------------------------------------------------- ports
     @app.get("/api/ports")
-    async def list_ports(rec: AdminSession = Depends(admin_session)):
+    async def list_ports():
         return {"ports": manager.ports()}
 
     # ------------------------------------------------------------------ ssh
     @app.get("/api/ssh/hosts")
-    async def ssh_list_hosts(rec: AdminSession = Depends(admin_session)):
+    async def ssh_list_hosts():
         hosts = ssh_profiles.list()
         for host in hosts:
             fields = ssh_secrets.fields(host["id"])
@@ -503,25 +470,25 @@ def create_app(config: Config) -> FastAPI:
         return {"hosts": hosts}
 
     @app.get("/api/ssh/config")
-    async def ssh_config_candidates(rec: AdminSession = Depends(admin_session)):
+    async def ssh_config_candidates():
         path = Path.home() / ".ssh" / "config"
         hosts = await asyncio.to_thread(parse_ssh_config, path)
         return {"path": str(path), "hosts": hosts}
 
     @app.post("/api/ssh/hosts", status_code=201)
-    async def ssh_create_host(body: SshHostBody, rec: AdminSession = Depends(csrf_guard)):
+    async def ssh_create_host(body: SshHostBody):
         host = ssh_profiles.create(body.model_dump(exclude_none=True))
         manager.audit.write("ssh.host_created", host_id=host["id"], host=host["host"], username=host["username"])
         return host
 
     @app.put("/api/ssh/hosts/{host_id}")
-    async def ssh_update_host(host_id: str, body: SshHostBody, rec: AdminSession = Depends(csrf_guard)):
+    async def ssh_update_host(host_id: str, body: SshHostBody):
         host = ssh_profiles.update(host_id, body.model_dump(exclude_none=True))
         manager.audit.write("ssh.host_updated", host_id=host_id)
         return host
 
     @app.delete("/api/ssh/hosts/{host_id}")
-    async def ssh_delete_host(host_id: str, rec: AdminSession = Depends(csrf_guard)):
+    async def ssh_delete_host(host_id: str):
         for session in ssh_manager.list():
             if session["host_id"] == host_id and session["state"] in ("connecting", "open"):
                 raise ToolFailure(
@@ -535,14 +502,14 @@ def create_app(config: Config) -> FastAPI:
         return {"ok": True}
 
     @app.delete("/api/ssh/hosts/{host_id}/secrets")
-    async def ssh_forget_secrets(host_id: str, rec: AdminSession = Depends(csrf_guard)):
+    async def ssh_forget_secrets(host_id: str):
         ssh_profiles.get(host_id)
         cleared = ssh_secrets.clear(host_id)
         manager.audit.write("ssh.credentials_cleared", host_id=host_id, cleared=cleared)
         return {"ok": True, "cleared": cleared}
 
     @app.post("/api/ssh/hosts/{host_id}/connect")
-    async def ssh_connect(host_id: str, body: SshConnectBody, rec: AdminSession = Depends(csrf_guard)):
+    async def ssh_connect(host_id: str, body: SshConnectBody):
         session = await asyncio.to_thread(
             ssh_manager.connect,
             host_id,
@@ -559,28 +526,31 @@ def create_app(config: Config) -> FastAPI:
         return {"session": session.status()}
 
     @app.get("/api/ssh/sessions")
-    async def ssh_list_sessions(rec: AdminSession = Depends(admin_session)):
+    async def ssh_list_sessions():
         return {"sessions": ssh_manager.list()}
 
     @app.get("/api/ssh/sessions/{session_id}")
-    async def ssh_get_session(session_id: str, rec: AdminSession = Depends(admin_session)):
+    async def ssh_get_session(session_id: str):
         return ssh_manager.get(session_id).status()
 
     @app.post("/api/ssh/sessions/{session_id}/agent")
     async def ssh_set_agent_visible(
         session_id: str,
         body: SshAgentBody,
-        rec: AdminSession = Depends(csrf_guard),
     ):
         enabled = await asyncio.to_thread(ssh_manager.set_agent_visible, session_id, body.enabled)
         return {"enabled": enabled}
+
+    @app.get("/api/ssh/sessions/{session_id}/transcript")
+    async def ssh_transcript(session_id: str, limit: int = 200):
+        sess = ssh_manager.get(session_id)
+        return {"events": sess.transcript.tail(max(1, min(limit, 2000)))}
 
     @app.get("/api/ssh/sessions/{session_id}/export")
     async def ssh_export_session(
         session_id: str,
         format: str = "txt",
         limit: int = 5000,
-        rec: AdminSession = Depends(admin_session),
     ):
         sess = ssh_manager.get(session_id)
         if format not in ("txt", "hex"):
@@ -593,7 +563,7 @@ def create_app(config: Config) -> FastAPI:
         )
 
     @app.post("/api/ssh/hosts/{host_id}/test")
-    async def ssh_test_host(host_id: str, rec: AdminSession = Depends(csrf_guard)):
+    async def ssh_test_host(host_id: str):
         result = await asyncio.to_thread(ssh_manager.test, host_id)
         return result
 
@@ -602,7 +572,6 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_sftp_list(
         session_id: str,
         path: str = "/",
-        rec: AdminSession = Depends(admin_session),
     ):
         sess = ssh_manager.get(session_id)
         return await asyncio.to_thread(sess.sftp_list, path)
@@ -611,7 +580,6 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_sftp_download(
         session_id: str,
         path: str,
-        rec: AdminSession = Depends(admin_session),
     ):
         sess = ssh_manager.get(session_id)
         data = await asyncio.to_thread(sess.sftp_read, path, max_bytes=32 * 1024 * 1024)
@@ -627,7 +595,6 @@ def create_app(config: Config) -> FastAPI:
         session_id: str,
         path: str,
         file: UploadFile = File(...),
-        rec: AdminSession = Depends(csrf_guard),
     ):
         sess = ssh_manager.get(session_id)
         data = await file.read(32 * 1024 * 1024 + 1)
@@ -641,7 +608,6 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_sftp_mkdir(
         session_id: str,
         body: SftpPathBody,
-        rec: AdminSession = Depends(csrf_guard),
     ):
         sess = ssh_manager.get(session_id)
         path = await asyncio.to_thread(sess.sftp_mkdir, body.path)
@@ -652,7 +618,6 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_sftp_delete(
         session_id: str,
         body: SftpPathBody,
-        rec: AdminSession = Depends(csrf_guard),
     ):
         sess = ssh_manager.get(session_id)
         path = await asyncio.to_thread(sess.sftp_delete, body.path)
@@ -663,7 +628,6 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_sftp_rename(
         session_id: str,
         body: SftpRenameBody,
-        rec: AdminSession = Depends(csrf_guard),
     ):
         sess = ssh_manager.get(session_id)
         old, new = await asyncio.to_thread(sess.sftp_rename, body.path, body.new_path)
@@ -671,31 +635,30 @@ def create_app(config: Config) -> FastAPI:
         return {"path": new}
 
     @app.post("/api/ssh/sessions/{session_id}/disconnect")
-    async def ssh_disconnect(session_id: str, rec: AdminSession = Depends(csrf_guard)):
+    async def ssh_disconnect(session_id: str):
         await asyncio.to_thread(ssh_manager.disconnect, session_id)
         return {"ok": True}
 
     # ----------------------------------------------------------------- sessions
     @app.get("/api/sessions")
-    async def list_sessions(rec: AdminSession = Depends(admin_session)):
+    async def list_sessions():
         return {"sessions": [session_payload(sess) for sess in manager.sessions.values()]}
 
     @app.get("/api/sessions/{session_id}")
-    async def get_session(session_id: str, rec: AdminSession = Depends(admin_session)):
+    async def get_session(session_id: str):
         return session_payload(manager.get(session_id))
 
     @app.post("/api/sessions", status_code=201)
-    async def create_session(body: SessionBody, rec: AdminSession = Depends(csrf_guard)):
+    async def create_session(body: SessionBody):
         if not body.id:
             raise ToolFailure("INVALID_ARGUMENT", "session id is required")
         sess = manager.create_session(body.to_config(body.id))
         if body.auto_open:
             await asyncio.to_thread(sess.open)
-        await asyncio.to_thread(ensure_ttyd, sess.id)
         return session_payload(sess)
 
     @app.put("/api/sessions/{session_id}")
-    async def update_session(session_id: str, body: SessionBody, rec: AdminSession = Depends(csrf_guard)):
+    async def update_session(session_id: str, body: SessionBody):
         existing = manager.get(session_id)
         new_cfg = body.to_config(session_id)
         reopen = existing.is_open
@@ -703,26 +666,24 @@ def create_app(config: Config) -> FastAPI:
         return session_payload(manager.get(session_id))
 
     @app.delete("/api/sessions/{session_id}")
-    async def delete_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
-        await asyncio.to_thread(ttyd.stop, session_id)
+    async def delete_session(session_id: str):
         await asyncio.to_thread(manager.remove_session, session_id)
         return {"ok": True}
 
     @app.post("/api/sessions/{session_id}/open")
-    async def open_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
+    async def open_session(session_id: str):
         sess = manager.get(session_id)
         await asyncio.to_thread(sess.open)
-        await asyncio.to_thread(ensure_ttyd, session_id)
         return session_payload(sess)
 
     @app.post("/api/sessions/{session_id}/close")
-    async def close_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
+    async def close_session(session_id: str):
         sess = manager.get(session_id)
         await asyncio.to_thread(sess.close)
         return session_payload(sess)
 
     @app.post("/api/sessions/{session_id}/reset")
-    async def reset_session(session_id: str, rec: AdminSession = Depends(csrf_guard)):
+    async def reset_session(session_id: str):
         sess = manager.get(session_id)
         if not sess.is_open:
             await asyncio.to_thread(sess.open)
@@ -730,17 +691,17 @@ def create_app(config: Config) -> FastAPI:
         return {**result, "status": session_payload(sess)}
 
     @app.put("/api/sessions/{session_id}/control")
-    async def set_control(session_id: str, body: ControlBody, rec: AdminSession = Depends(csrf_guard)):
+    async def set_control(session_id: str, body: ControlBody):
         owner = manager.set_control_owner(session_id, body.owner)
         return {"control_owner": owner}
 
     @app.put("/api/sessions/{session_id}/permissions")
-    async def set_permissions(session_id: str, body: PermissionsBody, rec: AdminSession = Depends(csrf_guard)):
+    async def set_permissions(session_id: str, body: PermissionsBody):
         perms = manager.set_permissions(session_id, body.permissions)
         return {"agent_permissions": perms}
 
     @app.post("/api/sessions/{session_id}/lines")
-    async def set_lines(session_id: str, body: LinesBody, rec: AdminSession = Depends(csrf_guard)):
+    async def set_lines(session_id: str, body: LinesBody):
         sess = manager.get(session_id)
         if body.dtr is None and body.rts is None:
             raise ToolFailure("INVALID_ARGUMENT", "provide dtr and/or rts")
@@ -749,12 +710,12 @@ def create_app(config: Config) -> FastAPI:
         return lines
 
     @app.post("/api/sessions/{session_id}/break")
-    async def break_now(session_id: str, body: BreakBody, rec: AdminSession = Depends(csrf_guard)):
+    async def break_now(session_id: str, body: BreakBody):
         sess = manager.get(session_id)
         return await asyncio.to_thread(sess.send_break, body.duration_ms, source="human")
 
     @app.post("/api/sessions/{session_id}/write")
-    async def write_now(session_id: str, body: WriteBody, rec: AdminSession = Depends(csrf_guard)):
+    async def write_now(session_id: str, body: WriteBody):
         sess = manager.get(session_id)
         payload = _body_bytes(body)
         limit = config.security.max_write_bytes_per_call
@@ -768,7 +729,7 @@ def create_app(config: Config) -> FastAPI:
         return {"bytes_written": written, "tx_cursor": sess.ring.head, "control_owner": sess.control_owner}
 
     @app.post("/api/sessions/{session_id}/command")
-    async def command_now(session_id: str, body: CommandBody, rec: AdminSession = Depends(csrf_guard)):
+    async def command_now(session_id: str, body: CommandBody):
         sess = manager.get(session_id)
         result = await asyncio.to_thread(
             sess.command,
@@ -794,7 +755,7 @@ def create_app(config: Config) -> FastAPI:
         }
 
     @app.get("/api/sessions/{session_id}/transcript")
-    async def transcript(session_id: str, limit: int = 200, rec: AdminSession = Depends(admin_session)):
+    async def transcript(session_id: str, limit: int = 200):
         sess = manager.get(session_id)
         return {"events": sess.transcript.tail(max(1, min(limit, 2000)))}
 
@@ -803,7 +764,6 @@ def create_app(config: Config) -> FastAPI:
         session_id: str,
         format: str = "txt",
         limit: int = 5000,
-        rec: AdminSession = Depends(admin_session),
     ):
         """Raw byte log with per-chunk timestamps, like a native terminal capture."""
         sess = manager.get(session_id)
@@ -817,12 +777,12 @@ def create_app(config: Config) -> FastAPI:
         )
 
     @app.get("/api/audit")
-    async def audit(limit: int = 200, rec: AdminSession = Depends(admin_session)):
+    async def audit(limit: int = 200):
         return {"events": manager.audit.tail(max(1, min(limit, 2000)))}
 
     # -------------------------------------------------------------------- system
     @app.get("/api/system")
-    async def system(rec: AdminSession = Depends(admin_session)):
+    async def system():
         return {
             "version": __version__,
             "uptime_seconds": int(time.time() - started_at),
@@ -833,7 +793,6 @@ def create_app(config: Config) -> FastAPI:
             "log_dir": str(config.log_dir),
             "bind": config.server.bind,
             "port": config.server.port,
-            "ttyd": ttyd.status(),
             "sessions": [
                 {"session_id": s.id, "state": s.state.value, "port": s.cfg.port} for s in manager.sessions.values()
             ],
@@ -841,7 +800,7 @@ def create_app(config: Config) -> FastAPI:
         }
 
     @app.get("/api/mcp")
-    async def mcp_status(rec: AdminSession = Depends(admin_session)):
+    async def mcp_status():
         tools = await mcp_server.list_tools()
         host = config.server.bind if config.server.bind not in ("0.0.0.0", "::") else "127.0.0.1"
         base = (
@@ -872,39 +831,16 @@ def create_app(config: Config) -> FastAPI:
             ],
         }
 
-    @app.post("/api/ttyd/{session_id}/{mode}/start")
-    async def ttyd_start(session_id: str, mode: str, rec: AdminSession = Depends(csrf_guard)):
-        manager.get(session_id)
-        info = await asyncio.to_thread(ttyd.start_for, session_id)
-        return {"terminal": info}
-
-    @app.post("/api/ttyd/{session_id}/{mode}/stop")
-    async def ttyd_stop(session_id: str, mode: str, rec: AdminSession = Depends(csrf_guard)):
-        ttyd.stop(session_id, "rw" if mode == "control" else "ro")
-        return {"ok": True}
-
     # --------------------------------------------------------------- websockets
-    def _ws_auth(ws: WebSocket) -> AdminSession | None:
-        sid = auth.read_cookie(ws.cookies.get(COOKIE))
-        rec = auth.get_session(sid)
-        origin = ws.headers.get("origin")
-        if origin and not auth.origin_allowed(origin):
-            return None
-        return rec
-
     @app.websocket("/ws/console/{session_id}")
     async def ws_console(ws: WebSocket, session_id: str):
-        rec = _ws_auth(ws)
-        if rec is None:
-            await ws.close(code=4401)
-            return
         try:
             sess = manager.get(session_id)
         except ToolFailure:
             await ws.close(code=4404)
             return
         await ws.accept()
-        replay = int(ws.query_params.get("replay") or config.ttyd.replay_bytes)
+        replay = int(ws.query_params.get("replay") or 65536)
         cursor_raw = ws.query_params.get("cursor")
         try:
             cursor = int(cursor_raw) if cursor_raw not in (None, "") else None
@@ -1003,17 +939,13 @@ def create_app(config: Config) -> FastAPI:
 
     @app.websocket("/ws/ssh/{session_id}")
     async def ws_ssh(ws: WebSocket, session_id: str):
-        rec = _ws_auth(ws)
-        if rec is None:
-            await ws.close(code=4401)
-            return
         try:
             sess = ssh_manager.get(session_id)
         except ToolFailure:
             await ws.close(code=4404)
             return
         await ws.accept()
-        replay = int(ws.query_params.get("replay") or config.ttyd.replay_bytes)
+        replay = int(ws.query_params.get("replay") or 65536)
         cursor_raw = ws.query_params.get("cursor")
         try:
             cursor = int(cursor_raw) if cursor_raw not in (None, "") else None
@@ -1090,76 +1022,6 @@ def create_app(config: Config) -> FastAPI:
                         )
                 except ToolFailure as failure:
                     await send_json({"type": "error", "id": req_id, "error": failure.to_dict()["error"]})
-        except WebSocketDisconnect:
-            pass
-        finally:
-            task.cancel()
-            sess.unsubscribe(sub)
-
-    @app.websocket("/ws/bridge/{session_id}")
-    async def ws_bridge(ws: WebSocket, session_id: str):
-        token = ws.query_params.get("token") or ws.headers.get("x-bridge-token")
-        if not auth.check_bridge_token(token):
-            manager.audit.write("bridge.unauthorized", session=session_id, remote=ws.client.host if ws.client else "")
-            await ws.close(code=4401)
-            return
-        mode = ws.query_params.get("mode", "ro")
-        if mode not in ("ro", "rw"):
-            await ws.close(code=4400)
-            return
-        try:
-            sess = manager.get(session_id)
-        except ToolFailure:
-            await ws.close(code=4404)
-            return
-        replay = int(ws.query_params.get("replay") or config.ttyd.replay_bytes)
-        await ws.accept()
-        sub = sess.subscribe(replay_bytes=max(0, min(replay, 1024 * 1024)))
-        manager.audit.write("bridge.connect", session=session_id, mode=mode, remote=ws.client.host if ws.client else "")
-
-        async def pump() -> None:
-            try:
-                while True:
-                    item = await asyncio.to_thread(sub.get, 0.5)
-                    if item is None:
-                        continue
-                    if item["type"] in ("rx", "replay"):
-                        await ws.send_bytes(item["data"])
-                    elif item["type"] == "status":
-                        await ws.send_text(json.dumps({"type": "status", "state": item["status"]["state"]}))
-                    elif item["type"] == "overflow":
-                        await ws.send_text(json.dumps({"type": "overflow", "dropped": item["dropped"]}))
-            except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
-                return
-
-        task = asyncio.create_task(pump())
-        await ws.send_text(json.dumps({"type": "hello", "session_id": sess.id, "mode": mode}))
-        try:
-            while True:
-                message = await ws.receive()
-                if message["type"] == "websocket.disconnect":
-                    break
-                data = message.get("bytes")
-                text = message.get("text")
-                if data is not None:
-                    if mode == "rw":
-                        try:
-                            await asyncio.to_thread(sess.write_bytes, data, source="ttyd")
-                        except ToolFailure as failure:
-                            await ws.send_text(json.dumps({"type": "error", "error": failure.to_dict()["error"]}))
-                    continue
-                if text:
-                    try:
-                        msg = json.loads(text)
-                    except json.JSONDecodeError:
-                        continue
-                    if msg.get("type") == "ping":
-                        await ws.send_text(json.dumps({"type": "pong"}))
-                    elif msg.get("type") == "set_lines" and mode == "rw":
-                        try:
-                            await asyncio.to_thread(sess.set_lines, msg.get("dtr"), msg.get("rts"))
-                        except ToolFailure as failure:
-                            await ws.send_text(json.dumps({"type": "error", "error": failure.to_dict()["error"]}))
         except WebSocketDisconnect:
             pass
         finally:

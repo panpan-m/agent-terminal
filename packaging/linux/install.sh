@@ -4,7 +4,7 @@
 #   sudo ./install.sh /path/to/tio-suite-linux-x86_64
 #
 # Layout after install:
-#   /opt/tio-server/{tio-server,tio-mcp,tio-web-bridge,bin/ttyd,_internal/}
+#   /opt/tio-server/{tio-server,tio-mcp,_internal/}
 #   /etc/tio-server/config.toml        seed config (root-owned)
 #   /var/lib/tio-server/               runtime config, tokens, transcripts
 #   /var/log/tio-server/               server + audit logs
@@ -19,15 +19,10 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 || useradd --system --home /var/lib/tio-se
 install -d -m 0755 "$PREFIX" "$PREFIX/bin"
 install -m 0755 "$SRC/tio-server" "$PREFIX/tio-server"
 install -m 0755 "$SRC/tio-mcp" "$PREFIX/tio-mcp"
-install -m 0755 "$SRC/tio-web-bridge" "$PREFIX/tio-web-bridge"
 if [ -d "$SRC/_internal" ]; then
   rm -rf "$PREFIX/_internal"
   cp -a "$SRC/_internal" "$PREFIX/_internal"
 fi
-if [ -x "$SRC/bin/ttyd" ]; then
-  install -m 0755 "$SRC/bin/ttyd" "$PREFIX/bin/ttyd"
-fi
-
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/lib/tio-server
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/log/tio-server
 install -d -m 0755 /etc/tio-server

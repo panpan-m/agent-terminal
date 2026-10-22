@@ -6,7 +6,7 @@ the real ``login:`` prompt.  It exercises:
 
   open/close, status, control lines, writes (text/hex/chunked), cursor reads,
   command + expect against real prompt output, permission and control-owner
-  arbitration, all six MCP tools through the packaged stdio shim, ttyd entries
+  arbitration, all serial MCP tools through the packaged stdio shim
   (HTTP + raw WebSocket), config reopen, transcript/audit, and finally the
   DTR/RTS reset sequence.
 
@@ -39,10 +39,6 @@ class Runner:
         self.checks: list[dict] = []
         self.notes: list[str] = []
         self.client = httpx.Client(base_url=self.base, timeout=40)
-        login = self.client.post("/api/auth/login", json={"username": username, "password": password})
-        login.raise_for_status()
-        self.csrf = login.json()["csrf"]
-        self.headers = {"X-CSRF-Token": self.csrf}
         self.mcp: subprocess.Popen | None = None
         self.mcp_id = 0
 
@@ -60,10 +56,10 @@ class Runner:
         return self.client.get(f"/api/sessions/{self.session_id}").json()
 
     def post(self, path: str, **kwargs):
-        return self.client.post(path, headers=self.headers, **kwargs)
+        return self.client.post(path, **kwargs)
 
     def put(self, path: str, **kwargs):
-        return self.client.put(path, headers=self.headers, **kwargs)
+        return self.client.put(path, **kwargs)
 
     def transcript(self, limit: int = 400) -> list[dict]:
         return self.client.get(f"/api/sessions/{self.session_id}/transcript?limit={limit}").json()["events"]
@@ -314,23 +310,6 @@ class Runner:
         reopened = self.post(f"/api/sessions/{sid}/open")
         self.check("session reopens", reopened.status_code == 200 and reopened.json()["state"] == "open", reopened.json().get("state"))
 
-        # --- ttyd ----------------------------------------------------------
-        terminal = self.status().get("terminal") or {}
-        self.check("ttyd entries exist for the real session", bool(terminal.get("view_url")), json.dumps(terminal))
-        if terminal.get("view_url"):
-            view = httpx.get(terminal["view_url"], timeout=5)
-            self.check("ttyd view entry reachable", view.status_code == 200, str(view.status_code))
-        if terminal.get("control_url"):
-            control = httpx.get(terminal["control_url"], timeout=5)
-            self.check("ttyd control entry requires auth", control.status_code == 401, str(control.status_code))
-            try:
-                password = (ROOT / "run" / "ttyd-control.pass").read_text(encoding="utf-8").strip()
-            except OSError:
-                password = ""
-            auth = base64.b64encode(f"operator:{password}".encode()).decode()
-            authed = httpx.get(terminal["control_url"], headers={"Authorization": f"Basic {auth}"}, timeout=5)
-            self.check("ttyd control entry accepts operator", authed.status_code == 200, str(authed.status_code))
-            self._ttyd_raw(terminal["control_url"], auth)
 
         # --- config reopen --------------------------------------------------
         original = dict(self.status()["config"])
@@ -367,8 +346,8 @@ class Runner:
         audit = self.client.get("/api/audit?limit=400").json()["events"]
         names = {e.get("event") for e in audit}
         self.check(
-            "audit covers open/control/ttyd/lines",
-            {"session.open", "session.control_owner", "session.lines", "ttyd.start"} <= names,
+            "audit covers open/control/lines",
+            {"session.open", "session.control_owner", "session.lines"} <= names,
             ",".join(sorted(n for n in names if n)),
         )
 
@@ -407,47 +386,6 @@ class Runner:
         )
         self.note(f"final console tail: {self.rx_text()[-160:]!r}")
 
-    def _ttyd_raw(self, url: str, auth: str) -> None:
-        from websockets.sync.client import connect
-
-        port = url.rstrip("/").rsplit(":", 1)[1]
-        token_response = httpx.get(
-            f"http://127.0.0.1:{port}/token", headers={"Authorization": f"Basic {auth}"}, timeout=5
-        )
-        token = token_response.json().get("token", "") if token_response.status_code == 200 else ""
-        received = b""
-        try:
-            with connect(
-                f"ws://127.0.0.1:{port}/ws",
-                subprotocols=["tty"],
-                origin=f"http://127.0.0.1:{port}",
-                additional_headers={"Authorization": f"Basic {auth}"},
-                open_timeout=8,
-                max_size=None,
-            ) as ws:
-                ws.send(json.dumps({"AuthToken": token, "columns": 100, "rows": 30}).encode())
-                time.sleep(0.6)
-                ws.send(b"0" + b"\r")
-                deadline = time.time() + 3
-                while time.time() < deadline:
-                    try:
-                        message = ws.recv(timeout=0.4)
-                    except TimeoutError:
-                        continue
-                    except Exception:
-                        break
-                    if isinstance(message, str):
-                        message = message.encode()
-                    if message[:1] == b"0":
-                        received += message[1:]
-        except Exception as exc:  # noqa: BLE001 - report, keep going
-            self.check("ttyd raw websocket accepts keystrokes", False, str(exc)[:200])
-            return
-        self.check(
-            "ttyd raw websocket accepts keystrokes",
-            b"login:" in ANSI.sub(b"", received) or len(received) > 0,
-            f"terminal output {len(received)}B: {received[-100:]!r}",
-        )
 
     def close(self) -> None:
         if self.mcp:

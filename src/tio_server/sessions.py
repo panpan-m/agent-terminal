@@ -2,13 +2,13 @@
 
 One :class:`Session` per configured port.  It owns the ring buffer, the reader
 thread, the write lock, the reconnect loop and the transcript.  All higher
-layers (MCP, admin API, WebSocket bridge) call into this module and never touch
+layers (MCP, admin API, WebSocket console) call into this module and never touch
 a serial handle directly.
 
 Concurrency model
 -----------------
 * one reader thread per session appends to the ring buffer and fans out to
-  subscribers (UI, bridge, transcript);
+  subscribers (UI, transcript);
 * writers serialise on a per-session lock; ``serial_command`` keeps the lock for
   write + response;
 * state changes and RX chunks are published to bounded subscriber queues, so a
@@ -453,7 +453,7 @@ class Session:
                     {"session_id": self.id, "control_owner": self.control_owner},
                     retryable=True,
                 )
-        else:  # human / ttyd / admin
+        else:  # human / admin
             if self.control_owner != "human":
                 raise ToolFailure(
                     WRITE_LOCKED,

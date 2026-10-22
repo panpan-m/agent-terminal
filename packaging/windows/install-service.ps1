@@ -24,7 +24,7 @@ Start-Sleep -Milliseconds 500
 & sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "tio-server serial gateway" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "sc create failed" }
 
-& sc.exe description $ServiceName "Single-owner serial port gateway with MCP, admin UI and ttyd bridge" | Out-Null
+& sc.exe description $ServiceName "Single-owner serial port gateway with MCP and web UI" | Out-Null
 & sc.exe failure $ServiceName reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
 & sc.exe start $ServiceName | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "service failed to start; see $DataDir\logs\server.log" }

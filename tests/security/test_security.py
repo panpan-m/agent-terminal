@@ -1,4 +1,4 @@
-"""Adversarial tests: auth bypass, CSRF/Origin, size limits, regex DoS, traversal."""
+"""Adversarial tests: MCP bearer, Origin/Host guard, size limits, regex DoS, traversal."""
 
 from __future__ import annotations
 
@@ -26,34 +26,23 @@ def secured(tmp_path):
     app.state.manager.stop()
 
 
-def login(client, secrets):
-    response = client.post(
-        "/api/auth/login", json={"username": "admin", "password": secrets["admin_password"]}
-    )
-    return response.json()["csrf"]
-
-
-def test_every_admin_api_requires_auth(secured):
+def test_api_rejects_foreign_origin(secured):
     client, cfg, secrets, _ = secured
     cases = [
         ("get", "/api/sessions", None),
-        ("get", "/api/ports", None),
-        ("get", "/api/system", None),
-        ("get", "/api/audit", None),
         ("post", "/api/sessions", {"id": "x", "port": "sim://x"}),
-        ("post", "/api/sessions/x/open", {}),
-        ("put", "/api/sessions/x/control", {"owner": "agent"}),
     ]
     for method, path, body in cases:
         kwargs = {"json": body} if body is not None and method in ("post", "put") else {}
-        response = getattr(client, method)(path, **kwargs)
-        assert response.status_code == 401, (method, path, response.status_code, response.text[:120])
+        response = getattr(client, method)(path, headers={"Origin": "http://evil.example"}, **kwargs)
+        assert response.status_code == 403, (method, path, response.status_code, response.text[:120])
 
 
-def test_forged_cookie_is_rejected(secured):
+def test_api_rejects_foreign_host(secured):
     client, cfg, secrets, _ = secured
-    client.cookies.set("tio_session", "not-a-valid-cookie")
-    assert client.get("/api/sessions").status_code == 401
+    response = client.get("/api/sessions", headers={"host": "evil.example"})
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
 def test_mcp_bearer_is_strict(secured):
@@ -65,11 +54,10 @@ def test_mcp_bearer_is_strict(secured):
 
 def test_write_payload_limit(secured):
     client, cfg, secrets, _ = secured
-    csrf = login(client, secrets)
-    client.post("/api/sessions", json={"id": "b", "port": "sim://b", "auto_open": True}, headers={"X-CSRF-Token": csrf})
+    client.post("/api/sessions", json={"id": "b", "port": "sim://b", "auto_open": True})
     huge = "x" * (cfg.security.max_write_bytes_per_call + 1)
     response = client.post(
-        "/api/sessions/b/write", json={"text": huge}, headers={"X-CSRF-Token": csrf}
+        "/api/sessions/b/write", json={"text": huge}
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "INVALID_ARGUMENT"
@@ -77,8 +65,7 @@ def test_write_payload_limit(secured):
 
 def test_read_is_clamped_to_configured_cap(secured):
     client, cfg, secrets, _ = secured
-    csrf = login(client, secrets)
-    client.post("/api/sessions", json={"id": "b", "port": "sim://b", "auto_open": True}, headers={"X-CSRF-Token": csrf})
+    client.post("/api/sessions", json={"id": "b", "port": "sim://b", "auto_open": True})
     time.sleep(0.3)
     response = client.get("/api/sessions/b")
     assert response.json()["rx_head"] > 0
@@ -86,7 +73,6 @@ def test_read_is_clamped_to_configured_cap(secured):
 
 def test_path_traversal_and_unknown_session(secured):
     client, cfg, secrets, _ = secured
-    login(client, secrets)
     for path in (
         "/api/sessions/../../../../etc/passwd",
         "/api/sessions/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
@@ -150,11 +136,9 @@ def test_health_endpoint_leaks_nothing(secured):
 
 def test_console_websocket_rejects_foreign_origin(secured):
     client, cfg, secrets, _ = secured
-    csrf = login(client, secrets)
-    client.post("/api/sessions", json={"id": "b", "port": "sim://b", "auto_open": True}, headers={"X-CSRF-Token": csrf})
-    jar = "; ".join(f"{c.name}={c.value}" for c in client.cookies.jar)
+    client.post("/api/sessions", json={"id": "b", "port": "sim://b", "auto_open": True})
     with pytest.raises(Exception):
         with client.websocket_connect(
-            "/ws/console/b", headers={"cookie": jar, "origin": "http://evil.example"}
+            "/ws/console/b", headers={"origin": "http://evil.example"}
         ) as ws:
             ws.receive_json()

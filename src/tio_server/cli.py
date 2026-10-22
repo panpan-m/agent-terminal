@@ -10,7 +10,7 @@ from pathlib import Path
 from . import __version__
 from .config import Config, init_config
 from .errors import ToolFailure
-from .platform.paths import default_data_dir, find_ttyd
+from .platform.paths import default_data_dir
 from .serial import make_backend
 
 
@@ -21,24 +21,15 @@ def _cmd_init(args: argparse.Namespace) -> int:
     except ToolFailure as exc:
         print(f"error: {exc.message}", file=sys.stderr)
         return 1
-    if args.ttyd:
-        cfg.ttyd.enabled = True
-        cfg.ttyd.binary = args.ttyd
-        cfg.save()
-        print(f"Browser terminal enabled with ttyd at {args.ttyd}")
     print(f"Created {secrets['config']}")
-    print("Store these secrets now; they are not shown again:")
-    print(f"  admin user      : {cfg.auth.admin_username}")
-    print(f"  admin password  : {secrets['admin_password']}")
+    print("The web UI needs no login; store this secret now (not shown again):")
     print(f"  MCP api token   : {secrets['api_token']}   (also in {cfg.api_token_file})")
-    print(f"  bridge token    : {secrets['bridge_token']}   (also in {cfg.bridge_token_file})")
-    print(f"  ttyd operator   : {secrets['ttyd_control_password']}")
     if args.credentials_out:
         from .auth import write_secret_file
 
         out = Path(args.credentials_out).expanduser()
         write_secret_file(out, json.dumps(secrets, indent=2))
-        print(f"\nOne-time credentials also written to {out} (delete it after first login).")
+        print(f"\nTokens also written to {out}.")
     print()
     print("Next:")
     print(f"  tio-server run --config \"{secrets['config']}\"")
@@ -101,7 +92,6 @@ def _cmd_ports(args: argparse.Namespace) -> int:
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
-    from .web.ttyd_supervisor import TtydSupervisor
 
     checks: list[dict] = []
 
@@ -123,15 +113,10 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     except Exception as exc:  # pragma: no cover
         check("serial enumeration", False, str(exc))
 
-    ttyd = find_ttyd(None)
-    check("ttyd binary", bool(ttyd), ttyd or "not found (browser terminal will be unavailable)")
-
     if args.config:
         try:
             cfg = Config.load(Path(args.config).expanduser())
             check("config", True, str(cfg.path))
-            ty = TtydSupervisor(cfg, _null_audit())
-            check("ttyd version", bool(ty.version()), ty.version() or "unknown")
         except ToolFailure as exc:
             check("config", False, exc.message, required=True)
 
@@ -139,10 +124,6 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     print(json.dumps({"ok": not failed, "checks": checks}, indent=2, ensure_ascii=False))
     return 0 if not failed else 1
 
-
-class _null_audit:
-    def write(self, *args, **kwargs):  # pragma: no cover
-        pass
 
 
 def _cmd_version(args: argparse.Namespace) -> int:
@@ -162,7 +143,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--credentials-out",
         help="also write the one-time secrets to this file (used by installers)",
     )
-    p_init.add_argument("--ttyd", help="path to ttyd(.exe): enables the browser terminal")
     p_init.set_defaults(func=_cmd_init)
 
     p_run = sub.add_parser("run", help="run the server")

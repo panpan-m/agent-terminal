@@ -6,4 +6,4 @@ def test_desktop_smoke_starts_server(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "http://127.0.0.1:" in out
     assert (tmp_path / "config.toml").exists()
-    assert (tmp_path / "first-run-credentials.json").exists()
+    assert (tmp_path / "api-token").exists()

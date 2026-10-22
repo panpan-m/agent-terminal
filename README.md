@@ -1,13 +1,12 @@
 # tio-suite
 
 A cross-platform **shared serial-port gateway**: one long-running `tio-server`
-owns the serial port, humans use an **xterm.js Terminal tab** (plus a `ttyd`
-full terminal in its own tab), and agents use **MCP** tools. Nobody else opens
-the port.
+owns the serial port, humans use the **xterm.js Terminal tab**, and agents use
+**MCP** tools. Nobody else opens the port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **112 tests**, **41/41 end-to-end checks**,
-> **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
+> Verified on Windows 10: **106 tests**, **37/37 end-to-end checks**,
+> **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **25/25 agent-path MCP checks** against a
 > Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing
 > `uname -r` in the built SPA — see [`docs/VERIFICATION.md`](./docs/VERIFICATION.md),
@@ -16,7 +15,7 @@ the port.
 
 ![Sessions page](docs/screenshots/17-sessions-serial.png)
 
-Light theme is available from the sidebar/login toggle and persists per browser
+Light theme is available from the sidebar toggle and persists per browser
 ([preview](docs/screenshots/11-light-sessions.png)); the xterm palette follows.
 
 The **MCP** tab shows the endpoint, bearer/token status and tool list, and
@@ -57,7 +56,6 @@ arbitrates writes between human and agent, records a transcript, and exposes:
 | MCP (Streamable HTTP) | `POST /mcp` | 16 tools for agents |
 | Admin UI (SPA) | `GET /` | sessions, terminal, config, permissions, logs |
 | Admin API | `/api/*` | what the SPA uses |
-| ttyd bridge WS | `ws://…/ws/bridge/{session}` | raw PTY ⇄ serial bytes for ttyd |
 | Console WS | `ws://…/ws/console/{session}` | live RX for the terminal tab |
 | SSH console WS | `ws://…/ws/ssh/{session}` | PTY input/resize and live RX |
 | Health | `GET /healthz` | liveness only |
@@ -74,8 +72,9 @@ tio-server init --dir ./run                     # creates config + prints tokens
 tio-server run --config ./run/config.toml
 ```
 
-Open <http://127.0.0.1:8765/>, log in with the admin credentials printed by
-`init`, pick a port and press **Open**.
+Open <http://127.0.0.1:8765/> — no login — pick a port and press **Open**.
+The web UI is local-trust (loopback-only, Host/Origin guarded); only the MCP
+endpoint needs a bearer token (printed once by `init`).
 
 ### Development
 
@@ -88,7 +87,6 @@ cd frontend && npm install && npm run build     # rebuild the SPA into src/tio_s
 
 ```
 Browser ──WS /ws/console──▶ tio-server ──▶ /dev/ttyUSB0 | COM5
-Browser ──HTTP/WS──▶ ttyd ──PTY──▶ tio-web-bridge ──WS──▶ tio-server
 Agent   ──HTTP────▶ /mcp ───────────────────────────────▶ tio-server
 ```
 
@@ -103,7 +101,6 @@ Agent   ──HTTP────▶ /mcp ─────────────�
 
 * [`docs/install.md`](./docs/install.md) — install, service, packaging
 * [`docs/mcp.md`](./docs/mcp.md) — tools, schemas, client config
-* [`docs/ttyd.md`](./docs/ttyd.md) — browser terminals: in-app xterm tab + ttyd
 * [`docs/architecture.md`](./docs/architecture.md) — modules, decisions, ADRs
 * [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) — how this build was verified
 * [`docs/live-debug-report.md`](./docs/live-debug-report.md) — real Raspberry Pi over a Debug Probe
@@ -117,5 +114,4 @@ Agent   ──HTTP────▶ /mcp ─────────────�
 
 ## License
 
-GPL-2.0-or-later (matches upstream `tio`; `ttyd` is MIT and distributed
-separately). See `LICENSES/`.
+GPL-2.0-or-later (matches upstream `tio`). See `LICENSES/`.

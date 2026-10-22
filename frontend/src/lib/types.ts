@@ -49,8 +49,6 @@ export interface SessionStatus {
   auto_reconnect: boolean;
   config_revision: number;
   platform: string;
-  /** ttyd entries for this session, when the browser terminal is enabled. */
-  terminal?: { view_url: string | null; control_url: string | null };
 }
 
 export interface PortInfo {
@@ -97,21 +95,6 @@ export interface TranscriptEvent {
   [key: string]: unknown;
 }
 
-export interface TtydStatus {
-  enabled: boolean;
-  available: boolean;
-  binary: string | null;
-  version: string | null;
-  instances: {
-    session_id: string;
-    mode: string;
-    port: number;
-    pid: number;
-    alive: boolean;
-    url: string;
-  }[];
-}
-
 export interface SystemInfo {
   version: string;
   uptime_seconds: number;
@@ -122,7 +105,6 @@ export interface SystemInfo {
   log_dir: string;
   bind: string;
   port: number;
-  ttyd: TtydStatus;
   sessions: { session_id: string; state: string; port: string }[];
   health: { sessions_open: number };
 }

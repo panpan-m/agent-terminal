@@ -6,7 +6,7 @@
   -->
   <id>tio-server</id>
   <name>tio-server serial gateway</name>
-  <description>Single-owner serial port gateway with MCP, admin UI and ttyd bridge</description>
+  <description>Single-owner serial port gateway with MCP and web UI</description>
 
   <executable>C:\Program Files\tio-server\tio-server.exe</executable>
   <arguments>run --config "C:\ProgramData\tio-server\config.toml"</arguments>
@@ -25,7 +25,6 @@
 
   <env name="TIO_SERVER_HOME" value="C:\ProgramData\tio-server" />
 
-  <!-- Kill the whole process tree (ttyd + bridges) when the service stops. -->
   <stopParentFirst>false</stopParentFirst>
   <killTimeout>15 sec</killTimeout>
 </service>

@@ -188,12 +188,6 @@ def main() -> int:
             return 2
 
         client = httpx.Client(base_url=base, timeout=30)
-        login = client.post(
-            "/api/auth/login", json={"username": "admin", "password": secrets["admin_password"]}
-        )
-        report.check("admin login", login.status_code == 200)
-        csrf = login.json()["csrf"]
-        headers = {"X-CSRF-Token": csrf}
 
         status = client.get("/api/sessions").json()["sessions"]
         report.check(
@@ -210,7 +204,6 @@ def main() -> int:
         command = client.post(
             f"/api/sessions/{session_id}/command",
             json={"command": "help", "expect": "commands:", "timeout_ms": 4000},
-            headers=headers,
         ).json()
         report.check(
             "human command + expect over simulated UART",
@@ -272,7 +265,7 @@ def main() -> int:
             error.get("code", ""),
         )
 
-        client.put(f"/api/sessions/{session_id}/control", json={"owner": "agent"}, headers=headers)
+        client.put(f"/api/sessions/{session_id}/control", json={"owner": "agent"})
         ping = mcp.call("serial_command", {"command": "ping", "newline": "cr", "expect": "pong", "timeout_ms": 4000})
         structured = ping.get("result", {}).get("structuredContent", {})
         report.check(
@@ -290,18 +283,17 @@ def main() -> int:
             f"next={read_payload.get('next_cursor')} head={read_payload.get('head_cursor')}",
         )
 
-        client.put(f"/api/sessions/{session_id}/permissions", json={"permissions": ["read"]}, headers=headers)
+        client.put(f"/api/sessions/{session_id}/permissions", json={"permissions": ["read"]})
         disabled = mcp.call("serial_write", {"data": "x"})
         code = disabled.get("result", {}).get("structuredContent", {}).get("error", {}).get("code", "")
         report.check("WRITE_DISABLED when permission removed", code == "WRITE_DISABLED", code)
         client.put(
             f"/api/sessions/{session_id}/permissions",
             json={"permissions": ["read", "write", "command"]},
-            headers=headers,
         )
 
         # --- reconnection ----------------------------------------------------
-        client.put(f"/api/sessions/{session_id}/control", json={"owner": "agent"}, headers=headers)
+        client.put(f"/api/sessions/{session_id}/control", json={"owner": "agent"})
         mcp.call("serial_command", {"command": "reboot", "newline": "cr", "settle_ms": 50, "timeout_ms": 500})
         reconnected = False
         reconnect_status: dict = {}
@@ -324,7 +316,7 @@ def main() -> int:
         unauth = httpx.post(base + "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         report.check("MCP rejects missing bearer token", unauth.status_code == 401, str(unauth.status_code))
         bad_origin = client.post(
-            f"/api/sessions/{session_id}/close", headers={"X-CSRF-Token": csrf, "Origin": "http://evil.example"}
+            f"/api/sessions/{session_id}/close", headers={"Origin": "http://evil.example"}
         )
         report.check("admin API rejects foreign origin", bad_origin.status_code == 403, str(bad_origin.status_code))
         traversal = client.get("/api/sessions/../../etc/passwd")
@@ -367,8 +359,6 @@ def main() -> int:
                     str(ROOT / "scripts" / "ui-probe.mjs"),
                     "--url",
                     base,
-                    "--password",
-                    secrets["admin_password"],
                     "--out",
                     str(probe_out),
                 ],

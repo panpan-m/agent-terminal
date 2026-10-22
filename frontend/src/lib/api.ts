@@ -31,19 +31,10 @@ export class ApiFailure extends Error {
   }
 }
 
-let csrfToken = "";
-
-export function setCsrf(token: string) {
-  csrfToken = token;
-}
-
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
-  }
-  if (csrfToken && init.method && init.method !== "GET" && init.method !== "HEAD") {
-    headers.set("X-CSRF-Token", csrfToken);
   }
   const response = await fetch(path, {
     ...init,
@@ -79,20 +70,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  async login(username: string, password: string) {
-    const out = await request<{ username: string; csrf: string; expires_at: number }>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    });
-    setCsrf(out.csrf);
-    return out;
-  },
-  async me() {
-    const out = await request<{ username: string; csrf: string; expires_at: number }>("/api/auth/me");
-    setCsrf(out.csrf);
-    return out;
-  },
-  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   version: () => request<{ version: string }>("/api/version"),
   ports: () => request<{ ports: PortInfo[] }>("/api/ports"),
   sessions: () => request<{ sessions: SessionStatus[] }>("/api/sessions"),
@@ -197,6 +174,10 @@ export const api = {
       body: JSON.stringify({ path, new_path: newPath }),
     }),
   sshSessions: () => request<{ sessions: SshSessionStatus[] }>("/api/ssh/sessions"),
+  sshTranscript: (id: string, limit = 200) =>
+    request<{ events: TranscriptEvent[] }>(
+      `/api/ssh/sessions/${encodeURIComponent(id)}/transcript?limit=${limit}`,
+    ),
   sshSession: (id: string) =>
     request<SshSessionStatus>(`/api/ssh/sessions/${encodeURIComponent(id)}`),
   sshDisconnect: (id: string) =>

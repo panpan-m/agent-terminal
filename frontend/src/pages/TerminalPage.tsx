@@ -3,7 +3,6 @@ import {
   ArrowDownToLine,
   Circle,
   Download,
-  ExternalLink,
   Keyboard,
   PanelRight,
   RefreshCw,
@@ -118,7 +117,6 @@ export function TerminalPage({
 
   sessionRef.current = session;
   const canType = Boolean(session && session.state === "open" && session.control_owner === "human");
-  const ttydUrl = session?.terminal?.control_url ?? session?.terminal?.view_url ?? null;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -394,13 +392,6 @@ export function TerminalPage({
           >
             <PanelRight className="h-3.5 w-3.5" /> Info
           </Button>
-          {ttydUrl ? (
-            <Button size="sm" variant="ghost" asChild title="open the full ttyd terminal in its own browser tab">
-              <a href={ttydUrl} target="_blank" rel="noreferrer">
-                <ExternalLink className="h-3.5 w-3.5" /> Full
-              </a>
-            </Button>
-          ) : null}
         </div>
       </header>
 
@@ -443,8 +434,7 @@ export function TerminalPage({
         <div className="absolute right-3 top-12 z-20 w-[27rem] rounded-md border border-zinc-700 bg-zinc-950/95 p-3 text-[11px] text-zinc-300 shadow-2xl">
           <p className="mb-2 font-semibold text-zinc-100">Browser-reserved keys</p>
           <p className="mb-2 text-zinc-400">
-            These never reach the device in any browser terminal (ttyd included). Use the alternative or the
-            full terminal.
+            These never reach the device in a browser terminal. Use the listed alternative instead.
           </p>
           <table className="w-full">
             <tbody className="align-top">

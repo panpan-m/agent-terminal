@@ -68,14 +68,7 @@ async def main() -> int:
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    password = args.password
-    if not password:
-        creds = json.loads((ROOT / "run" / "first-run-credentials.json").read_text(encoding="utf-8"))
-        password = creds["admin_password"]
-
     admin = httpx.Client(base_url="http://127.0.0.1:8765", timeout=30)
-    csrf = admin.post("/api/auth/login", json={"username": "admin", "password": password}).json()["csrf"]
-    headers = {"X-CSRF-Token": csrf}
 
     params = StdioServerParameters(
         command=str(ROOT / "dist" / "tio-mcp.exe"),
@@ -84,7 +77,7 @@ async def main() -> int:
     results: dict[str, str] = {}
     failures: list[str] = []
 
-    admin.put(f"/api/sessions/{args.session}/control", json={"owner": "agent"}, headers=headers)
+    admin.put(f"/api/sessions/{args.session}/control", json={"owner": "agent"})
     try:
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
@@ -110,7 +103,7 @@ async def main() -> int:
                     print(f"{'PASS' if ok else 'FAIL'}  {label}  ({len(text)} chars)")
                     (out / f"{label}.txt").write_text(text, encoding="utf-8")
     finally:
-        admin.put(f"/api/sessions/{args.session}/control", json={"owner": "human"}, headers=headers)
+        admin.put(f"/api/sessions/{args.session}/control", json={"owner": "human"})
         admin.close()
 
     (out / "report.json").write_text(

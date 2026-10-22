@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Log into a running tio-server in headless Chrome and screenshot one hash route.
+ * Open a running tio-server in headless Chrome and screenshot one hash route.
  *
- *   node scripts/ui-shot.mjs --url http://127.0.0.1:8765 --password <pw> \
+ *   node scripts/ui-shot.mjs --url http://127.0.0.1:8765 \
  *        --hash "#/console/board" --out artifacts/live/console.png
  */
 
@@ -23,7 +23,6 @@ function arg(name, fallback) {
 }
 
 const BASE = arg("url", "http://127.0.0.1:8765").replace(/\/$/, "");
-const PASSWORD = arg("password", "");
 const HASH = arg("hash", "#/sessions");
 const OUT = arg("out", "artifacts/live/console.png");
 const PORT = Number(arg("port", "9444"));
@@ -126,11 +125,6 @@ async function main() {
     });
     await cdp.send("Page.navigate", { url: BASE + "/" });
     await sleep(1800);
-    const login = await cdp.evaluate(
-      `fetch('/api/auth/login', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({username:'admin', password:${JSON.stringify(PASSWORD)}})}).then(r => r.status)`,
-    );
-    if (login !== 200) throw new Error(`login failed: ${login}`);
     if (THEME) {
       await cdp.evaluate(`localStorage.setItem('tio-theme', ${JSON.stringify(THEME)})`);
     }

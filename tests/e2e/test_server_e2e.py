@@ -1,4 +1,4 @@
-"""End-to-end: real HTTP server process + MCP stdio shim + bridge subprocess."""
+"""End-to-end: real HTTP server process + MCP stdio shim."""
 
 from __future__ import annotations
 
@@ -86,11 +86,7 @@ def server(tmp_path_factory):
 
 
 def admin_client(server) -> httpx.Client:
-    client = httpx.Client(base_url=server["base"], timeout=10)
-    r = client.post("/api/auth/login", json={"username": "admin", "password": server["secrets"]["admin_password"]})
-    assert r.status_code == 200, r.text
-    client.headers["X-CSRF-Token"] = r.json()["csrf"]
-    return client
+    return httpx.Client(base_url=server["base"], timeout=10)
 
 
 def create_session(client: httpx.Client, **overrides) -> dict:
@@ -250,40 +246,3 @@ class ByteReader:
                 return bytes(self.buf)
         return bytes(self.buf)
 
-
-def test_bridge_subprocess_pipes(server):
-    client = admin_client(server)
-    ensure_session(client)
-    client.put("/api/sessions/board-a/control", json={"owner": "human"})
-    client.close()
-    proc = subprocess.Popen(
-        [
-            PY,
-            "-m",
-            "tio_web_bridge",
-            "--url",
-            f"ws://127.0.0.1:{server['cfg'].server.port}/ws/bridge/board-a",
-            "--mode",
-            "rw",
-            "--token-file",
-            str(server["cfg"].bridge_token_file),
-            "--no-raw",
-        ],
-        cwd=str(ROOT),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    assert proc.stdin is not None
-    reader = ByteReader(proc)
-    try:
-        proc.stdin.write(b"ping\r")
-        proc.stdin.flush()
-        got = reader.wait_for(b"pong")
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-    assert b"pong" in got, got[-500:]

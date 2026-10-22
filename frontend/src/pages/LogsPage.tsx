@@ -5,10 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
-import type { SessionStatus, TranscriptEvent } from "@/lib/types";
+import type { SessionStatus, SshSessionStatus, TranscriptEvent } from "@/lib/types";
 import { b64ToBytes, decodeBytes, formatNumber } from "@/lib/utils";
 
 type Tab = "transcript" | "audit";
+type Selection = { kind: "serial" | "ssh"; id: string; name: string };
 
 function preview(event: TranscriptEvent): string {
   if (event.data_b64) {
@@ -29,25 +30,44 @@ function preview(event: TranscriptEvent): string {
 
 export function LogsPage({
   sessions,
-  session,
+  sshSessions,
   selectedId,
-  onSelect,
 }: {
   sessions: SessionStatus[];
-  session?: SessionStatus;
+  sshSessions: SshSessionStatus[];
   selectedId?: string;
-  onSelect: (id: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("transcript");
   const [events, setEvents] = useState<TranscriptEvent[]>([]);
   const [audit, setAudit] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Selection>(() => {
+    const serial = sessions.find((session) => session.session_id === selectedId) ?? sessions[0];
+    if (serial) return { kind: "serial", id: serial.session_id, name: serial.name };
+    const ssh = sshSessions[0];
+    if (ssh) return { kind: "ssh", id: ssh.session_id, name: ssh.name };
+    return { kind: "serial", id: "", name: "" };
+  });
+
+  useEffect(() => {
+    if (selected.kind === "serial") return;
+    if (!sshSessions.some((session) => session.session_id === selected.id)) {
+      const serial = sessions[0];
+      const ssh = sshSessions[0];
+      if (serial) setSelected({ kind: "serial", id: serial.session_id, name: serial.name });
+      else if (ssh) setSelected({ kind: "ssh", id: ssh.session_id, name: ssh.name });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sshSessions, sessions]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      if (tab === "transcript" && session) {
-        const result = await api.transcript(session.session_id, 300);
+      if (tab === "transcript" && selected.id) {
+        const result =
+          selected.kind === "serial"
+            ? await api.transcript(selected.id, 300)
+            : await api.sshTranscript(selected.id, 300);
         setEvents(result.events);
       } else if (tab === "audit") {
         const result = await api.audit(300);
@@ -59,7 +79,7 @@ export function LogsPage({
     } finally {
       setLoading(false);
     }
-  }, [tab, session]);
+  }, [tab, selected]);
 
   useEffect(() => {
     void load();
@@ -72,7 +92,7 @@ export function LogsPage({
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const anchor = document.createElement("a");
     anchor.href = URL.createObjectURL(blob);
-    anchor.download = `${tab}-${session?.session_id ?? "all"}.json`;
+    anchor.download = `${tab}-${selected.id || "all"}.json`;
     anchor.click();
     URL.revokeObjectURL(anchor.href);
   };
@@ -85,22 +105,39 @@ export function LogsPage({
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Logs &amp; audit</h1>
           <p className="mt-1 text-xs text-zinc-500">
-            Transcript is the byte log (JSONL, rotated); audit is security-relevant events. Nothing is executed from
-            here.
+            One JSONL transcript per session on disk (rotated); the audit log records security-relevant events.
           </p>
         </div>
         <div className="flex items-center gap-2">
           {tab === "transcript" ? (
             <select
-              value={selectedId ?? session?.session_id ?? ""}
-              onChange={(event) => onSelect(event.target.value)}
+              value={`${selected.kind}:${selected.id}`}
+              onChange={(event) => {
+                const [kind, id] = event.target.value.split(":");
+                const name =
+                  kind === "serial"
+                    ? sessions.find((s) => s.session_id === id)?.name ?? id
+                    : sshSessions.find((s) => s.session_id === id)?.name ?? id;
+                setSelected({ kind, id, name } as Selection);
+              }}
               className="h-8 rounded-md border border-zinc-700 bg-zinc-950/60 px-2 text-xs text-zinc-200"
             >
-              {sessions.map((item) => (
-                <option key={item.session_id} value={item.session_id}>
-                  {item.name}
-                </option>
-              ))}
+              <optgroup label="Serial">
+                {sessions.map((item) => (
+                  <option key={item.session_id} value={`serial:${item.session_id}`}>
+                    {item.name}
+                  </option>
+                ))}
+              </optgroup>
+              {sshSessions.length > 0 ? (
+                <optgroup label="SSH">
+                  {sshSessions.map((item) => (
+                    <option key={item.session_id} value={`ssh:${item.session_id}`}>
+                      {item.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
             </select>
           ) : null}
           <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
@@ -133,7 +170,9 @@ export function LogsPage({
       <Card>
         <CardHeader className="py-3">
           <CardTitle className="text-[11px] uppercase tracking-widest text-zinc-400">
-            {tab === "transcript" ? `transcript · ${session?.name ?? "—"}` : "audit log"}
+            {tab === "transcript"
+              ? `transcript · ${selected.kind} · ${selected.name || "—"}`
+              : "audit log"}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">

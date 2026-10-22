@@ -12,17 +12,11 @@ def make_app(tmp_path):
     return app, cfg, secrets
 
 
-def login(client: TestClient, secrets: dict) -> str:
-    response = client.post("/api/auth/login", json={"username": "admin", "password": secrets["admin_password"]})
-    assert response.status_code == 200, response.text
-    return response.json()["csrf"]
 
-
-def test_ssh_host_crud_and_auth_gate(tmp_path):
+def test_ssh_host_crud_and_origin_guard(tmp_path):
     app, _, secrets = make_app(tmp_path)
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:
-        assert client.get("/api/ssh/hosts").status_code == 401
-        csrf = login(client, secrets)
+        assert client.get("/api/ssh/hosts").status_code == 200
 
         body = {
             "name": "Raspberry Pi",
@@ -32,7 +26,7 @@ def test_ssh_host_crud_and_auth_gate(tmp_path):
             "auth": "password",
             "known_hosts": str(tmp_path / "known_hosts"),
         }
-        created = client.post("/api/ssh/hosts", json=body, headers={"X-CSRF-Token": csrf})
+        created = client.post("/api/ssh/hosts", json=body)
         assert created.status_code == 201, created.text
         host = created.json()
         assert host["id"] == "raspberry-pi"
@@ -45,16 +39,15 @@ def test_ssh_host_crud_and_auth_gate(tmp_path):
         updated = client.put(
             "/api/ssh/hosts/raspberry-pi",
             json={**body, "name": "Pi 5", "port": 2222},
-            headers={"X-CSRF-Token": csrf},
         )
         assert updated.status_code == 200
         assert updated.json()["name"] == "Pi 5"
         assert updated.json()["port"] == 2222
 
-        missing_csrf = client.post("/api/ssh/hosts", json=body)
-        assert missing_csrf.status_code == 403
+        foreign = client.post("/api/ssh/hosts", json=body, headers={"Origin": "http://evil.example"})
+        assert foreign.status_code == 403
 
-        deleted = client.delete("/api/ssh/hosts/raspberry-pi", headers={"X-CSRF-Token": csrf})
+        deleted = client.delete("/api/ssh/hosts/raspberry-pi")
         assert deleted.status_code == 200
         assert client.get("/api/ssh/hosts").json()["hosts"] == []
 
@@ -62,7 +55,6 @@ def test_ssh_host_crud_and_auth_gate(tmp_path):
 def test_ssh_saved_credentials_flags_and_forget(tmp_path):
     app, _, secrets = make_app(tmp_path)
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:
-        csrf = login(client, secrets)
         created = client.post(
             "/api/ssh/hosts",
             json={
@@ -73,7 +65,6 @@ def test_ssh_saved_credentials_flags_and_forget(tmp_path):
                 "username": "root",
                 "auth": "password",
             },
-            headers={"X-CSRF-Token": csrf},
         )
         assert created.status_code == 201, created.text
         app.state.ssh_secrets.save("saved", {"password": "top-secret"})
@@ -83,7 +74,7 @@ def test_ssh_saved_credentials_flags_and_forget(tmp_path):
         assert listed["saved_fields"] == ["password"]
         assert "top-secret" not in str(listed)
 
-        cleared = client.delete("/api/ssh/hosts/saved/secrets", headers={"X-CSRF-Token": csrf})
+        cleared = client.delete("/api/ssh/hosts/saved/secrets")
         assert cleared.status_code == 200
         listed = client.get("/api/ssh/hosts").json()["hosts"][0]
         assert listed["has_saved_secrets"] is False
@@ -92,7 +83,6 @@ def test_ssh_saved_credentials_flags_and_forget(tmp_path):
 def test_ssh_test_endpoint_is_structured(tmp_path):
     app, _, secrets = make_app(tmp_path)
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:
-        csrf = login(client, secrets)
         created = client.post(
             "/api/ssh/hosts",
             json={
@@ -104,10 +94,9 @@ def test_ssh_test_endpoint_is_structured(tmp_path):
                 "auth": "password",
                 "connect_timeout_s": 1,
             },
-            headers={"X-CSRF-Token": csrf},
         )
         assert created.status_code == 201, created.text
-        response = client.post("/api/ssh/hosts/closed/test", headers={"X-CSRF-Token": csrf})
+        response = client.post("/api/ssh/hosts/closed/test")
         assert response.status_code == 502, response.text
         assert response.json()["error"]["code"] == "SSH_UNREACHABLE"
 
@@ -115,7 +104,6 @@ def test_ssh_test_endpoint_is_structured(tmp_path):
 def test_ssh_connect_failure_is_structured(tmp_path):
     app, _, secrets = make_app(tmp_path)
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:
-        csrf = login(client, secrets)
         created = client.post(
             "/api/ssh/hosts",
             json={
@@ -127,13 +115,11 @@ def test_ssh_connect_failure_is_structured(tmp_path):
                 "auth": "password",
                 "connect_timeout_s": 1,
             },
-            headers={"X-CSRF-Token": csrf},
         )
         assert created.status_code == 201, created.text
         response = client.post(
             "/api/ssh/hosts/closed/connect",
             json={"password": "x", "cols": 80, "rows": 24},
-            headers={"X-CSRF-Token": csrf},
         )
         assert response.status_code == 502, response.text
         error = response.json()["error"]

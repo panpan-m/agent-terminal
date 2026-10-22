@@ -3,6 +3,9 @@
 Date: 2026-10-21 · Host: Windows 10 19045 · Device: Raspberry Pi Debug Probe
 (`USB\VID_2E8A&PID_000C`) with a Raspberry Pi target on its UART.
 
+> 历史记录：本报告写于 ttyd 仍随服务分发的版本。ttyd 及其 bridge 已在
+> 2026-10-22 移除；文中 ttyd 相关内容仅为当次实测的存档。
+
 Result: **46 / 46 live checks passed** (`artifacts/live/report.json`),
 screenshot: [`screenshots/10-terminal-tab.png`](./screenshots/10-terminal-tab.png).
 

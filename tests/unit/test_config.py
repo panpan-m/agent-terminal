@@ -17,10 +17,9 @@ from tio_server.errors import ToolFailure
 def test_init_creates_config_and_secrets(tmp_path):
     cfg, secrets = init_config(tmp_path)
     assert Path(secrets["config"]).exists()
-    assert cfg.auth.admin_password_hash.startswith("$argon2")
-    assert cfg.auth.session_secret
+    assert cfg.auth.api_token_hash.startswith("$argon2")
+    assert "admin_password" not in secrets
     assert (tmp_path / "api-token").exists()
-    assert (tmp_path / "bridge-token").exists()
     assert secrets["api_token"] == (tmp_path / "api-token").read_text(encoding="utf-8").strip()
     if sys.platform != "win32":
         mode = stat.S_IMODE(os.stat(tmp_path / "api-token").st_mode)

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   CircleSlash,
   Monitor,
+  Pencil,
   Plus,
   Power,
   RotateCcw,
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTrigger, Switch } from "@/components/ui/dialog";
 import { Field, Input, Select, Label } from "@/components/ui/input";
+import { SessionSettingsDialog } from "@/components/SessionSettingsDialog";
 import { api } from "@/lib/api";
 import type { PortInfo, SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 import { formatBytes, formatNumber, formatUptime } from "@/lib/utils";
@@ -28,6 +30,7 @@ export function OverviewPage({
   refresh,
   notify,
   onCreate,
+  onUpdate,
   onTerminal,
   onControl,
   onOpenSession,
@@ -40,6 +43,7 @@ export function OverviewPage({
   refresh: () => Promise<void>;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
   onCreate: (input: SessionInput) => Promise<void>;
+  onUpdate: (id: string, input: SessionInput) => Promise<void>;
   onTerminal: (id: string) => void;
   onControl: (id: string, owner: "human" | "agent") => Promise<boolean>;
   onOpenSession: (id: string) => Promise<boolean>;
@@ -63,7 +67,7 @@ export function OverviewPage({
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Configured" value={String(sessions.length)} hint={`max ${system?.ttyd ? "4" : "4"}`} />
+        <Stat label="Configured" value={String(sessions.length)} hint="max 4" />
         <Stat label="Open" value={String(openCount)} hint="serial ports held" accent />
         <Stat label="Agent control" value={String(agentOwned)} hint="writable by MCP" />
         <Stat
@@ -96,6 +100,7 @@ export function OverviewPage({
               session={session}
               onTerminal={() => onTerminal(session.session_id)}
               onControl={onControl}
+              onUpdate={onUpdate}
               onOpenSession={onOpenSession}
               onCloseSession={onCloseSession}
               onDelete={onDelete}
@@ -126,6 +131,7 @@ function SessionCard({
   session,
   onTerminal,
   onControl,
+  onUpdate,
   onOpenSession,
   onCloseSession,
   onDelete,
@@ -136,6 +142,7 @@ function SessionCard({
   session: SessionStatus;
   onTerminal: () => void;
   onControl: (id: string, owner: "human" | "agent") => Promise<boolean>;
+  onUpdate: (id: string, input: SessionInput) => Promise<void>;
   onOpenSession: (id: string) => Promise<boolean>;
   onCloseSession: (id: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
@@ -167,19 +174,35 @@ function SessionCard({
           </div>
           <p className="mt-1 truncate font-mono text-[11px] text-zinc-500">{session.port}</p>
         </div>
-        <button
-          type="button"
-          className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-red-300 disabled:opacity-40"
-          title="delete session"
-          disabled={busy}
-          onClick={async () => {
-            if (window.confirm(`Delete session "${session.name}"? The transcript stays on disk.`)) {
-              await run(() => onDelete(session.session_id));
+        <div className="flex items-center gap-1">
+          <SessionSettingsDialog
+            session={session}
+            onUpdate={onUpdate}
+            trigger={
+              <button
+                type="button"
+                className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
+                title="configure session"
+                disabled={busy}
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
             }
-          }}
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+          />
+          <button
+            type="button"
+            className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-red-300 disabled:opacity-40"
+            title="delete session"
+            disabled={busy}
+            onClick={async () => {
+              if (window.confirm(`Delete session "${session.name}"? The transcript stays on disk.`)) {
+                await run(() => onDelete(session.session_id));
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-1 flex-col gap-3">

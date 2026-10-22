@@ -1,6 +1,6 @@
 """Platform-independent serial interface.
 
-Everything above this layer (sessions, MCP, admin, bridge) speaks only these
+Everything above this layer (sessions, MCP, admin) speaks only these
 types.  Platform code lives in :mod:`tio_server.serial.windows` and
 :mod:`tio_server.serial.posix`; tests use :mod:`tio_server.serial.simulator`.
 """

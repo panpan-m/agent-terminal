@@ -1,4 +1,4 @@
-"""Structured error model shared by MCP tools, the admin API and the bridge.
+"""Structured error model shared by MCP tools and the admin API.
 
 Every failure that a caller can act on is expressed as a :class:`ToolFailure`
 with a stable ``code`` (see the plan's error table), a human message, optional

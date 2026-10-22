@@ -31,34 +31,6 @@ def default_log_dir() -> Path:
     return Path("/var/log/tio-server")
 
 
-def default_ttyd_candidates() -> list[str]:
-    if is_windows():
-        return [
-            str(Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "tio-server" / "bin" / "ttyd.exe"),
-            str(Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "tio-server" / "bin" / "ttyd.exe"),
-            "ttyd.exe",
-        ]
-    return ["/usr/bin/ttyd", "/usr/local/bin/ttyd", "ttyd"]
-
-
-def find_ttyd(configured: str | None) -> str | None:
-    """Resolve the ttyd binary: explicit path first, then PATH, then defaults."""
-    import shutil
-
-    candidates = [configured] if configured else []
-    candidates.extend(default_ttyd_candidates())
-    for cand in candidates:
-        if not cand:
-            continue
-        p = Path(cand)
-        if p.is_file():
-            return str(p)
-        found = shutil.which(cand)
-        if found:
-            return found
-    return None
-
-
 def executable_suffix() -> str:
     return ".exe" if is_windows() else ""
 

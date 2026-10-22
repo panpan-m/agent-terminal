@@ -45,14 +45,7 @@ async def main() -> int:
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    password = args.password
-    if not password:
-        creds = json.loads((ROOT / "run" / "first-run-credentials.json").read_text(encoding="utf-8"))
-        password = creds["admin_password"]
-
     admin = httpx.Client(base_url="http://127.0.0.1:8765", timeout=30)
-    csrf = admin.post("/api/auth/login", json={"username": "admin", "password": password}).json()["csrf"]
-    headers = {"X-CSRF-Token": csrf}
 
     checks: list[dict] = []
     outputs: dict[str, str] = {}
@@ -111,8 +104,7 @@ async def main() -> int:
                 admin.post(
                     f"/api/sessions/{args.session}/write",
                     json={"text": "", "newline": "cr"},
-                    headers=headers,
-                )
+                        )
                 await asyncio.sleep(0.5)
                 history = structured(
                     await session.call_tool(
@@ -138,7 +130,7 @@ async def main() -> int:
                 )
 
                 # hand write control to the agent
-                admin.put(f"/api/sessions/{args.session}/control", json={"owner": "agent"}, headers=headers)
+                admin.put(f"/api/sessions/{args.session}/control", json={"owner": "agent"})
                 locked = structured(await session.call_tool("serial_write", {"session_id": args.session, "data": "\n"}))
                 # a bare newline is allowed and should be written; control is ours now
                 check("agent can write after handover", "bytes_written" in locked, json.dumps(locked)[:120])
@@ -258,8 +250,7 @@ async def main() -> int:
                 admin.put(
                     f"/api/sessions/{args.session}/permissions",
                     json={"permissions": ["read"]},
-                    headers=headers,
-                )
+                        )
                 denied = await session.call_tool(
                     "serial_write", {"session_id": args.session, "data": "\n"}
                 )
@@ -268,11 +259,10 @@ async def main() -> int:
                 admin.put(
                     f"/api/sessions/{args.session}/permissions",
                     json={"permissions": ["read", "write", "command"]},
-                    headers=headers,
-                )
+                        )
 
         # hand control back to the operator
-        admin.put(f"/api/sessions/{args.session}/control", json={"owner": "human"}, headers=headers)
+        admin.put(f"/api/sessions/{args.session}/control", json={"owner": "human"})
         final = admin.get(f"/api/sessions/{args.session}").json()
         check(
             "control returned to the operator",
