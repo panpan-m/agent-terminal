@@ -126,7 +126,7 @@ async function main() {
     await cdp.send("Page.navigate", { url: BASE + "/" });
     await sleep(1800);
     if (THEME) {
-      await cdp.evaluate(`localStorage.setItem('tio-theme', ${JSON.stringify(THEME)})`);
+      await cdp.evaluate(`localStorage.setItem('tio-theme', ${JSON.stringify(THEME)}); localStorage.setItem('tio-theme-v2', '1')`);
     }
     await cdp.send("Page.reload", { ignoreCache: true });
     await sleep(2200);

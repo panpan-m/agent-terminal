@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import type { SessionStatus, SshSessionStatus, SystemInfo } from "@/lib/types";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
-import { formatNumber, formatUptime } from "@/lib/utils";
 
 export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "logs";
 
@@ -41,17 +40,11 @@ function activePageOf(page: Page): Page {
   return page === "ssh" ? "terminal" : page === "connections" ? "sessions" : page;
 }
 
-/** The shell keeps one navigation model and swaps its frame per theme. */
-export function Shell(props: ShellProps) {
-  const { theme } = useTheme();
-  if (theme === "pixel") return <PixelShell {...props} />;
-  if (theme === "sheet") return <SheetShell {...props} />;
-  return <ClassicShell {...props} />;
-}
-
-/* ------------------------------------------------------------------ pixel */
-
-function PixelShell({
+/**
+ * One shell for every theme.  Themes are pure data (see lib/themeSpecs.ts):
+ * they restyle this layout through CSS custom properties and never change it.
+ */
+export function Shell({
   page,
   onNavigate,
   onSelectSession,
@@ -63,316 +56,17 @@ function PixelShell({
   system,
   children,
 }: ShellProps) {
+  useTheme(); // the shell re-renders on theme switches; the layout never changes
   const active = activePageOf(page);
-  const live = sessions.find((session) => session.state === "open") ?? sessions[0];
-  const agentOwned = sessions.some((session) => session.control_owner === "agent");
-  const openCount = sessions.filter((session) => session.state === "open").length;
-  const line = live
-    ? `${live.config.baudrate} ${live.config.bytesize}${live.config.parity[0].toUpperCase()}${live.config.stopbits}`
-    : "—";
+  const stateDot = (state: string) =>
+    state === "open"
+      ? "live-dot bg-emerald-400"
+      : state === "reconnecting" || state === "connecting"
+        ? "bg-amber-400"
+        : state === "error"
+          ? "bg-red-400"
+          : "bg-zinc-600";
 
-  const stateTone = (state: string) =>
-    state === "open" ? "on" : state === "error" ? "error" : state === "reconnecting" ? "warn" : "off";
-
-  return (
-    <div className="px-shell">
-      <aside className="px-rail">
-        <div className="px-brand">
-          <span className="px-logo" aria-hidden>
-            <i /> <i /> <i /> <i /> <i /> <i /> <i /> <i /> <i />
-          </span>
-          <span className="px-word">
-            TIO-SERVER
-            <small>serial gateway</small>
-          </span>
-        </div>
-
-        <nav className="px-nav">
-          {NAV.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.page}
-                type="button"
-                onClick={() => onNavigate(item.page)}
-                aria-current={active === item.page ? "page" : undefined}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {item.short}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="px-rail-scroll">
-          <div className="px-rail-label">serial</div>
-          {sessions.length === 0 ? <p className="px-rail-empty">none configured</p> : null}
-          {sessions.map((session) => (
-            <button
-              key={session.session_id}
-              type="button"
-              className="px-sess"
-              data-on={selectedId === session.session_id ? "1" : undefined}
-              onClick={() => {
-                onSelectSession(session.session_id);
-                onNavigate("terminal");
-              }}
-            >
-              <span className="px-sess-name">{session.name}</span>
-              <span className="px-led" data-tone={stateTone(session.state)} />
-              <span className="px-sess-sub">{session.port}</span>
-            </button>
-          ))}
-
-          <div className="px-rail-label">ssh</div>
-          {sshSessions.length === 0 ? <p className="px-rail-empty">none connected</p> : null}
-          {sshSessions.map((session) => (
-            <button
-              key={session.session_id}
-              type="button"
-              className="px-sess"
-              data-on={selectedSshId === session.session_id ? "1" : undefined}
-              onClick={() => {
-                onSelectSsh(session.session_id);
-                onNavigate("ssh");
-              }}
-            >
-              <span className="px-sess-name">{session.name}</span>
-              <span className="px-led" data-tone={stateTone(session.state)} />
-              <span className="px-sess-sub">
-                {session.username}@{session.host}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="px-rail-foot">
-          <div className="px-rail-meta">
-            <span>{system ? `v${system.version}` : "v—"}</span>
-            <span>{openCount} open</span>
-          </div>
-          <div className="px-lamps">
-            <span className="px-lamp" data-tone={openCount > 0 ? undefined : "dim"}>
-              <i />
-              {openCount} port
-            </span>
-            <span className="px-lamp" data-tone={agentOwned ? "amber" : "dim"}>
-              <i />
-              {agentOwned ? "agent" : "blocked"}
-            </span>
-          </div>
-          <ThemeSwitch />
-        </div>
-      </aside>
-
-      <div className="px-body">
-        <div className="px-mobile">
-          <span className="px-word">TIO-SERVER</span>
-          <nav>
-            {NAV.map((item) => (
-              <button
-                key={item.page}
-                type="button"
-                onClick={() => onNavigate(item.page)}
-                aria-current={active === item.page ? "page" : undefined}
-              >
-                {item.short}
-              </button>
-            ))}
-          </nav>
-          <ThemeSwitch />
-        </div>
-
-        <div className="px-ticker">
-          <span>
-            <b>port</b> {live?.port ?? "no port"}
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>line</b> {line}
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>owner</b> {live?.control_owner ?? "—"}
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>rx</b> {live ? `${formatNumber(live.rx_bytes)} B` : "—"}
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>tx</b> {live ? `${formatNumber(live.tx_bytes)} B` : "—"}
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>lost</b> {live ? formatNumber(live.lost_bytes) : "—"}
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>uptime</b> {system ? formatUptime(system.uptime_seconds) : "—"}
-          </span>
-        </div>
-
-        <main className="px-main">{children}</main>
-
-        <footer className="px-keybar">
-          <span>{sessions.length} configured</span>
-          <span>{openCount} open</span>
-          <span>{sshSessions.length} ssh</span>
-          <span className="grow" />
-          <span>{system ? `v${system.version}` : "v—"}</span>
-          <span>{system ? `${system.bind}:${system.port}` : "—"}</span>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ sheet */
-
-function SheetShell({
-  page,
-  onNavigate,
-  onSelectSession,
-  onSelectSsh,
-  sessions,
-  sshSessions,
-  selectedId,
-  selectedSshId,
-  system,
-  children,
-}: ShellProps) {
-  const active = activePageOf(page);
-  const openCount = sessions.filter((session) => session.state === "open").length;
-  const stateTone = (state: string) =>
-    state === "open" ? "on" : state === "error" ? "error" : state === "reconnecting" ? "warn" : "off";
-
-  return (
-    <div className="sh-shell">
-      <aside className="sh-rail">
-        <div className="sh-brand">
-          <b>tio-server</b>
-          <span>serial gateway</span>
-        </div>
-
-        <nav className="sh-nav">
-          {NAV.map((item) => (
-            <button
-              key={item.page}
-              type="button"
-              onClick={() => onNavigate(item.page)}
-              aria-current={active === item.page ? "page" : undefined}
-            >
-              {item.short}
-            </button>
-          ))}
-        </nav>
-
-        <div className="sh-rail-scroll">
-          <div className="sh-rail-label">serial sessions</div>
-          {sessions.length === 0 ? <p className="sh-rail-empty">none configured</p> : null}
-          {sessions.map((session) => (
-            <button
-              key={session.session_id}
-              type="button"
-              className="sh-sess"
-              data-on={selectedId === session.session_id ? "1" : undefined}
-              onClick={() => {
-                onSelectSession(session.session_id);
-                onNavigate("terminal");
-              }}
-            >
-              <span className="sh-sess-name">{session.name}</span>
-              <span className="sh-led" data-tone={stateTone(session.state)} />
-              <span className="sh-sess-sub">{session.port}</span>
-            </button>
-          ))}
-
-          <div className="sh-rail-label">ssh sessions</div>
-          {sshSessions.length === 0 ? <p className="sh-rail-empty">none connected</p> : null}
-          {sshSessions.map((session) => (
-            <button
-              key={session.session_id}
-              type="button"
-              className="sh-sess"
-              data-on={selectedSshId === session.session_id ? "1" : undefined}
-              onClick={() => {
-                onSelectSsh(session.session_id);
-                onNavigate("ssh");
-              }}
-            >
-              <span className="sh-sess-name">{session.name}</span>
-              <span className="sh-led" data-tone={stateTone(session.state)} />
-              <span className="sh-sess-sub">
-                {session.username}@{session.host}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="sh-rail-foot">
-          <div className="sh-rail-meta">
-            <span>{system ? `v${system.version}` : "v—"}</span>
-            <span>{openCount} open</span>
-          </div>
-          <ThemeSwitch />
-        </div>
-      </aside>
-
-      <div className="sh-body">
-        <div className="sh-mobile">
-          <b>tio-server</b>
-          <nav>
-            {NAV.map((item) => (
-              <button
-                key={item.page}
-                type="button"
-                onClick={() => onNavigate(item.page)}
-                aria-current={active === item.page ? "page" : undefined}
-              >
-                {item.short}
-              </button>
-            ))}
-          </nav>
-          <ThemeSwitch />
-        </div>
-
-        <main className="sh-main">{children}</main>
-
-        <footer className="sh-foot">
-          <span className="sh-cap">
-            One owner per port. Serial output is data, never instructions — the console and the MCP
-            tools read the same ring buffer.
-          </span>
-          <div className="sh-titleblock">
-            <div>dwg</div>
-            <div>TS-{system?.version ?? "0.1.0"}</div>
-            <div>host</div>
-            <div>{system ? `${system.bind}:${system.port}` : "—"}</div>
-            <div>sheet</div>
-            <div>1 / 1</div>
-          </div>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ classic */
-
-function ClassicShell({
-  page,
-  onNavigate,
-  onSelectSession,
-  onSelectSsh,
-  sessions,
-  sshSessions,
-  selectedId,
-  selectedSshId,
-  system,
-  children,
-}: ShellProps) {
-  const active = activePageOf(page);
   return (
     <div className="flex h-full min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/60 md:flex">
@@ -434,18 +128,7 @@ function ClassicShell({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-medium text-zinc-200">{session.name}</span>
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 shrink-0 rounded-full",
-                      session.state === "open"
-                        ? "live-dot bg-emerald-400"
-                        : session.state === "reconnecting"
-                          ? "bg-amber-400"
-                          : session.state === "error"
-                            ? "bg-red-400"
-                            : "bg-zinc-600",
-                    )}
-                  />
+                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", stateDot(session.state))} />
                 </div>
                 <span className="truncate font-mono text-[10px] text-zinc-500">{session.port}</span>
               </button>
@@ -479,18 +162,7 @@ function ClassicShell({
                     <Server className="h-3 w-3 shrink-0 text-sky-400" />
                     {session.name}
                   </span>
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 shrink-0 rounded-full",
-                      session.state === "open"
-                        ? "live-dot bg-emerald-400"
-                        : session.state === "reconnecting"
-                          ? "bg-amber-400"
-                          : session.state === "error"
-                            ? "bg-red-400"
-                            : "bg-zinc-600",
-                    )}
-                  />
+                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", stateDot(session.state))} />
                 </div>
                 <span className="truncate font-mono text-[10px] text-zinc-500">
                   {session.username}@{session.host}

@@ -16,35 +16,37 @@ Layout:
 ```text
 src/
 ├── App.tsx                  polling, hash router, toasts
-├── index.css                the four themes + shell/primitive styling
+├── index.css                shared layout/primitive styling + theme effects
 ├── styles/fonts.css         self-hosted @font-face (Vite hashes them into assets/)
 ├── assets/fonts/            woff2 files (pixel + sheet themes)
 ├── components/
-│   ├── Shell.tsx            three shells: classic sidebar, pixel cabinet, sheet frame
-│   ├── ThemeSwitch.tsx      pixel / sheet / dark / light
+│   ├── Shell.tsx            the single shell — every theme shares this layout
+│   ├── ThemeSwitch.tsx      pixel / sheet / dark / light / custom + JSON editor
 │   ├── StatusPanel.tsx      live session rail
 │   └── ui/                  button, card, badge, input, dialog+switch
 ├── pages/                   Sessions (overview + SSH hosts), Terminal workspace, MCP, Logs
-└── lib/                     api, types, theme, terminal palettes, utils
+└── lib/                     api, types, theme specs, terminal palettes, utils
 ```
 
 ## Themes
 
-`<html data-theme="pixel|sheet|dark|light">` drives everything. Tailwind v4 emits
-palette, radius, shadow and type scale as CSS variables, so each theme re-skins
-the utility classes instead of forking components:
+Themes are JSON specs (`lib/themeSpecs.ts`, webssh2-style): `label`,
+`colorScheme`, a `vars` map of CSS custom properties (Tailwind v4 emits palette,
+radius, shadow and type scale as variables, so a spec re-skins every utility
+without forking components) and the xterm `term` palette. `applyTheme` writes
+the vars onto `<html data-theme="…">`; the layout never changes per theme.
 
 - **pixel** — phosphor green palette, zero radius, hard offset shadows, VT323
-  body, Silkscreen labels, Press Start 2P wordmark, scanline overlay.
-- **sheet** — paper palette, ink accents, hairline rules, Archivo + Space Mono,
-  framed page with a drawing title block.
+  body, Silkscreen labels, scanline overlay.
+- **sheet** — paper palette, ink accents, hairline rules, Archivo + Space Mono.
 - **dark / light** — the original zinc + emerald UI, kept for compatibility.
+- **custom** — paste a JSON spec in the theme editor; it merges over the dark
+  baseline, so a partial spec (a few `--color-*` vars and term colors) is
+  enough. Invalid input is rejected with a reason.
 
-`data-panel`, `data-btn`, `data-badge` and `data-input` mark the primitives so a
-theme can restyle them in CSS. The xterm palette comes from `lib/termTheme.ts`.
-
-Lint: Tailwind classes stay in the page components; theme-specific chrome lives
-in `index.css` under the `.px-*` (pixel shell) and `.sh-*` (sheet shell) blocks.
+`data-panel`, `data-btn`, `data-badge` and `data-input` mark the primitives so
+theme effects can restyle them in CSS. The xterm palette comes from the same
+spec via `lib/termTheme.ts`.
 
 The build output is committed so the Python package (and PyInstaller bundle)
 works without Node.
