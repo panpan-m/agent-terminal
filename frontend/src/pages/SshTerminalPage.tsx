@@ -36,7 +36,7 @@ import {
   type Enhancements,
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
-import { b64ToBytes, bytesToB64, cn, formatBytes, formatTime, isModalOpen } from "@/lib/utils";
+import { b64ToBytes, bytesToB64, cn, formatBytes, isModalOpen } from "@/lib/utils";
 import type { SshFileList, SshSessionStatus } from "@/lib/types";
 
 export function SshTerminalPage({
@@ -439,19 +439,21 @@ export function SshTerminalPage({
             variant="ghost"
             onClick={() => setSearchOpen((value) => !value)}
             title="search scrollback (Ctrl+Shift+F)"
+            aria-label="Find"
           >
-            <Search className="h-3.5 w-3.5" /> Find
+            <Search className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => termRef.current?.clear()} title="clear the view">
-            <Trash2 className="h-3.5 w-3.5" /> Clear
+          <Button size="sm" variant="ghost" onClick={() => termRef.current?.clear()} title="clear the view" aria-label="Clear">
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setGeneration((value) => value + 1)}
             title="reconnect the browser WebSocket from the current cursor"
+            aria-label="Reconnect"
           >
-            <RefreshCw className="h-3.5 w-3.5" /> Reconnect
+            <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           <Button
             size="sm"
@@ -473,12 +475,12 @@ export function SshTerminalPage({
             )}
             {status?.agent_visible ? "Agent" : "Private"}
           </Button>
-          <Button size="sm" variant="ghost" onClick={openFiles} title="browse, upload and download files over SFTP">
-            <FolderOpen className="h-3.5 w-3.5" /> Files
+          <Button size="sm" variant="ghost" onClick={openFiles} title="SFTP files (browse, upload, download)" aria-label="Files">
+            <FolderOpen className="h-3.5 w-3.5" />
           </Button>
           <Button size="sm" variant="ghost" asChild title="download raw bytes with timestamps">
             <a href={`/api/ssh/sessions/${encodeURIComponent(sessionId)}/export?format=txt`} download>
-              <Download className="h-3.5 w-3.5" /> Log
+              <Download className="h-3.5 w-3.5" />
             </a>
           </Button>
           <Button
@@ -486,8 +488,9 @@ export function SshTerminalPage({
             variant={keysOpen ? "outline" : "ghost"}
             onClick={() => setKeysOpen((value) => !value)}
             title="browser-reserved keys and alternatives"
+            aria-label="Keys"
           >
-            <Keyboard className="h-3.5 w-3.5" /> Keys
+            <Keyboard className="h-3.5 w-3.5" />
           </Button>
           <TerminalSettingsDialog />
         </div>
@@ -662,10 +665,6 @@ export function SshTerminalPage({
                 <dt>remote</dt>
                 <dd className="truncate font-mono text-zinc-300">{status?.remote_version ?? "—"}</dd>
               </div>
-              <div className="flex justify-between gap-2">
-                <dt>opened</dt>
-                <dd className="text-zinc-300">{formatTime(status?.opened_at)}</dd>
-              </div>
             </dl>
           </div>
           <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-[11px]">
@@ -710,15 +709,10 @@ export function SshTerminalPage({
                   {status ? `${status.rx_start}..${status.rx_head}` : "—"}
                 </dd>
               </div>
-              <div className="flex justify-between gap-2">
-                <dt>capacity</dt>
-                <dd className="font-mono text-zinc-300">{status ? formatBytes(status.buffer_bytes) : "—"}</dd>
-              </div>
             </dl>
           </div>
-          <p className="px-1 text-[10px] text-zinc-500">
-            The SSH session lives on the server. Closing this tab does not disconnect it; reattach from SSH
-            connections. Resize is sent to the remote PTY.
+          <p className="px-1 text-[10px] text-zinc-500" title="The SSH session lives on the server; closing this tab does not disconnect it.">
+            session lives on the server · resize follows the window
           </p>
         </aside>
       </div>

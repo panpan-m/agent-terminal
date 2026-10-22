@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   Cable,
-  ChevronRight,
   CircleSlash,
   Monitor,
   Pencil,
@@ -56,25 +55,19 @@ export function OverviewPage({
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-6">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Serial sessions</h1>
-          <p className="mt-1 text-xs text-zinc-500">
-            One owner per port. Open a device, hand control to an agent, watch it in the console.
-          </p>
-        </div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Serial sessions</h1>
+        <p className="flex items-center gap-3 font-mono text-[11px] text-zinc-500">
+          <span title="sessions configured">{sessions.length} cfg</span>
+          <span title="ports open" className={openCount ? "text-emerald-300" : undefined}>
+            {openCount} open
+          </span>
+          <span title="sessions where the agent owns write" className={agentOwned ? "text-amber-300" : undefined}>
+            {agentOwned} agent
+          </span>
+          <span title="server uptime">{system ? formatUptime(system.uptime_seconds) : "—"}</span>
+        </p>
         <NewSessionDialog onCreate={onCreate} />
-      </div>
-
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Configured" value={String(sessions.length)} hint="max 4" />
-        <Stat label="Open" value={String(openCount)} hint="serial ports held" accent />
-        <Stat label="Agent control" value={String(agentOwned)} hint="writable by MCP" />
-        <Stat
-          label="Uptime"
-          value={system ? formatUptime(system.uptime_seconds) : "—"}
-          hint={system ? `v${system.version} · ${system.platform}` : ""}
-        />
       </div>
 
       {sessions.length === 0 ? (
@@ -115,17 +108,6 @@ export function OverviewPage({
   );
 }
 
-function Stat({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: boolean }) {
-  return (
-    <Card>
-      <CardContent className="py-3.5">
-        <p className="text-[10px] uppercase tracking-widest text-zinc-500">{label}</p>
-        <p className={`mt-1 text-2xl font-semibold ${accent ? "text-emerald-300" : "text-zinc-100"}`}>{value}</p>
-        {hint ? <p className="mt-0.5 text-[11px] text-zinc-500">{hint}</p> : null}
-      </CardContent>
-    </Card>
-  );
-}
 
 function SessionCard({
   session,
@@ -212,24 +194,18 @@ function SessionCard({
             {session.config.parity[0].toUpperCase()}
             {session.config.stopbits}
           </Badge>
-          <Badge>{session.config.flow} flow</Badge>
-          <Badge tone={agentOwns ? "accent" : "default"}>
-            {agentOwns ? <UserRound className="mr-1 h-3 w-3" /> : null}
-            {session.control_owner}
+          {session.config.flow !== "none" ? <Badge>{session.config.flow} flow</Badge> : null}
+          <Badge tone={agentOwns ? "accent" : "default"} title={`control: ${session.control_owner}`}>
+            <UserRound className="h-3 w-3" />
           </Badge>
           {session.lost_bytes > 0 ? <Badge tone="warn">{formatBytes(session.lost_bytes)} lost</Badge> : null}
           {session.reconnect_count > 0 ? <Badge tone="warn">{session.reconnect_count} reconnects</Badge> : null}
         </div>
 
-        <div className="grid grid-cols-3 gap-2 text-[11px]">
-          <Metric label="RX" value={formatNumber(session.rx_bytes)} />
-          <Metric label="TX" value={formatNumber(session.tx_bytes)} />
-          <Metric
-            label="Buffer"
-            value={formatBytes(session.buffer_bytes)}
-            hint={`${Math.round((session.rx_head - session.rx_start) / session.buffer_bytes * 100)}% used`}
-          />
-        </div>
+        <p className="font-mono text-[11px] text-zinc-500" title="rx / tx bytes · ring buffer usage">
+          rx {formatNumber(session.rx_bytes)} · tx {formatNumber(session.tx_bytes)} · buf{" "}
+          {Math.round(((session.rx_head - session.rx_start) / session.buffer_bytes) * 100)}%
+        </p>
 
         {session.last_error ? (
           <p className="rounded-md border border-red-500/25 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-300">
@@ -249,8 +225,8 @@ function SessionCard({
       </CardContent>
 
       <CardFooter className="flex-wrap">
-        <Button size="sm" variant="primary" onClick={onTerminal} disabled={!isOpen} title="open the interactive terminal tab">
-          <Monitor className="h-3.5 w-3.5" /> Terminal <ChevronRight className="h-3 w-3" />
+        <Button size="sm" variant="primary" onClick={onTerminal} disabled={!isOpen} title="open the interactive terminal tab" aria-label="Terminal">
+          <Monitor className="h-3.5 w-3.5" />
         </Button>
         <Button
           size="sm"
@@ -265,8 +241,10 @@ function SessionCard({
           variant="ghost"
           disabled={busy}
           onClick={() => run(() => (isOpen ? onCloseSession(session.session_id) : onOpenSession(session.session_id)))}
+          title={isOpen ? "close the port" : "open the port"}
+          aria-label={isOpen ? "Close" : "Open"}
         >
-          <Power className="h-3.5 w-3.5" /> {isOpen ? "Close" : "Open"}
+          <Power className="h-3.5 w-3.5" />
         </Button>
         <Button
           size="sm"
@@ -277,23 +255,15 @@ function SessionCard({
             if (ok) notify("reset sequence applied", "success");
           }}
           title="apply the configured DTR/RTS reset sequence"
+          aria-label="Reset"
         >
-          <RotateCcw className="h-3.5 w-3.5" /> Reset
+          <RotateCcw className="h-3.5 w-3.5" />
         </Button>
       </CardFooter>
     </Card>
   );
 }
 
-function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-md border border-zinc-800 bg-zinc-950/40 px-2.5 py-1.5">
-      <p className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className="font-mono text-xs text-zinc-200">{value}</p>
-      {hint ? <p className="text-[10px] text-zinc-600">{hint}</p> : null}
-    </div>
-  );
-}
 
 function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Promise<void> }) {
   const [open, setOpen] = useState(false);

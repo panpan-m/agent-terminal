@@ -306,32 +306,35 @@ export function TerminalPage({
             onClick={sendBreak}
             disabled={!session || session.state !== "open" || busyBreak}
             title="send a serial BREAK (250 ms framing break, not a byte)"
+            aria-label="BREAK"
           >
-            <Zap className="h-3.5 w-3.5" /> BREAK
+            <Zap className="h-3.5 w-3.5" />
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setSearchOpen((value) => !value)}
             title="search the scrollback (Ctrl+Shift+F)"
+            aria-label="Find"
           >
-            <Search className="h-3.5 w-3.5" /> Find
+            <Search className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => termRef.current?.clear()} title="clear the screen">
-            <Trash2 className="h-3.5 w-3.5" /> Clear
+          <Button size="sm" variant="ghost" onClick={() => termRef.current?.clear()} title="clear the screen" aria-label="Clear">
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setGeneration((value) => value + 1)}
             title="resume the stream from the last received cursor"
+            aria-label="Reconnect"
           >
-            <RefreshCw className="h-3.5 w-3.5" /> Reconnect
+            <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           {session ? (
             <Button size="sm" variant="ghost" asChild title="download raw bytes with timestamps">
               <a href={`/api/sessions/${encodeURIComponent(session.session_id)}/export?format=txt`} download>
-                <Download className="h-3.5 w-3.5" /> Log
+                <Download className="h-3.5 w-3.5" />
               </a>
             </Button>
           ) : null}
@@ -340,16 +343,18 @@ export function TerminalPage({
             variant={keysOpen ? "outline" : "ghost"}
             onClick={() => setKeysOpen((value) => !value)}
             title="browser-reserved keys and alternatives"
+            aria-label="Keys"
           >
-            <Keyboard className="h-3.5 w-3.5" /> Keys
+            <Keyboard className="h-3.5 w-3.5" />
           </Button>
           <Button
             size="sm"
             variant={infoOpen ? "outline" : "ghost"}
             onClick={() => setInfoOpen((value) => !value)}
             title="show the session status panel"
+            aria-label="Info"
           >
-            <PanelRight className="h-3.5 w-3.5" /> Info
+            <PanelRight className="h-3.5 w-3.5" />
           </Button>
           <TerminalSettingsDialog />
         </div>

@@ -20,7 +20,7 @@ const NAV: { page: Page; label: string; short: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", short: "Sessions", icon: LayoutDashboard },
   { page: "terminal", label: "Terminal", short: "Terminal", icon: SquareTerminal },
   { page: "mcp", label: "MCP", short: "MCP", icon: Plug },
-  { page: "logs", label: "Logs & audit", short: "Logs", icon: ScrollText },
+  { page: "logs", label: "Logs", short: "Logs", icon: ScrollText },
 ];
 
 type ShellProps = {

@@ -105,9 +105,7 @@ export function LogsPage({
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Logs &amp; audit</h1>
-          <p className="mt-1 text-xs text-zinc-500">
-            One JSONL transcript per session on disk (rotated); the audit log records security-relevant events.
-          </p>
+          <p className="mt-1 text-xs text-zinc-500">One JSONL transcript per session · global audit log.</p>
         </div>
         <div className="flex items-center gap-2">
           {tab === "transcript" ? (
