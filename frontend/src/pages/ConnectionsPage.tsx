@@ -285,7 +285,7 @@ export function ConnectionsPage({
     <div className="mx-auto max-w-6xl px-5 py-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">SSH connections</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">SSH sessions</h1>
           <p className="mt-1 max-w-2xl text-xs text-zinc-500">
             Saved hosts are configuration only — passwords and key passphrases are sent per connection and never
             stored. Host keys are checked strictly against known_hosts.

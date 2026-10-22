@@ -6,7 +6,7 @@ cursor-resume reconnect, seven MCP tools, SFTP, jump hosts and ~/.ssh/config
 import. Keyboard-interactive/2FA is implemented but not yet tested against a real
 2FA server.
 
-![SSH connections](screenshots/13-ssh-connections.png)
+![SSH sessions](screenshots/18-sessions-ssh.png)
 
 ![SSH terminal](screenshots/14-ssh-terminal.png)
 
@@ -33,7 +33,7 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 ## Add a host
 
-1. Open **SSH** in the sidebar.
+1. Open **Sessions** in the sidebar and switch to the **SSH** tab.
 2. **New SSH host**, fill in name, host, port, username and auth.
 3. For `private key`, enter the key path **on the tio-server machine**, e.g.
    `C:\Users\PC\.ssh\id_ed25519`.

@@ -3,11 +3,10 @@ import { Loader2 } from "lucide-react";
 
 import { Shell, type Page } from "@/components/Shell";
 import { LoginPage } from "@/pages/LoginPage";
-import { OverviewPage } from "@/pages/OverviewPage";
 import { TerminalPage } from "@/pages/TerminalPage";
 import { McpPage } from "@/pages/McpPage";
 import { ConfigPage } from "@/pages/ConfigPage";
-import { ConnectionsPage } from "@/pages/ConnectionsPage";
+import { SessionsPage } from "@/pages/SessionsPage";
 import { SshTerminalPage } from "@/pages/SshTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SystemPage } from "@/pages/SystemPage";
@@ -170,8 +169,9 @@ export default function App() {
         username={me.username}
         onLogout={logout}
       >
-        {route.page === "sessions" ? (
-          <OverviewPage
+        {route.page === "sessions" || route.page === "connections" ? (
+          <SessionsPage
+            initialKind={route.page === "connections" ? "ssh" : undefined}
             sessions={sessions}
             system={system}
             refresh={refresh}
@@ -188,6 +188,7 @@ export default function App() {
                 notify(`reset applied (${result.steps} steps)`, "success");
               })
             }
+            onOpenSsh={(id) => navigate("ssh", id)}
           />
         ) : null}
 
@@ -204,10 +205,6 @@ export default function App() {
 
         {route.page === "mcp" ? <McpPage notify={notify} /> : null}
 
-        {route.page === "connections" ? (
-          <ConnectionsPage notify={notify} onOpen={(id) => navigate("ssh", id)} />
-        ) : null}
-
         {route.page === "ssh" && route.sessionId ? (
           <SshTerminalPage
             sessionId={route.sessionId}
@@ -218,7 +215,26 @@ export default function App() {
         ) : null}
 
         {route.page === "ssh" && !route.sessionId ? (
-          <ConnectionsPage notify={notify} onOpen={(id) => navigate("ssh", id)} />
+          <SessionsPage
+            initialKind="ssh"
+            sessions={sessions}
+            system={system}
+            refresh={refresh}
+            notify={notify}
+            onCreate={createSession}
+            onTerminal={(id) => navigate("terminal", id)}
+            onControl={(id, owner) => guard(() => api.setControl(id, owner), `control → ${owner}`)}
+            onOpenSession={(id) => guard(() => api.openSession(id), "session opened")}
+            onCloseSession={(id) => guard(() => api.closeSession(id), "session closed")}
+            onDelete={(id) => guard(() => api.deleteSession(id), "session deleted")}
+            onReset={(id) =>
+              guard(async () => {
+                const result = await api.resetSession(id);
+                notify(`reset applied (${result.steps} steps)`, "success");
+              })
+            }
+            onOpenSsh={(id) => navigate("ssh", id)}
+          />
         ) : null}
 
         {route.page === "config" ? (

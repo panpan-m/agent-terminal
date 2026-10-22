@@ -54,7 +54,7 @@ export function OverviewPage({
     <div className="mx-auto max-w-6xl px-5 py-6">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Sessions</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Serial sessions</h1>
           <p className="mt-1 text-xs text-zinc-500">
             One owner per port. Open a device, hand control to an agent, watch it in the console.
           </p>

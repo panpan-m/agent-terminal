@@ -5,7 +5,6 @@ import {
   Moon,
   Plug,
   ScrollText,
-  Server,
   SlidersHorizontal,
   SquareTerminal,
   Sun,
@@ -23,7 +22,6 @@ export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "co
 const NAV: { page: Page; label: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", icon: LayoutDashboard },
   { page: "terminal", label: "Terminal", icon: SquareTerminal },
-  { page: "connections", label: "SSH", icon: Server },
   { page: "mcp", label: "MCP", icon: Plug },
   { page: "config", label: "Configuration", icon: SlidersHorizontal },
   { page: "logs", label: "Logs & audit", icon: ScrollText },
@@ -53,7 +51,8 @@ export function Shell({
 }) {
   const { theme, toggle } = useTheme();
   const themeTitle = theme === "light" ? "switch to dark theme" : "switch to light theme";
-  const activePage: Page = page === "ssh" ? "connections" : page;
+  const activePage: Page =
+    page === "ssh" ? "terminal" : page === "connections" ? "sessions" : page;
   return (
     <div className="flex h-full min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/60 md:flex">

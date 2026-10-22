@@ -14,7 +14,7 @@ the port.
 > [`docs/live-debug-report.md`](./docs/live-debug-report.md) and
 > [`docs/dsh.md`](./docs/dsh.md).
 
-![Sessions page](docs/screenshots/02-sessions.png)
+![Sessions page](docs/screenshots/17-sessions-serial.png)
 
 Light theme is available from the sidebar/login toggle and persists per browser
 ([preview](docs/screenshots/11-light-sessions.png)); the xterm palette follows.
@@ -26,7 +26,7 @@ included as an example) ([screenshot](docs/screenshots/08-mcp.png)).
 The **SSH** tab manages saved hosts and opens a full xterm.js PTY terminal with
 strict known_hosts, password/private-key/agent auth, jump hosts, SFTP, resize,
 multi-session tabs, transport auto-reconnect, transcript and reattach
-([details](docs/ssh.md), [connections](docs/screenshots/13-ssh-connections.png),
+([details](docs/ssh.md), [sessions](docs/screenshots/18-sessions-ssh.png),
 [terminal](docs/screenshots/14-ssh-terminal.png), [tabs](docs/screenshots/16-ssh-tabs.png)).
 SSH sessions stay on the server when the browser tab closes.
 
