@@ -34,6 +34,22 @@ from .ttyd_supervisor import TtydSupervisor
 __version__ = "0.1.0"
 
 
+def _mcp_shim_path() -> str:
+    """Best-effort path of tio-mcp for the copy-paste install prompt."""
+    override = os.environ.get("TIO_MCP_SHIM")
+    if override:
+        return override
+    exe = "tio-mcp.exe" if sys.platform == "win32" else "tio-mcp"
+    if getattr(sys, "frozen", False):
+        candidate = Path(sys.executable).parent / exe
+        if candidate.exists():
+            return str(candidate)
+    repo = Path(__file__).resolve().parents[3] / "dist" / exe
+    if repo.exists():
+        return str(repo)
+    return exe
+
+
 def _static_dir() -> Path:
     """Locate the built SPA both from source and inside a PyInstaller bundle."""
     candidates = [Path(__file__).resolve().parent / "static"]
@@ -610,6 +626,38 @@ def create_app(config: Config) -> FastAPI:
                 {"session_id": s.id, "state": s.state.value, "port": s.cfg.port} for s in manager.sessions.values()
             ],
             "health": {"sessions_open": sum(1 for s in manager.sessions.values() if s.is_open)},
+        }
+
+    @app.get("/api/mcp")
+    async def mcp_status(rec: AdminSession = Depends(admin_session)):
+        tools = await mcp_server.list_tools()
+        host = config.server.bind if config.server.bind not in ("0.0.0.0", "::") else "127.0.0.1"
+        base = (
+            config.server.public_url.rstrip("/")
+            if config.server.public_url
+            else f"http://{host}:{config.server.port}"
+        )
+        return {
+            "status": "running",
+            "transport": "streamable-http",
+            "url": f"{base}/mcp",
+            "auth": "bearer",
+            "api_token_file": str(config.api_token_file.resolve()),
+            "api_token_present": config.api_token_file.exists(),
+            "shim": _mcp_shim_path(),
+            "server": {
+                "name": getattr(mcp_server, "name", "tio-server"),
+                "version": getattr(mcp_server, "version", __version__),
+            },
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "read_only": bool(tool.annotations and tool.annotations.read_only_hint),
+                    "destructive": bool(tool.annotations and tool.annotations.destructive_hint),
+                }
+                for tool in tools
+            ],
         }
 
     @app.post("/api/ttyd/{session_id}/{mode}/start")

@@ -137,6 +137,33 @@ def test_invalid_session_rejected(app_bundle):
     assert r.status_code == 400
 
 
+def test_mcp_status_endpoint(app_bundle):
+    client, _, secrets = app_bundle
+    assert client.get("/api/mcp").status_code == 401
+    login(client, secrets)
+    r = client.get("/api/mcp")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "running"
+    assert data["transport"] == "streamable-http"
+    assert data["url"].endswith("/mcp")
+    assert data["auth"] == "bearer"
+    assert data["api_token_file"].endswith("api-token")
+    assert data["shim"]
+    names = [tool["name"] for tool in data["tools"]]
+    assert names == [
+        "serial_sessions",
+        "serial_status",
+        "serial_read",
+        "serial_write",
+        "serial_break",
+        "serial_command",
+        "serial_expect",
+    ]
+    assert any(tool["read_only"] for tool in data["tools"])
+    assert any(tool["destructive"] for tool in data["tools"])
+
+
 def test_ports_endpoint(app_bundle):
     client, _, secrets = app_bundle
     login(client, secrets)

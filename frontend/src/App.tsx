@@ -5,13 +5,14 @@ import { Shell, type Page } from "@/components/Shell";
 import { LoginPage } from "@/pages/LoginPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { TerminalPage } from "@/pages/TerminalPage";
+import { McpPage } from "@/pages/McpPage";
 import { ConfigPage } from "@/pages/ConfigPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { ApiFailure, api } from "@/lib/api";
 import type { SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 
-const PAGES: Page[] = ["sessions", "terminal", "config", "logs", "system"];
+const PAGES: Page[] = ["sessions", "terminal", "mcp", "config", "logs", "system"];
 
 interface Toast {
   id: number;
@@ -198,6 +199,8 @@ export default function App() {
             notify={notify}
           />
         ) : null}
+
+        {route.page === "mcp" ? <McpPage notify={notify} /> : null}
 
         {route.page === "config" ? (
           <ConfigPage

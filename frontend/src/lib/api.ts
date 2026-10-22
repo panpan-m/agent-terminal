@@ -1,5 +1,6 @@
 import type {
   CommandResponse,
+  McpStatus,
   PortInfo,
   SessionInput,
   SessionStatus,
@@ -137,6 +138,7 @@ export const api = {
     ),
   audit: (limit = 200) => request<{ events: Record<string, unknown>[] }>(`/api/audit?limit=${limit}`),
   system: () => request<SystemInfo>("/api/system"),
+  mcp: () => request<McpStatus>("/api/mcp"),
 };
 
 export function consoleUrl(sessionId: string, replay = 65536): string {

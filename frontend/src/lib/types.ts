@@ -145,3 +145,22 @@ export interface ApiError extends Error {
   details?: Record<string, unknown>;
   retryable?: boolean;
 }
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+  read_only: boolean;
+  destructive: boolean;
+}
+
+export interface McpStatus {
+  status: string;
+  transport: string;
+  url: string;
+  auth: string;
+  api_token_file: string;
+  api_token_present: boolean;
+  shim: string;
+  server: { name: string; version: string };
+  tools: McpToolInfo[];
+}

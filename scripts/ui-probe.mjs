@@ -334,6 +334,7 @@ async function main() {
 
     // 4. remaining pages via hash routing
     for (const [route, label, needle] of [
+      ["mcp", "08-mcp.png", "Streamable HTTP"],
       ["config/board-a", "05-config.png", "Configuration"],
       ["logs/board-a", "06-logs.png", "Logs"],
       ["system", "07-system.png", "MCP"],

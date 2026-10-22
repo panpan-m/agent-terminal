@@ -4,8 +4,8 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **93 passed, 1 skipped** | `pytest -q` |
-| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **40 / 40 checks** | `artifacts/e2e/report.json` |
+| `pytest` (unit + integration + protocol + security + HIL) | **94 passed, 1 skipped** | `pytest -q` |
+| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
@@ -28,7 +28,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 93 passed + 1 skipped)
+### 1. Test suite (`pytest`, 94 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -48,7 +48,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 * **HIL** — real COM port open/configure/control-lines/read-timeout/close via
   pyserial (`COM3`), plus the pyserial `loop://` transport.
 
-### 2. End-to-end (`scripts/verify_e2e.py`, 40 checks)
+### 2. End-to-end (`scripts/verify_e2e.py`, 41 checks)
 
 Starts `tio-server` as a **separate process** with a simulated board
 (`sim://board-a`), then:
@@ -70,7 +70,11 @@ Starts `tio-server` as a **separate process** with a simulated board
   API, sessions page, **create-session dialog** (typed, submitted, session
   appears open), terminal page with LIVE RX and STATUS, hand control to the agent
   and take it back, type `ping` into xterm and see `pong`, **toggle light/dark
-  theme** (and back), configuration/logs/system pages render, no JS console errors.
+  theme** (and back), **MCP page** (status, endpoint, seven tools, install
+  prompt), configuration/logs/system pages render, no JS console errors.
+
+The `/api/mcp` status endpoint is covered by its own pytest case: auth required,
+Streamable HTTP URL, bearer mode, token/shim paths, and the seven-tool list.
 
 Screenshots: [`01-login`](screenshots/01-login.png) ·
 [`02-sessions`](screenshots/02-sessions.png) ·
@@ -79,6 +83,7 @@ Screenshots: [`01-login`](screenshots/01-login.png) ·
 [`05-config`](screenshots/05-config.png) ·
 [`06-logs`](screenshots/06-logs.png) ·
 [`07-system`](screenshots/07-system.png) ·
+[`08-mcp`](screenshots/08-mcp.png) ·
 [`11-light-sessions`](screenshots/11-light-sessions.png) ·
 [`12-light-terminal`](screenshots/12-light-terminal.png)
 
@@ -113,7 +118,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (93 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (94 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open

@@ -1794,8 +1794,8 @@ ttyd.exe -p 7682 -i 127.0.0.1 -O -W -c operator:change-me -m 2 `
 
 | 套件 | 结果 |
 |---|---|
-| pytest（单元/集成/协议/安全/HIL） | 93 passed（1 skipped：真机占用端口时 HIL 跳过） |
-| 端到端（真实服务进程 + MCP + 串口收發 + 重连 + 浏览器 UI） | 40/40 |
+| pytest（单元/集成/协议/安全/HIL） | 94 passed（1 skipped：真机占用端口时 HIL 跳过） |
+| 端到端（真实服务进程 + MCP + 串口收發 + 重连 + 浏览器 UI） | 41/41 |
 | ttyd（真实 Windows ConPTY） | 13/13 —— P0 go/no-go 通过，含会话创建自动拉起/删除自动停止 |
 | PyInstaller 产物（server + tio-mcp） | 11/11 |
 | 真机（Raspberry Pi Debug Probe + Raspberry Pi 串口控制台） | 46/46 —— 见 `docs/live-debug-report.md` |

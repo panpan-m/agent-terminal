@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   LogOut,
   Moon,
+  Plug,
   ScrollText,
   SlidersHorizontal,
   SquareTerminal,
@@ -16,11 +17,12 @@ import { useTheme } from "@/lib/theme";
 import type { SessionStatus, SystemInfo } from "@/lib/types";
 import { StateBadge } from "@/components/ui/badge";
 
-export type Page = "sessions" | "terminal" | "config" | "logs" | "system";
+export type Page = "sessions" | "terminal" | "mcp" | "config" | "logs" | "system";
 
 const NAV: { page: Page; label: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", icon: LayoutDashboard },
   { page: "terminal", label: "Terminal", icon: SquareTerminal },
+  { page: "mcp", label: "MCP", icon: Plug },
   { page: "config", label: "Configuration", icon: SlidersHorizontal },
   { page: "logs", label: "Logs & audit", icon: ScrollText },
   { page: "system", label: "System", icon: Cpu },
