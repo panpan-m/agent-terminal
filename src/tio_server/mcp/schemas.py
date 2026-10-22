@@ -89,6 +89,17 @@ class WriteResult(BaseModel):
     control_owner: str
 
 
+class TailResult(BaseModel):
+    session_id: str
+    lines: list[str]
+    text: str
+    count: int
+    next_cursor: int
+    head_cursor: int
+    truncated: bool = Field(description="True when fewer than the requested lines were available.")
+    bytes_scanned: int
+
+
 class BreakResult(BaseModel):
     session_id: str
     duration_ms: int

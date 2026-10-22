@@ -35,6 +35,7 @@ async def test_tools_list_contract(mcp_setup):
         "serial_sessions",
         "serial_status",
         "serial_read",
+        "serial_tail",
         "serial_write",
         "serial_break",
         "serial_command",
@@ -122,6 +123,22 @@ async def test_write_and_command_after_handover(mcp_setup):
     assert data["matched"] is True
     assert data["groups"] == ["1.0.0"]
     assert data["tx_bytes"] == 8  # len("version") + CR
+
+
+async def test_tail_returns_last_lines(mcp_setup):
+    mgr, mcp, _ = mcp_setup
+    sess = mgr.get("board-a")
+    sess.open()
+    assert wait_until(lambda: b"TioSim" in sess.ring.read(0, 65536).data)
+
+    res = await _call(mcp, "serial_tail", {"lines": 3})
+    assert res.is_error is False
+    data = _structured(res)
+    assert data["session_id"] == "board-a"
+    assert 0 < data["count"] <= 3
+    assert "tiosim>" in data["text"].lower()
+    assert data["truncated"] is False
+    assert data["head_cursor"] >= data["next_cursor"]
 
 
 async def test_break_requires_control_and_reports_duration(mcp_setup):

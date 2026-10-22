@@ -155,6 +155,7 @@ def test_mcp_status_endpoint(app_bundle):
         "serial_sessions",
         "serial_status",
         "serial_read",
+        "serial_tail",
         "serial_write",
         "serial_break",
         "serial_command",

@@ -80,12 +80,13 @@ async def main() -> int:
                 )
                 tools = await session.list_tools()
                 check(
-                    "seven serial tools advertised",
+                    "eight serial tools advertised",
                     [tool.name for tool in tools.tools]
                     == [
                         "serial_sessions",
                         "serial_status",
                         "serial_read",
+                        "serial_tail",
                         "serial_write",
                         "serial_break",
                         "serial_command",
@@ -115,6 +116,17 @@ async def main() -> int:
                     "board is at a root shell prompt",
                     bool(re.search(PROMPT, ring_text)),
                     repr(ring_text[-80:]),
+                )
+
+                tail = structured(
+                    await session.call_tool(
+                        "serial_tail", {"session_id": args.session, "lines": 5}
+                    )
+                )
+                check(
+                    "serial_tail returns the newest lines",
+                    tail.get("count", 0) >= 1 and "root@" in (tail.get("text") or ""),
+                    repr((tail.get("text") or "")[-120:]),
                 )
 
                 # hand write control to the agent

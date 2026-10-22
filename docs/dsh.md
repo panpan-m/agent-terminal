@@ -53,8 +53,8 @@ place, but a newly inserted plugin row only appears after the app restarts. So:
 1. add the row;
 2. quit and reopen DSH;
 3. start a session — the tool list now contains
-   `mcp__tio__serial_sessions`, `serial_status`, `serial_read`, `serial_write`,
-   `serial_break`, `serial_command`, `serial_expect`.
+   `mcp__tio__serial_sessions`, `serial_status`, `serial_read`, `serial_tail`,
+   `serial_write`, `serial_break`, `serial_command`, `serial_expect`.
 
 The same behaviour was verified here: the row was added at 16:31 and the running
 app did not spawn the shim; restarting is the supported path.
@@ -66,6 +66,7 @@ app did not spawn the shim; restarting is the supported path.
 | `mcp__tio__serial_sessions` | find the session id (`board`) |
 | `mcp__tio__serial_status` | port, state, owner, counters, lines |
 | `mcp__tio__serial_read` | cursor/tail reads, text or hex |
+| `mcp__tio__serial_tail` | newest N lines of terminal output (ANSI stripped) |
 | `mcp__tio__serial_command` | one command + wait for a prompt/pattern, or `capture_exit: true` for a generic POSIX end marker and exit code |
 | `mcp__tio__serial_write` | raw bytes |
 | `mcp__tio__serial_break` | framing BREAK (U-Boot/failsafe), needs write control |

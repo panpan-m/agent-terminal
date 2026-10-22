@@ -235,6 +235,7 @@ def main() -> int:
                 "serial_sessions",
                 "serial_status",
                 "serial_read",
+                "serial_tail",
                 "serial_write",
                 "serial_break",
                 "serial_command",

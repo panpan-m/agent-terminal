@@ -38,7 +38,7 @@ src/tio_server/
 │   └── __init__.py      BackendRouter (sim:// → simulator, else native)
 ├── mcp/
 │   ├── schemas.py       Pydantic output models → outputSchema
-│   └── tools.py         seven tools, structured errors, rate limiting
+│   └── tools.py         eight tools, structured errors, rate limiting
 └── web/
     ├── app.py           FastAPI, auth deps, admin API, WebSockets, MCP mount
     ├── ttyd_supervisor.py  ttyd process lifecycle + port allocation
