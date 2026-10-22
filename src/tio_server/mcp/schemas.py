@@ -185,6 +185,7 @@ class SshStatusResult(BaseModel):
     last_error: str | None = None
     last_error_code: str | None = None
     control_owner: str
+    agent_visible: bool = False
     auto_reconnect: bool = True
     reconnect_count: int = 0
 

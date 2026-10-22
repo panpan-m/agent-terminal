@@ -34,6 +34,11 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 - **Operator-created sessions.** Only the admin UI/API can create an SSH session.
   MCP tools operate existing sessions; there is no agent-facing "connect to
   arbitrary host" tool.
+- **Agent visibility is opt-in.** New SSH sessions are `private`. Only sessions
+  the operator marks **Agent visible** appear in MCP `ssh_sessions`; calling
+  `ssh_status`/`ssh_read`/`ssh_write`/`ssh_exec`/etc. with an unmarked
+  `session_id` returns `PERMISSION_DENIED`. Toggle it in the SSH terminal header
+  (`Private` ↔ `Agent`) or in the Open SSH sessions table.
 - **Audit + transcript.** `ssh.connect`, `ssh.connect_failed`, `ssh.disconnect`
   go to `audit.log`; RX/TX bytes and events go to the per-session transcript.
 - **Key files stay local to the server.** The browser only submits a path; file

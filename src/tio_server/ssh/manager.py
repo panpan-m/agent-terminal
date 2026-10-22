@@ -166,6 +166,24 @@ class SshManager:
         with self._lock:
             self._sessions.pop(session_id, None)
 
+    def set_agent_visible(self, session_id: str, enabled: bool) -> bool:
+        session = self.get(session_id)
+        previous = session.agent_visible
+        session.agent_visible = bool(enabled)
+        try:
+            session.transcript.event("agent_visibility", previous=previous, enabled=session.agent_visible)
+            self.audit.write(
+                "ssh.agent_visibility",
+                session=session_id,
+                host_id=session.host.id,
+                previous=previous,
+                enabled=session.agent_visible,
+            )
+            session._broadcast_status()
+        except Exception:
+            pass
+        return session.agent_visible
+
     def stop(self) -> None:
         with self._lock:
             sessions = list(self._sessions.values())

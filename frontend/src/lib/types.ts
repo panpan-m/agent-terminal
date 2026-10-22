@@ -226,6 +226,7 @@ export interface SshSessionStatus {
   last_error: string | null;
   last_error_code: string | null;
   control_owner: string;
+  agent_visible?: boolean;
   auto_reconnect?: boolean;
   reconnect_count?: number;
 }

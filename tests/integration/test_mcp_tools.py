@@ -77,6 +77,80 @@ async def test_ssh_tools_require_an_operator_opened_session(mcp_setup):
     assert _structured(res)["error"]["code"] == "NO_SESSION"
 
 
+def _ssh_status(session_id: str, visible: bool) -> dict:
+    return {
+        "session_id": session_id,
+        "host_id": "host",
+        "name": "Host",
+        "host": "127.0.0.1",
+        "port": 22,
+        "username": "root",
+        "auth": "key",
+        "state": "open",
+        "host_key_fingerprint": "SHA256:x",
+        "host_key_type": "ssh-ed25519",
+        "remote_version": "SSH-2.0-test",
+        "cipher": "aes128-ctr",
+        "mac": "hmac-sha2-256",
+        "rx_bytes": 0,
+        "tx_bytes": 0,
+        "rx_start": 0,
+        "rx_head": 0,
+        "buffer_bytes": 1024,
+        "opened_at": None,
+        "last_error": None,
+        "last_error_code": None,
+        "control_owner": "human",
+        "agent_visible": visible,
+        "auto_reconnect": True,
+        "reconnect_count": 0,
+    }
+
+
+class _FakeSshSession:
+    def __init__(self, status):
+        self._status = status
+        self.agent_visible = status["agent_visible"]
+
+    def status(self):
+        return dict(self._status)
+
+
+class _FakeSshManager:
+    def __init__(self):
+        self.sessions = {
+            "visible": _FakeSshSession(_ssh_status("visible", True)),
+            "hidden": _FakeSshSession(_ssh_status("hidden", False)),
+        }
+
+    def list(self):
+        return [session.status() for session in self.sessions.values()]
+
+    def get(self, session_id):
+        return self.sessions[session_id]
+
+
+async def test_ssh_agent_only_sees_marked_sessions(mcp_setup):
+    mgr, _, cfg = mcp_setup
+    mcp = build_mcp_server(mgr, cfg, _FakeSshManager())
+
+    res = await _call(mcp, "ssh_sessions")
+    data = _structured(res)
+    assert [item["session_id"] for item in data["sessions"]] == ["visible"]
+
+    res = await _call(mcp, "ssh_status", {"session_id": "hidden"})
+    assert res.is_error is True
+    assert _structured(res)["error"]["code"] == "PERMISSION_DENIED"
+
+    res = await _call(mcp, "ssh_read", {"session_id": "hidden"})
+    assert res.is_error is True
+    assert _structured(res)["error"]["code"] == "PERMISSION_DENIED"
+
+    res = await _call(mcp, "ssh_status", {"session_id": "visible"})
+    assert res.is_error is False
+    assert _structured(res)["agent_visible"] is True
+
+
 async def test_sessions_and_status(mcp_setup):
     mgr, mcp, _ = mcp_setup
     mgr.get("board-a").open()

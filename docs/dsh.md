@@ -83,7 +83,8 @@ app did not spawn the shim; restarting is the supported path.
 
 There is deliberately no open/close/configure tool: the operator owns the port
 and the SSH connection. The agent cannot connect to a new SSH host; an operator
-must open the session in the UI first.
+must open the session in the UI **and mark it Agent visible**. Unmarked SSH
+sessions are hidden from `ssh_sessions` and direct calls are denied.
 Writes need `control_owner=agent` (hand over in the UI or via the admin API).
 
 For shell boards, `capture_exit: true` is the portable way to know a command

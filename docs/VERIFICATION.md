@@ -4,7 +4,7 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **109 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **110 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
@@ -30,7 +30,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 107 passed + 1 skipped)
+### 1. Test suite (`pytest`, 110 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -120,7 +120,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (109 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (110 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -269,6 +269,17 @@ Against the real Pi with a temporary `tiotest` account:
    flags went back to false;
 5. the profile and the temporary Linux user were removed afterwards.
 
+### 11. SSH agent visibility
+
+With one SSH session to the Pi (default `agent_visible=false`):
+
+1. MCP `ssh_sessions` returned `sessions=[]`;
+2. `POST /api/ssh/sessions/{id}/agent {enabled:true}` then `ssh_sessions` listed
+   exactly that session and `ssh_exec("uname -r")` returned exit 0;
+3. `enabled:false` hid it again: `ssh_sessions` empty and `ssh_status` with the
+   explicit id returned `PERMISSION_DENIED`;
+4. the session/profile and temporary key were removed afterwards.
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
@@ -280,11 +291,12 @@ Against the real Pi with a temporary `tiotest` account:
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
 | SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 15 tools total |
-| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 109 |
+| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 110 |
 | SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
 | Unified Terminal: serial + SSH in one tab bar | ✅ | COM5 + two SSH sessions; screenshots 19/20; per-tab × disconnect verified |
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
 | SSH remembered credentials | ✅ | encrypted at rest; second connect without password; Forget clears |
+| SSH agent visibility | ✅ | default private; marked session listed/executable; unmarked denied |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |

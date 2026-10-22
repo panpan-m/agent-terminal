@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   ChevronUp,
   Download,
+  Eye,
+  EyeOff,
   File as FileIcon,
   FolderOpen,
   FolderPlus,
@@ -104,6 +106,7 @@ export function SshTerminalPage({
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesError, setFilesError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { theme } = useTheme();
   const themeRef = useRef(theme);
@@ -374,6 +377,23 @@ export function SshTerminalPage({
     else searchRef.current?.findNext(query, { incremental: true });
   };
 
+  const toggleAgent = async () => {
+    setAgentBusy(true);
+    try {
+      const enabled = !(status?.agent_visible ?? false);
+      await api.sshSetAgentVisible(sessionId, enabled);
+      await refreshStatus();
+      notify(
+        enabled ? "SSH session is now visible to agents" : "SSH session hidden from agents",
+        "success",
+      );
+    } catch (error) {
+      notify(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`, "error");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
   const stateTone =
     status?.state === "open"
       ? "text-emerald-300"
@@ -423,6 +443,26 @@ export function SshTerminalPage({
             title="reconnect the browser WebSocket from the current cursor"
           >
             <RefreshCw className="h-3.5 w-3.5" /> Reconnect
+          </Button>
+          <Button
+            size="sm"
+            variant={status?.agent_visible ? "outline" : "ghost"}
+            onClick={() => void toggleAgent()}
+            disabled={agentBusy}
+            title={
+              status?.agent_visible
+                ? "visible in MCP ssh_sessions; click to hide from agents"
+                : "hidden from agents; click to allow MCP access"
+            }
+          >
+            {agentBusy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : status?.agent_visible ? (
+              <Eye className="h-3.5 w-3.5 text-emerald-300" />
+            ) : (
+              <EyeOff className="h-3.5 w-3.5" />
+            )}
+            {status?.agent_visible ? "Agent" : "Private"}
           </Button>
           <Button size="sm" variant="ghost" onClick={openFiles} title="browse, upload and download files over SFTP">
             <FolderOpen className="h-3.5 w-3.5" /> Files

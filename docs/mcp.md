@@ -46,7 +46,9 @@ already opened in the UI.
 There is deliberately **no** `serial_open`, `serial_close` or
 `serial_configure`: only the operator configures ports. Likewise there is no
 `ssh_connect` or `ssh_disconnect`: the agent can only operate SSH sessions the
-operator opened in the UI, so it cannot use the gateway as a jump host.
+operator opened **and marked Agent visible**. Unmarked SSH sessions are omitted
+from `ssh_sessions`, and direct tool calls with their id return
+`PERMISSION_DENIED`.
 
 ### `serial_read`
 

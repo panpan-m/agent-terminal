@@ -97,6 +97,7 @@ class SshSession:
         self.session_id = session_id
         self.state = SshState.CONNECTING
         self.control_owner = "human"
+        self.agent_visible = False
         self.ring = RingBuffer(8 * 1024 * 1024)
         self.rx_bytes = 0
         self.tx_bytes = 0
@@ -955,6 +956,7 @@ class SshSession:
             "last_error": self.last_error,
             "last_error_code": self.last_error_code,
             "control_owner": self.control_owner,
+            "agent_visible": self.agent_visible,
             "auto_reconnect": self.auto_reconnect,
             "reconnect_count": self.reconnect_count,
         }

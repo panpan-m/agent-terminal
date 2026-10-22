@@ -6,7 +6,7 @@ full terminal in its own tab), and agents use **MCP** tools. Nobody else opens
 the port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **109 tests**, **41/41 end-to-end checks**,
+> Verified on Windows 10: **110 tests**, **41/41 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **25/25 agent-path MCP checks** against a
 > Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing
@@ -35,7 +35,8 @@ auto-reconnect, transcript and reattach
 ([details](docs/ssh.md), [sessions](docs/screenshots/18-sessions-ssh.png),
 [terminal](docs/screenshots/14-ssh-terminal.png),
 [mixed tabs](docs/screenshots/20-terminal-mixed-ssh.png)).
-SSH sessions stay on the server when the browser tab closes.
+SSH sessions stay on the server when the browser tab closes. They are **private
+to agents by default**; mark a session **Agent visible** to expose it to MCP.
 
 ## Why
 

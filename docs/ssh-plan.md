@@ -297,7 +297,8 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 - `ssh_sessions/status/exec/read/tail/write/expect`；
 - 权限与审计；
 - DSH 安装提示/工具列表更新；
-- 只操作 operator 已打开会话。
+- 只操作 operator 已打开**且标记 Agent visible**的会话；未标记的会话不出现在
+  `ssh_sessions`，直接按 id 调用返回 `PERMISSION_DENIED`。
 
 实现证据：真实 Pi 会话上通过 MCP 调用 `ssh_sessions`、`ssh_status`、
 `ssh_exec("uname -r")`（exit 0）、`ssh_read`、`ssh_tail`、`ssh_write` +

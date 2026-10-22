@@ -203,6 +203,11 @@ export const api = {
     request<{ ok: boolean }>(`/api/ssh/sessions/${encodeURIComponent(id)}/disconnect`, {
       method: "POST",
     }),
+  sshSetAgentVisible: (id: string, enabled: boolean) =>
+    request<{ enabled: boolean }>(`/api/ssh/sessions/${encodeURIComponent(id)}/agent`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
 };
 
 export function sshConsoleUrl(sessionId: string, replay = 65536): string {

@@ -262,6 +262,10 @@ class SftpRenameBody(BaseModel):
     new_path: str
 
 
+class SshAgentBody(BaseModel):
+    enabled: bool
+
+
 # ------------------------------------------------------------------- app factory
 def create_app(config: Config) -> FastAPI:
     logger = setup_logging(config.log_dir, config.server.log_level)
@@ -560,6 +564,15 @@ def create_app(config: Config) -> FastAPI:
     @app.get("/api/ssh/sessions/{session_id}")
     async def ssh_get_session(session_id: str, rec: AdminSession = Depends(admin_session)):
         return ssh_manager.get(session_id).status()
+
+    @app.post("/api/ssh/sessions/{session_id}/agent")
+    async def ssh_set_agent_visible(
+        session_id: str,
+        body: SshAgentBody,
+        rec: AdminSession = Depends(csrf_guard),
+    ):
+        enabled = await asyncio.to_thread(ssh_manager.set_agent_visible, session_id, body.enabled)
+        return {"enabled": enabled}
 
     @app.get("/api/ssh/sessions/{session_id}/export")
     async def ssh_export_session(
