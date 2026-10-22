@@ -39,6 +39,7 @@ from .profiles import SshHost
 class SshState(str, Enum):
     CONNECTING = "connecting"
     OPEN = "open"
+    RECONNECTING = "reconnecting"
     CLOSED = "closed"
     ERROR = "error"
 
@@ -119,6 +120,13 @@ class SshSession:
         self._write_lock = threading.Lock()
         self._sub_lock = threading.Lock()
         self._subs: list[SshSubscriber] = []
+        self._auth_args: dict[str, Any] = {}
+        self._reconnecting = False
+        self._reconnect_thread: threading.Thread | None = None
+        self.reconnect_count = 0
+        self.auto_reconnect = bool(host.auto_reconnect)
+        self._last_cols = 120
+        self._last_rows = 30
         self.transcript: TranscriptWriter = manager.transcripts.writer(session_id, True)
         self.audit = manager.audit
 
@@ -264,6 +272,13 @@ class SshSession:
     ) -> None:
         if self.state is SshState.OPEN:
             return
+        self._auth_args = {
+            "password": password,
+            "passphrase": passphrase,
+            "jump_password": jump_password,
+            "jump_passphrase": jump_passphrase,
+            "responses": list(responses or []),
+        }
         self.state = SshState.CONNECTING
         self.last_error = None
         self.last_error_code = None
@@ -325,7 +340,8 @@ class SshSession:
             self._client = client
             self.state = SshState.OPEN
             self.opened_at = now_iso()
-            self._stop.clear()
+            self._last_cols = max(20, min(int(cols), 400))
+            self._last_rows = max(5, min(int(rows), 200))
             self._reader = threading.Thread(
                 target=self._reader_loop, name=f"ssh-rx-{self.session_id}", daemon=True
             )
@@ -338,6 +354,7 @@ class SshSession:
                 term=self.host.term,
             )
             self._reader.start()
+            self._reconnecting = False
             self.audit.write(
                 "ssh.connect",
                 session=self.session_id,
@@ -447,7 +464,8 @@ class SshSession:
             pass
         try:
             self.transcript.event("connect_failed", code=code)
-            self.transcript.close()
+            if not self._reconnecting:
+                self.transcript.close()
         except Exception:
             pass
         self._broadcast_status()
@@ -479,17 +497,116 @@ class SshSession:
                 sub.put({"type": "rx", "offset": offset, "data": data})
 
     def _on_closed(self, message: str) -> None:
-        if self._stop.is_set() and self.state is SshState.CLOSED:
+        if self._stop.is_set():
             return
-        self.state = SshState.CLOSED
         self.last_error = message or None
         self.last_error_code = DISCONNECTED
-        self.transcript.event("close", reason=message)
+        self.transcript.event("disconnect", reason=message)
         try:
-            self.audit.write("ssh.close", session=self.session_id, host_id=self.host.id, reason=message)
+            self.audit.write("ssh.disconnect", session=self.session_id, host_id=self.host.id, reason=message)
         except Exception:
             pass
+        self._close_transport()
+        if self.auto_reconnect and self._auth_args and not self._stop.is_set():
+            self.state = SshState.RECONNECTING
+            self._broadcast_status()
+            self._start_reconnect()
+            return
+        self.state = SshState.CLOSED
         self.ring.close()
+        try:
+            self.transcript.close()
+        except Exception:
+            pass
+        self._broadcast_status()
+
+    def _close_transport(self) -> None:
+        channel, client, sftp = self._channel, self._client, self._sftp
+        jump = self._jump_client
+        self._channel = None
+        self._client = None
+        self._sftp = None
+        self._jump_client = None
+        self._jump_transport = None
+        if sftp is not None:
+            try:
+                sftp.close()
+            except Exception:
+                pass
+        if channel is not None:
+            try:
+                channel.close()
+            except Exception:
+                pass
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+        if jump is not None:
+            try:
+                jump.close()
+            except Exception:
+                pass
+
+    def _start_reconnect(self) -> None:
+        with self._sub_lock:
+            if self._reconnect_thread is not None and self._reconnect_thread.is_alive():
+                return
+            self._reconnect_thread = threading.Thread(
+                target=self._reconnect_loop, name=f"ssh-reconnect-{self.session_id}", daemon=True
+            )
+            self._reconnect_thread.start()
+
+    def _reconnect_loop(self) -> None:
+        delay = 2.0
+        attempts = 0
+        while not self._stop.is_set() and attempts < 8:
+            attempts += 1
+            if self._stop.wait(delay):
+                return
+            if self._stop.is_set():
+                return
+            self._reconnecting = True
+            self.state = SshState.RECONNECTING
+            self._broadcast_status()
+            try:
+                self.connect(
+                    **self._auth_args,
+                    cols=self._last_cols,
+                    rows=self._last_rows,
+                )
+                self.reconnect_count += 1
+                self._reconnecting = False
+                self.transcript.event("reconnected", attempt=attempts)
+                try:
+                    self.audit.write(
+                        "ssh.reconnected", session=self.session_id, host_id=self.host.id, attempt=attempts
+                    )
+                except Exception:
+                    pass
+                return
+            except ToolFailure as exc:
+                self.last_error = f"reconnect attempt {attempts}: {exc.message}"
+                self.last_error_code = exc.code
+                self._broadcast_status()
+                if exc.code in (SSH_AUTH_FAILED, SSH_HOST_KEY_CHANGED, SSH_HOST_UNKNOWN):
+                    break
+                delay = min(delay * 2, 30.0)
+        if self._stop.is_set():
+            return
+        self._reconnecting = False
+        self.state = SshState.CLOSED
+        self.ring.close()
+        try:
+            self.transcript.event("reconnect_failed", attempts=attempts)
+            self.transcript.close()
+        except Exception:
+            pass
+        try:
+            self.audit.write("ssh.reconnect_failed", session=self.session_id, host_id=self.host.id, attempts=attempts)
+        except Exception:
+            pass
         self._broadcast_status()
 
     # -------------------------------------------------------------- subscribers
@@ -618,6 +735,8 @@ class SshSession:
             return
         cols = max(20, min(int(cols), 400))
         rows = max(5, min(int(rows), 200))
+        self._last_cols = cols
+        self._last_rows = rows
         try:
             self._channel.resize_pty(width=cols, height=rows)
         except Exception as exc:
@@ -766,6 +885,8 @@ class SshSession:
         if self.state is SshState.CLOSED and self._stop.is_set():
             return
         self._stop.set()
+        self._auth_args = {}
+        self._reconnecting = False
         channel, client = self._channel, self._client
         sftp = self._sftp
         self._channel = None
@@ -834,4 +955,6 @@ class SshSession:
             "last_error": self.last_error,
             "last_error_code": self.last_error_code,
             "control_owner": self.control_owner,
+            "auto_reconnect": self.auto_reconnect,
+            "reconnect_count": self.reconnect_count,
         }

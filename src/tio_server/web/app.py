@@ -236,6 +236,7 @@ class SshHostBody(BaseModel):
     key_file: str = ""
     known_hosts: str = ""
     jump_host_id: str = ""
+    auto_reconnect: bool = True
     term: str = "xterm-256color"
     connect_timeout_s: int = Field(default=10, ge=1, le=120)
 

@@ -12,6 +12,8 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 ![Typing in the SSH terminal](screenshots/15-ssh-typed.png)
 
+![Multiple SSH sessions in tabs](screenshots/16-ssh-tabs.png)
+
 ## Security model
 
 - **No secrets on disk.** Host profiles contain host/port/user/auth type/key
@@ -97,6 +99,12 @@ terminal replays the last 64 KiB.
 
 - The SSH session lives on the server; closing the browser tab does **not**
   disconnect it. Reopen from the **Open SSH sessions** table.
+- **Multiple sessions** appear as tabs at the top of the SSH terminal; switching
+  reattaches to that session's server-side ring buffer, so scrollback continues.
+- **Auto reconnect** is enabled per host (`auto_reconnect`, default true). After
+  a transport drop the server retries with exponential backoff (2s→30s, max 8),
+  reports `reconnecting`, then resumes the same ring/cursor. Credentials needed
+  for the retry are kept in process memory only and cleared on disconnect.
 - **Log** downloads a timestamped raw TX/RX transcript (`/api/ssh/sessions/{id}/export`).
 - **Test** performs a TCP + SSH handshake only (no auth, no command), reports the
   SHA256 host-key fingerprint and whether it is `known` / `unknown` / `changed`

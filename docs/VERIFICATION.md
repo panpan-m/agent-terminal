@@ -206,7 +206,14 @@ Phase 2 additions were verified on the same Pi host:
   timestamped RX transcript (`RX` + `Linux raspberry...`);
 - the SSH terminal header now exposes **Log** and **Keys**, and host cards expose
   **Test**; screenshot [14-ssh-terminal](screenshots/14-ssh-terminal.png) was
-  refreshed.
+  refreshed;
+- **multi-session tabs** verified with two sessions to the Pi: both appear in the
+  tab bar and switching reattaches to the server-side ring
+  ([16-ssh-tabs](screenshots/16-ssh-tabs.png));
+- **auto reconnect** verified on the real Pi: stopping sshd and killing the root
+  `sshd-session` moved the session to `reconnecting`; starting sshd again restored
+  `open` with `reconnect_count=1`, and `ssh_exec("uname -r")` returned
+  `6.18.39+rpt-rpi-2712` (exit 0).
 
 ### 8. SSH MCP tools (7 checks)
 
@@ -251,6 +258,7 @@ operator-opened SSH session to the Pi:
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
 | SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 15 tools total |
 | SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 107 |
+| SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |

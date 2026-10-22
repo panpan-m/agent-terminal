@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, Switch } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { ApiFailure, api } from "@/lib/api";
 import type { SshConfigCandidate, SshHost, SshHostInput, SshSessionStatus, SshTestResult } from "@/lib/types";
@@ -31,6 +31,7 @@ const EMPTY: SshHostInput = {
   key_file: "",
   known_hosts: "",
   jump_host_id: "",
+  auto_reconnect: true,
   term: "xterm-256color",
   connect_timeout_s: 10,
 };
@@ -38,6 +39,7 @@ const EMPTY: SshHostInput = {
 const STATE_TONE: Record<string, string> = {
   open: "text-emerald-300",
   connecting: "text-amber-300",
+  reconnecting: "text-amber-300",
   closed: "text-zinc-500",
   error: "text-red-400",
 };
@@ -115,6 +117,7 @@ export function ConnectionsPage({
       key_file: host.key_file,
       known_hosts: host.known_hosts,
       jump_host_id: host.jump_host_id,
+      auto_reconnect: host.auto_reconnect,
       term: host.term,
       connect_timeout_s: host.connect_timeout_s,
     });
@@ -258,6 +261,7 @@ export function ConnectionsPage({
           key_file: candidate.key_file,
           known_hosts: "",
           jump_host_id: "",
+          auto_reconnect: true,
           term: "xterm-256color",
           connect_timeout_s: 10,
         });
@@ -548,6 +552,18 @@ export function ConnectionsPage({
                   }
                 />
               </Field>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+              <div>
+                <p className="text-xs text-zinc-300">Auto reconnect</p>
+                <p className="text-[11px] text-zinc-500">
+                  Keep credentials in memory and retry the SSH transport after a drop.
+                </p>
+              </div>
+              <Switch
+                checked={form.auto_reconnect ?? true}
+                onCheckedChange={(checked) => setForm({ ...form, auto_reconnect: checked })}
+              />
             </div>
             {formError ? <p className="text-xs text-red-400">{formError}</p> : null}
             <div className="flex justify-end gap-2 pt-2">

@@ -212,6 +212,7 @@ export default function App() {
           <SshTerminalPage
             sessionId={route.sessionId}
             onBack={() => navigate("connections")}
+            onSelect={(id) => navigate("ssh", id)}
             notify={notify}
           />
         ) : null}

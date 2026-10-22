@@ -70,10 +70,12 @@ const LIGHT_TERM_THEME: ITheme = {
 export function SshTerminalPage({
   sessionId,
   onBack,
+  onSelect,
   notify,
 }: {
   sessionId: string;
   onBack: () => void;
+  onSelect: (sessionId: string) => void;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -84,6 +86,7 @@ export function SshTerminalPage({
   const cursorRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
   const [status, setStatus] = useState<SshSessionStatus | null>(null);
+  const [openSessions, setOpenSessions] = useState<SshSessionStatus[]>([]);
   const [connected, setConnected] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
   const [dropped, setDropped] = useState(0);
@@ -109,8 +112,9 @@ export function SshTerminalPage({
 
   const refreshStatus = useCallback(async () => {
     try {
-      const next = await api.sshSession(sessionId);
+      const [next, sessions] = await Promise.all([api.sshSession(sessionId), api.sshSessions()]);
       setStatus(next);
+      setOpenSessions(sessions.sessions);
       setLastError(next.last_error);
     } catch (error) {
       const failure = error as { code?: string; message?: string };
@@ -386,11 +390,13 @@ export function SshTerminalPage({
   const stateTone =
     status?.state === "open"
       ? "text-emerald-300"
-      : status?.state === "connecting"
+      : status?.state === "reconnecting" || status?.state === "connecting"
         ? "text-amber-300"
         : status?.state === "error"
           ? "text-red-400"
           : "text-zinc-500";
+  const tabs =
+    openSessions.length > 0 ? openSessions : status ? [status] : [];
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-950">
@@ -453,6 +459,47 @@ export function SshTerminalPage({
           </Button>
         </div>
       </header>
+
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-zinc-800/80 bg-zinc-950/70 px-2 py-1">
+        {tabs.map((item) => (
+          <button
+            key={item.session_id}
+            type="button"
+            onClick={() => {
+              if (item.session_id !== sessionId) onSelect(item.session_id);
+            }}
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-t border-b-2 px-2.5 py-1 text-[11px] transition-colors",
+              item.session_id === sessionId
+                ? "border-emerald-400 bg-zinc-900 text-zinc-100"
+                : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
+            )}
+            title={`${item.username}@${item.host}:${item.port}`}
+          >
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                item.state === "open"
+                  ? "bg-emerald-400"
+                  : item.state === "reconnecting" || item.state === "connecting"
+                    ? "bg-amber-400"
+                    : item.state === "error"
+                      ? "bg-red-400"
+                      : "bg-zinc-600",
+              )}
+            />
+            <span className="max-w-[12rem] truncate">{item.name}</span>
+            {item.state === "reconnecting" ? <span className="text-amber-300">retry</span> : null}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={onBack}
+          className="shrink-0 rounded px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+        >
+          + connection
+        </button>
+      </div>
 
       {searchOpen ? (
         <div className="flex items-center gap-2 border-b border-zinc-800/80 bg-zinc-900/40 px-4 py-1.5">

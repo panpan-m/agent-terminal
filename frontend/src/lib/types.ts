@@ -166,7 +166,7 @@ export interface McpStatus {
 }
 
 export type SshAuth = "password" | "key" | "agent" | "interactive";
-export type SshState = "connecting" | "open" | "closed" | "error";
+export type SshState = "connecting" | "open" | "reconnecting" | "closed" | "error";
 
 export interface SshHost {
   id: string;
@@ -178,6 +178,7 @@ export interface SshHost {
   key_file: string;
   known_hosts: string;
   jump_host_id: string;
+  auto_reconnect: boolean;
   term: string;
   connect_timeout_s: number;
   created_at: string;
@@ -194,6 +195,7 @@ export interface SshHostInput {
   key_file?: string;
   known_hosts?: string;
   jump_host_id?: string;
+  auto_reconnect?: boolean;
   term?: string;
   connect_timeout_s?: number;
 }
@@ -222,6 +224,8 @@ export interface SshSessionStatus {
   last_error: string | null;
   last_error_code: string | null;
   control_owner: string;
+  auto_reconnect?: boolean;
+  reconnect_count?: number;
 }
 
 export interface SshConnectInput {
