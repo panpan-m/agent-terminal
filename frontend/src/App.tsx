@@ -3,11 +3,10 @@ import { Loader2 } from "lucide-react";
 
 import { Shell, type Page } from "@/components/Shell";
 import { LoginPage } from "@/pages/LoginPage";
-import { TerminalPage } from "@/pages/TerminalPage";
+import { TerminalWorkspacePage } from "@/pages/TerminalWorkspacePage";
 import { McpPage } from "@/pages/McpPage";
 import { ConfigPage } from "@/pages/ConfigPage";
 import { SessionsPage } from "@/pages/SessionsPage";
-import { SshTerminalPage } from "@/pages/SshTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { ApiFailure, api } from "@/lib/api";
@@ -193,47 +192,32 @@ export default function App() {
         ) : null}
 
         {route.page === "terminal" ? (
-          <TerminalPage
+          <TerminalWorkspacePage
+            initialKind="serial"
+            sessionId={route.sessionId}
             sessions={sessions}
-            session={selected}
             selectedId={selectedId}
-            onSelect={(id) => navigate("terminal", id)}
             refresh={refresh}
             notify={notify}
+            onSelectSerial={(id) => navigate("terminal", id)}
+            onSelectSsh={(id) => navigate("ssh", id)}
+            onOpenSessions={() => navigate("sessions")}
           />
         ) : null}
 
         {route.page === "mcp" ? <McpPage notify={notify} /> : null}
 
-        {route.page === "ssh" && route.sessionId ? (
-          <SshTerminalPage
-            sessionId={route.sessionId}
-            onBack={() => navigate("connections")}
-            onSelect={(id) => navigate("ssh", id)}
-            notify={notify}
-          />
-        ) : null}
-
-        {route.page === "ssh" && !route.sessionId ? (
-          <SessionsPage
+        {route.page === "ssh" ? (
+          <TerminalWorkspacePage
             initialKind="ssh"
+            sessionId={route.sessionId}
             sessions={sessions}
-            system={system}
+            selectedId={selectedId}
             refresh={refresh}
             notify={notify}
-            onCreate={createSession}
-            onTerminal={(id) => navigate("terminal", id)}
-            onControl={(id, owner) => guard(() => api.setControl(id, owner), `control → ${owner}`)}
-            onOpenSession={(id) => guard(() => api.openSession(id), "session opened")}
-            onCloseSession={(id) => guard(() => api.closeSession(id), "session closed")}
-            onDelete={(id) => guard(() => api.deleteSession(id), "session deleted")}
-            onReset={(id) =>
-              guard(async () => {
-                const result = await api.resetSession(id);
-                notify(`reset applied (${result.steps} steps)`, "success");
-              })
-            }
-            onOpenSsh={(id) => navigate("ssh", id)}
+            onSelectSerial={(id) => navigate("terminal", id)}
+            onSelectSsh={(id) => navigate("ssh", id)}
+            onOpenSessions={() => navigate("connections")}
           />
         ) : null}
 

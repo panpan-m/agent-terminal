@@ -72,11 +72,13 @@ export function SshTerminalPage({
   onBack,
   onSelect,
   notify,
+  showSessionTabs = true,
 }: {
   sessionId: string;
   onBack: () => void;
   onSelect: (sessionId: string) => void;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
+  showSessionTabs?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -460,46 +462,48 @@ export function SshTerminalPage({
         </div>
       </header>
 
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-zinc-800/80 bg-zinc-950/70 px-2 py-1">
-        {tabs.map((item) => (
-          <button
-            key={item.session_id}
-            type="button"
-            onClick={() => {
-              if (item.session_id !== sessionId) onSelect(item.session_id);
-            }}
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-t border-b-2 px-2.5 py-1 text-[11px] transition-colors",
-              item.session_id === sessionId
-                ? "border-emerald-400 bg-zinc-900 text-zinc-100"
-                : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
-            )}
-            title={`${item.username}@${item.host}:${item.port}`}
-          >
-            <span
+      {showSessionTabs ? (
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-zinc-800/80 bg-zinc-950/70 px-2 py-1">
+          {tabs.map((item) => (
+            <button
+              key={item.session_id}
+              type="button"
+              onClick={() => {
+                if (item.session_id !== sessionId) onSelect(item.session_id);
+              }}
               className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                item.state === "open"
-                  ? "bg-emerald-400"
-                  : item.state === "reconnecting" || item.state === "connecting"
-                    ? "bg-amber-400"
-                    : item.state === "error"
-                      ? "bg-red-400"
-                      : "bg-zinc-600",
+                "flex shrink-0 items-center gap-1.5 rounded-t border-b-2 px-2.5 py-1 text-[11px] transition-colors",
+                item.session_id === sessionId
+                  ? "border-emerald-400 bg-zinc-900 text-zinc-100"
+                  : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
               )}
-            />
-            <span className="max-w-[12rem] truncate">{item.name}</span>
-            {item.state === "reconnecting" ? <span className="text-amber-300">retry</span> : null}
+              title={`${item.username}@${item.host}:${item.port}`}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  item.state === "open"
+                    ? "bg-emerald-400"
+                    : item.state === "reconnecting" || item.state === "connecting"
+                      ? "bg-amber-400"
+                      : item.state === "error"
+                        ? "bg-red-400"
+                        : "bg-zinc-600",
+                )}
+              />
+              <span className="max-w-[12rem] truncate">{item.name}</span>
+              {item.state === "reconnecting" ? <span className="text-amber-300">retry</span> : null}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onBack}
+            className="shrink-0 rounded px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+          >
+            + connection
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={onBack}
-          className="shrink-0 rounded px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
-        >
-          + connection
-        </button>
-      </div>
+        </div>
+      ) : null}
 
       {searchOpen ? (
         <div className="flex items-center gap-2 border-b border-zinc-800/80 bg-zinc-900/40 px-4 py-1.5">

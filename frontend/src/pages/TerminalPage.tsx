@@ -79,6 +79,7 @@ export function TerminalPage({
   onSelect,
   refresh,
   notify,
+  showSessionPicker = true,
 }: {
   sessions: SessionStatus[];
   session?: SessionStatus;
@@ -86,6 +87,7 @@ export function TerminalPage({
   onSelect: (id: string) => void;
   refresh: () => Promise<void>;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
+  showSessionPicker?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -292,26 +294,30 @@ export function TerminalPage({
           <SquareTerminal className="h-4 w-4 text-emerald-400" />
           <span className="text-sm font-semibold text-zinc-100">Terminal</span>
         </div>
-        <select
-          value={selectedId ?? ""}
-          onChange={(event) => onSelect(event.target.value)}
-          className="h-8 rounded-md border border-zinc-700 bg-zinc-950/60 px-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
-        >
-          {sessions.length === 0 ? <option value="">no sessions</option> : null}
-          {sessions.map((item) => (
-            <option key={item.session_id} value={item.session_id}>
-              {item.name} · {item.port}
-            </option>
-          ))}
-        </select>
-        {session ? <StateBadge state={session.state} /> : null}
-        {session ? (
-          <span className="font-mono text-[11px] text-zinc-500">
-            {session.config.baudrate} {session.config.bytesize}
-            {session.config.parity[0].toUpperCase()}
-            {session.config.stopbits} ·{" "}
-            {session.control_owner === "agent" ? "agent owns control" : "operator control"}
-          </span>
+        {showSessionPicker ? (
+          <>
+            <select
+              value={selectedId ?? ""}
+              onChange={(event) => onSelect(event.target.value)}
+              className="h-8 rounded-md border border-zinc-700 bg-zinc-950/60 px-2 text-xs text-zinc-200 focus:border-emerald-500/60 focus:outline-none"
+            >
+              {sessions.length === 0 ? <option value="">no sessions</option> : null}
+              {sessions.map((item) => (
+                <option key={item.session_id} value={item.session_id}>
+                  {item.name} · {item.port}
+                </option>
+              ))}
+            </select>
+            {session ? <StateBadge state={session.state} /> : null}
+            {session ? (
+              <span className="font-mono text-[11px] text-zinc-500">
+                {session.config.baudrate} {session.config.bytesize}
+                {session.config.parity[0].toUpperCase()}
+                {session.config.stopbits} ·{" "}
+                {session.control_owner === "agent" ? "agent owns control" : "operator control"}
+              </span>
+            ) : null}
+          </>
         ) : null}
 
         <div className="ml-auto flex items-center gap-1">

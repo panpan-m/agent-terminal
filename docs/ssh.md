@@ -12,7 +12,9 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
 
 ![Typing in the SSH terminal](screenshots/15-ssh-typed.png)
 
-![Multiple SSH sessions in tabs](screenshots/16-ssh-tabs.png)
+![SSH terminal with serial and SSH tabs](screenshots/20-terminal-mixed-ssh.png)
+
+![Serial and SSH sessions in one Terminal workspace](screenshots/19-terminal-mixed-serial.png)
 
 ## Security model
 
@@ -99,8 +101,10 @@ terminal replays the last 64 KiB.
 
 - The SSH session lives on the server; closing the browser tab does **not**
   disconnect it. Reopen from the **Open SSH sessions** table.
-- **Multiple sessions** appear as tabs at the top of the SSH terminal; switching
-  reattaches to that session's server-side ring buffer, so scrollback continues.
+- **Multiple sessions** appear as tabs at the top of the unified Terminal page
+  together with serial sessions; switching reattaches to that session's
+  server-side ring buffer, so scrollback continues. The SSH terminal view keeps
+  its own header (BREAK/Find/Files/Log/Disconnect) but shares the global tab bar.
 - **Auto reconnect** is enabled per host (`auto_reconnect`, default true). After
   a transport drop the server retries with exponential backoff (2s→30s, max 8),
   reports `reconnecting`, then resumes the same ring/cursor. Credentials needed

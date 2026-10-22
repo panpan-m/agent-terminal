@@ -23,11 +23,17 @@ The **MCP** tab shows the endpoint, bearer/token status and tool list, and
 generates a universal copy-paste install prompt for any MCP client (DSH row
 included as an example) ([screenshot](docs/screenshots/08-mcp.png)).
 
+The **Terminal** page is one workspace for both transports: the tab bar lists
+serial sessions and SSH sessions together, and switching reattaches to the
+matching xterm view ([mixed Serial + SSH](docs/screenshots/19-terminal-mixed-serial.png),
+[SSH tab](docs/screenshots/20-terminal-mixed-ssh.png)).
+
 The **SSH** tab manages saved hosts and opens a full xterm.js PTY terminal with
 strict known_hosts, password/private-key/agent auth, jump hosts, SFTP, resize,
 multi-session tabs, transport auto-reconnect, transcript and reattach
 ([details](docs/ssh.md), [sessions](docs/screenshots/18-sessions-ssh.png),
-[terminal](docs/screenshots/14-ssh-terminal.png), [tabs](docs/screenshots/16-ssh-tabs.png)).
+[terminal](docs/screenshots/14-ssh-terminal.png),
+[mixed tabs](docs/screenshots/20-terminal-mixed-ssh.png)).
 SSH sessions stay on the server when the browser tab closes.
 
 ## Why

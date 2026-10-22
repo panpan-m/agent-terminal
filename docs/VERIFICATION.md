@@ -209,7 +209,13 @@ Phase 2 additions were verified on the same Pi host:
   refreshed;
 - **multi-session tabs** verified with two sessions to the Pi: both appear in the
   tab bar and switching reattaches to the server-side ring
-  ([16-ssh-tabs](screenshots/16-ssh-tabs.png));
+  ([16-ssh-tabs](screenshots/16-ssh-tabs.png), superseded by the unified
+  workspace below);
+- **one Terminal workspace** verified with the real COM5 serial session plus two
+  SSH sessions: a single tab bar shows `USB Serial (COM5)` and both `128` SSH
+  tabs, switching keeps the matching xterm view
+  ([19-terminal-mixed-serial](screenshots/19-terminal-mixed-serial.png),
+  [20-terminal-mixed-ssh](screenshots/20-terminal-mixed-ssh.png));
 - **auto reconnect** verified on the real Pi: stopping sshd and killing the root
   `sshd-session` moved the session to `reconnecting`; starting sshd again restored
   `open` with `reconnect_count=1`, and `ssh_exec("uname -r")` returned
@@ -259,6 +265,7 @@ operator-opened SSH session to the Pi:
 | SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 15 tools total |
 | SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 107 |
 | SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
+| Unified Terminal: serial + SSH in one tab bar | ✅ | COM5 + two SSH sessions; screenshots 19/20 |
 | SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
 | SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
