@@ -7,12 +7,14 @@ import { OverviewPage } from "@/pages/OverviewPage";
 import { TerminalPage } from "@/pages/TerminalPage";
 import { McpPage } from "@/pages/McpPage";
 import { ConfigPage } from "@/pages/ConfigPage";
+import { ConnectionsPage } from "@/pages/ConnectionsPage";
+import { SshTerminalPage } from "@/pages/SshTerminalPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { ApiFailure, api } from "@/lib/api";
 import type { SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 
-const PAGES: Page[] = ["sessions", "terminal", "mcp", "config", "logs", "system"];
+const PAGES: Page[] = ["sessions", "terminal", "connections", "ssh", "mcp", "config", "logs", "system"];
 
 interface Toast {
   id: number;
@@ -201,6 +203,22 @@ export default function App() {
         ) : null}
 
         {route.page === "mcp" ? <McpPage notify={notify} /> : null}
+
+        {route.page === "connections" ? (
+          <ConnectionsPage notify={notify} onOpen={(id) => navigate("ssh", id)} />
+        ) : null}
+
+        {route.page === "ssh" && route.sessionId ? (
+          <SshTerminalPage
+            sessionId={route.sessionId}
+            onBack={() => navigate("connections")}
+            notify={notify}
+          />
+        ) : null}
+
+        {route.page === "ssh" && !route.sessionId ? (
+          <ConnectionsPage notify={notify} onOpen={(id) => navigate("ssh", id)} />
+        ) : null}
 
         {route.page === "config" ? (
           <ConfigPage

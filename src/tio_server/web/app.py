@@ -13,7 +13,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
@@ -24,10 +24,11 @@ from pydantic import BaseModel, Field
 
 from ..auth import AuthManager, AdminSession, read_secret_file
 from ..config import Config, ResetStep, SessionConfig
-from ..errors import UNAUTHORIZED, ToolFailure
+from ..errors import CONFLICT, UNAUTHORIZED, ToolFailure
 from ..mcp import build_mcp_server
 from ..observability import setup_logging
 from ..sessions import Session, SessionManager
+from ..ssh import SshManager, SshProfileStore
 from ..transcript import now_iso
 from .ttyd_supervisor import TtydSupervisor
 
@@ -223,10 +224,37 @@ class BreakBody(BaseModel):
     duration_ms: int = Field(default=250, ge=1, le=5000)
 
 
+class SshHostBody(BaseModel):
+    id: str | None = None
+    name: str = ""
+    host: str
+    port: int = Field(default=22, ge=1, le=65535)
+    username: str = ""
+    auth: Literal["password", "key"] = "password"
+    key_file: str = ""
+    known_hosts: str = ""
+    term: str = "xterm-256color"
+    connect_timeout_s: int = Field(default=10, ge=1, le=120)
+
+
+class SshConnectBody(BaseModel):
+    password: str | None = None
+    passphrase: str | None = None
+    cols: int = Field(default=120, ge=20, le=400)
+    rows: int = Field(default=30, ge=5, le=200)
+
+
 # ------------------------------------------------------------------- app factory
 def create_app(config: Config) -> FastAPI:
     logger = setup_logging(config.log_dir, config.server.log_level)
     manager = SessionManager(config, on_config_changed=_save_config)
+    ssh_profiles = SshProfileStore(config.data_dir)
+    ssh_manager = SshManager(
+        config,
+        ssh_profiles,
+        transcripts=manager.transcripts,
+        audit=manager.audit,
+    )
     auth = AuthManager(
         session_secret=config.auth.session_secret,
         admin_username=config.auth.admin_username,
@@ -300,6 +328,7 @@ def create_app(config: Config) -> FastAPI:
         finally:
             reconcile.cancel()
             ttyd.stop_all()
+            ssh_manager.stop()
             manager.stop()
 
     app = FastAPI(
@@ -312,6 +341,8 @@ def create_app(config: Config) -> FastAPI:
     )
     app.state.config = config
     app.state.manager = manager
+    app.state.ssh = ssh_manager
+    app.state.ssh_profiles = ssh_profiles
     app.state.auth = auth
     app.state.ttyd = ttyd
     app.state.logger = logger
@@ -434,6 +465,61 @@ def create_app(config: Config) -> FastAPI:
     @app.get("/api/ports")
     async def list_ports(rec: AdminSession = Depends(admin_session)):
         return {"ports": manager.ports()}
+
+    # ------------------------------------------------------------------ ssh
+    @app.get("/api/ssh/hosts")
+    async def ssh_list_hosts(rec: AdminSession = Depends(admin_session)):
+        return {"hosts": ssh_profiles.list()}
+
+    @app.post("/api/ssh/hosts", status_code=201)
+    async def ssh_create_host(body: SshHostBody, rec: AdminSession = Depends(csrf_guard)):
+        host = ssh_profiles.create(body.model_dump(exclude_none=True))
+        manager.audit.write("ssh.host_created", host_id=host["id"], host=host["host"], username=host["username"])
+        return host
+
+    @app.put("/api/ssh/hosts/{host_id}")
+    async def ssh_update_host(host_id: str, body: SshHostBody, rec: AdminSession = Depends(csrf_guard)):
+        host = ssh_profiles.update(host_id, body.model_dump(exclude_none=True))
+        manager.audit.write("ssh.host_updated", host_id=host_id)
+        return host
+
+    @app.delete("/api/ssh/hosts/{host_id}")
+    async def ssh_delete_host(host_id: str, rec: AdminSession = Depends(csrf_guard)):
+        for session in ssh_manager.list():
+            if session["host_id"] == host_id and session["state"] in ("connecting", "open"):
+                raise ToolFailure(
+                    CONFLICT,
+                    "disconnect the open SSH session before deleting this host",
+                    {"host_id": host_id, "session_id": session["session_id"]},
+                )
+        ssh_profiles.delete(host_id)
+        manager.audit.write("ssh.host_deleted", host_id=host_id)
+        return {"ok": True}
+
+    @app.post("/api/ssh/hosts/{host_id}/connect")
+    async def ssh_connect(host_id: str, body: SshConnectBody, rec: AdminSession = Depends(csrf_guard)):
+        session = await asyncio.to_thread(
+            ssh_manager.connect,
+            host_id,
+            password=body.password,
+            passphrase=body.passphrase,
+            cols=body.cols,
+            rows=body.rows,
+        )
+        return {"session": session.status()}
+
+    @app.get("/api/ssh/sessions")
+    async def ssh_list_sessions(rec: AdminSession = Depends(admin_session)):
+        return {"sessions": ssh_manager.list()}
+
+    @app.get("/api/ssh/sessions/{session_id}")
+    async def ssh_get_session(session_id: str, rec: AdminSession = Depends(admin_session)):
+        return ssh_manager.get(session_id).status()
+
+    @app.post("/api/ssh/sessions/{session_id}/disconnect")
+    async def ssh_disconnect(session_id: str, rec: AdminSession = Depends(csrf_guard)):
+        await asyncio.to_thread(ssh_manager.disconnect, session_id)
+        return {"ok": True}
 
     # ----------------------------------------------------------------- sessions
     @app.get("/api/sessions")
@@ -772,6 +858,92 @@ def create_app(config: Config) -> FastAPI:
                         await send_json({"type": "pong", "id": req_id})
                     else:
                         await send_json({"type": "error", "id": req_id, "error": {"code": "INVALID_ARGUMENT", "message": "unknown message type"}})
+                except ToolFailure as failure:
+                    await send_json({"type": "error", "id": req_id, "error": failure.to_dict()["error"]})
+        except WebSocketDisconnect:
+            pass
+        finally:
+            task.cancel()
+            sess.unsubscribe(sub)
+
+    @app.websocket("/ws/ssh/{session_id}")
+    async def ws_ssh(ws: WebSocket, session_id: str):
+        rec = _ws_auth(ws)
+        if rec is None:
+            await ws.close(code=4401)
+            return
+        try:
+            sess = ssh_manager.get(session_id)
+        except ToolFailure:
+            await ws.close(code=4404)
+            return
+        await ws.accept()
+        replay = int(ws.query_params.get("replay") or config.ttyd.replay_bytes)
+        cursor_raw = ws.query_params.get("cursor")
+        try:
+            cursor = int(cursor_raw) if cursor_raw not in (None, "") else None
+        except ValueError:
+            cursor = None
+        sub = sess.subscribe(
+            replay_bytes=max(0, min(replay, 1024 * 1024)),
+            cursor=max(0, cursor) if cursor is not None else None,
+        )
+        send_lock = asyncio.Lock()
+
+        async def send_json(payload: dict) -> None:
+            async with send_lock:
+                await ws.send_json(payload)
+
+        async def pump() -> None:
+            try:
+                while True:
+                    item = await asyncio.to_thread(sub.get, 0.5)
+                    if item is None:
+                        continue
+                    if item["type"] in ("rx", "replay"):
+                        await send_json(
+                            {
+                                "type": item["type"],
+                                "offset": item["offset"],
+                                "data_b64": base64.b64encode(item["data"]).decode(),
+                            }
+                        )
+                    elif item["type"] == "status":
+                        await send_json({"type": "status", "status": item["status"]})
+                    elif item["type"] == "tx":
+                        await send_json(
+                            {"type": "tx", "data_b64": base64.b64encode(item["data"]).decode(), "source": item["source"]}
+                        )
+                    elif item["type"] == "overflow":
+                        await send_json({"type": "overflow", "dropped": item["dropped"]})
+            except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+                return
+
+        task = asyncio.create_task(pump())
+        await send_json({"type": "hello", "session_id": sess.id, "mode": "ssh", "replay_bytes": replay})
+        try:
+            while True:
+                msg = await ws.receive_json()
+                kind = msg.get("type")
+                req_id = msg.get("id")
+                try:
+                    if kind == "input":
+                        data = base64.b64decode(msg.get("data_b64", ""), validate=True)
+                        written = await asyncio.to_thread(sess.write_bytes, data, source="human")
+                        await send_json({"type": "ack", "id": req_id, "bytes_written": written})
+                    elif kind == "resize":
+                        await asyncio.to_thread(sess.resize, int(msg.get("cols", 120)), int(msg.get("rows", 30)))
+                        await send_json({"type": "ack", "id": req_id})
+                    elif kind == "ping":
+                        await send_json({"type": "pong", "id": req_id})
+                    else:
+                        await send_json(
+                            {
+                                "type": "error",
+                                "id": req_id,
+                                "error": {"code": "INVALID_ARGUMENT", "message": "unknown message type"},
+                            }
+                        )
                 except ToolFailure as failure:
                     await send_json({"type": "error", "id": req_id, "error": failure.to_dict()["error"]})
         except WebSocketDisconnect:

@@ -1,6 +1,6 @@
 # SSH 网页终端 + MCP 工具：设计与实施计划
 
-状态：已确认方向，待实施 Phase 1
+状态：Phase 1 已实现并真机验证；Phase 2/3/4 待做
 日期：2026-10-22
 参考产品：[billchurch/webssh2](https://github.com/billchurch/webssh2)（MIT；Node 22 + Express + socket.io + ssh2 + xterm.js）
 
@@ -248,7 +248,7 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
 ## 11. 分阶段与验收
 
-### Phase 1 — 可用 MVP
+### Phase 1 — 可用 MVP ✅ 已实现（2026-10-22）
 
 - `SshProfileStore` + CRUD API；
 - Paramiko 连接（密码/私钥+passphrase）；
@@ -257,7 +257,17 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 - WS 终端（input/resize/replay/cursor）；
 - Connections 页面 + SSH Terminal 页面；
 - transcript/audit；
-- pytest（profile 校验、fake channel、API）+ 手工真机验证。
+- pytest（profile 校验、fake channel、API）+ 真机验证。
+
+实现证据：
+
+- 真实 Pi 5（OpenSSH 10.0p2）私钥登录、`uname -a`、120×40 resize 后 `stty size` 返回 `40 120`；
+- 未知 host key → `SSH_HOST_UNKNOWN` + SHA256 指纹；
+- 错误 known_hosts → `SSH_HOST_KEY_CHANGED` + expected/actual 指纹；
+- 截图 [13-ssh-connections.png](./screenshots/13-ssh-connections.png)、
+  [14-ssh-terminal.png](./screenshots/14-ssh-terminal.png)；
+- 测试：`tests/unit/test_ssh_profiles.py`、`tests/unit/test_ssh_session.py`、
+  `tests/integration/test_ssh_api.py`。
 
 验收：
 

@@ -164,3 +164,66 @@ export interface McpStatus {
   server: { name: string; version: string };
   tools: McpToolInfo[];
 }
+
+export type SshAuth = "password" | "key";
+export type SshState = "connecting" | "open" | "closed" | "error";
+
+export interface SshHost {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth: SshAuth;
+  key_file: string;
+  known_hosts: string;
+  term: string;
+  connect_timeout_s: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SshHostInput {
+  id?: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth: SshAuth;
+  key_file?: string;
+  known_hosts?: string;
+  term?: string;
+  connect_timeout_s?: number;
+}
+
+export interface SshSessionStatus {
+  session_id: string;
+  host_id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth: SshAuth;
+  state: SshState;
+  host_key_fingerprint: string | null;
+  host_key_type: string | null;
+  remote_version: string | null;
+  cipher: string | null;
+  mac: string | null;
+  rx_bytes: number;
+  tx_bytes: number;
+  rx_start: number;
+  rx_head: number;
+  buffer_bytes: number;
+  opened_at: string | null;
+  last_error: string | null;
+  last_error_code: string | null;
+  control_owner: string;
+}
+
+export interface SshConnectInput {
+  password?: string;
+  passphrase?: string;
+  cols?: number;
+  rows?: number;
+}

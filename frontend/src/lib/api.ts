@@ -4,6 +4,10 @@ import type {
   PortInfo,
   SessionInput,
   SessionStatus,
+  SshConnectInput,
+  SshHost,
+  SshHostInput,
+  SshSessionStatus,
   SystemInfo,
   TranscriptEvent,
 } from "./types";
@@ -139,7 +143,34 @@ export const api = {
   audit: (limit = 200) => request<{ events: Record<string, unknown>[] }>(`/api/audit?limit=${limit}`),
   system: () => request<SystemInfo>("/api/system"),
   mcp: () => request<McpStatus>("/api/mcp"),
+  sshHosts: () => request<{ hosts: SshHost[] }>("/api/ssh/hosts"),
+  createSshHost: (body: SshHostInput) =>
+    request<SshHost>("/api/ssh/hosts", { method: "POST", body: JSON.stringify(body) }),
+  updateSshHost: (id: string, body: SshHostInput) =>
+    request<SshHost>(`/api/ssh/hosts/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteSshHost: (id: string) =>
+    request<{ ok: boolean }>(`/api/ssh/hosts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  sshConnect: (id: string, body: SshConnectInput) =>
+    request<{ session: SshSessionStatus }>(`/api/ssh/hosts/${encodeURIComponent(id)}/connect`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  sshSessions: () => request<{ sessions: SshSessionStatus[] }>("/api/ssh/sessions"),
+  sshSession: (id: string) =>
+    request<SshSessionStatus>(`/api/ssh/sessions/${encodeURIComponent(id)}`),
+  sshDisconnect: (id: string) =>
+    request<{ ok: boolean }>(`/api/ssh/sessions/${encodeURIComponent(id)}/disconnect`, {
+      method: "POST",
+    }),
 };
+
+export function sshConsoleUrl(sessionId: string, replay = 65536): string {
+  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${window.location.host}/ws/ssh/${encodeURIComponent(sessionId)}?replay=${replay}`;
+}
 
 export function consoleUrl(sessionId: string, replay = 65536): string {
   const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";

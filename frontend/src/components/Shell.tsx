@@ -5,6 +5,7 @@ import {
   Moon,
   Plug,
   ScrollText,
+  Server,
   SlidersHorizontal,
   SquareTerminal,
   Sun,
@@ -17,11 +18,12 @@ import { useTheme } from "@/lib/theme";
 import type { SessionStatus, SystemInfo } from "@/lib/types";
 import { StateBadge } from "@/components/ui/badge";
 
-export type Page = "sessions" | "terminal" | "mcp" | "config" | "logs" | "system";
+export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "config" | "logs" | "system";
 
 const NAV: { page: Page; label: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", icon: LayoutDashboard },
   { page: "terminal", label: "Terminal", icon: SquareTerminal },
+  { page: "connections", label: "SSH", icon: Server },
   { page: "mcp", label: "MCP", icon: Plug },
   { page: "config", label: "Configuration", icon: SlidersHorizontal },
   { page: "logs", label: "Logs & audit", icon: ScrollText },
@@ -51,6 +53,7 @@ export function Shell({
 }) {
   const { theme, toggle } = useTheme();
   const themeTitle = theme === "light" ? "switch to dark theme" : "switch to light theme";
+  const activePage: Page = page === "ssh" ? "connections" : page;
   return (
     <div className="flex h-full min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/60 md:flex">
@@ -67,7 +70,7 @@ export function Shell({
         <nav className="mt-2 flex flex-col gap-1 px-3">
           {NAV.map((item) => {
             const Icon = item.icon;
-            const active = page === item.page;
+            const active = activePage === item.page;
             return (
               <button
                 key={item.page}
@@ -183,8 +186,7 @@ export function Shell({
                 onClick={() => onNavigate(item.page)}
                 className={cn(
                   "rounded px-2 py-1 text-[11px]",
-                  page === item.page ? "bg-emerald-500/15 text-emerald-200" : "text-zinc-400",
-                )}
+                  activePage === item.page ? "bg-emerald-500/15 text-emerald-200" : "text-zinc-400",                )}
               >
                 {item.label.split(" ")[0]}
               </button>

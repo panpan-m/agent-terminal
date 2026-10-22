@@ -36,6 +36,10 @@ src/tio_server/
 │   ├── posix.py         termios/ioctl backend (flock, TIOCEXCL, termios2, RS-485)
 │   ├── simulator.py     virtual board + shell (tests, demos)
 │   └── __init__.py      BackendRouter (sim:// → simulator, else native)
+├── ssh/
+│   ├── profiles.py      SSH host profiles (no secrets), atomic JSON
+│   ├── session.py       Paramiko PTY shell, ring/subscribers, resize, exec
+│   └── manager.py       operator-created SSH session lifecycle
 ├── mcp/
 │   ├── schemas.py       Pydantic output models → outputSchema
 │   └── tools.py         eight tools, structured errors, rate limiting
@@ -123,3 +127,10 @@ untrusted device output; no tool executes or feeds RX into a shell.
 * **ADR-015 — MCP errors carry `structuredContent`.** Tools return
   `CallToolResult(isError=true, structuredContent={"error": {...}})` so clients
   get a machine-readable `code` instead of parsing prose.
+* **ADR-016 — SSH is an in-process Paramiko transport, not a webssh2 sidecar.**
+  Keeping SSH in the Python process shares the ring buffer, transcript, audit,
+  auth and packaging with serial. Host profiles store no secrets; passwords and
+  passphrases are per-connection memory only. `RejectPolicy` + known_hosts is
+  strict: unknown or changed keys abort with a SHA256 fingerprint. The MCP
+  surface (Phase 3) will only operate operator-opened sessions, never connect to
+  arbitrary hosts.

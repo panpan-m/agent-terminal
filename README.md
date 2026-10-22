@@ -6,7 +6,7 @@ full terminal in its own tab), and agents use **MCP** tools. Nobody else opens
 the port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **95 tests**, **41/41 end-to-end checks**,
+> Verified on Windows 10: **102 tests**, **41/41 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **25/25 agent-path MCP checks** against a
 > Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing
@@ -23,6 +23,12 @@ The **MCP** tab shows the endpoint, bearer/token status and tool list, and
 generates a universal copy-paste install prompt for any MCP client (DSH row
 included as an example) ([screenshot](docs/screenshots/08-mcp.png)).
 
+The **SSH** tab manages saved hosts and opens a full xterm.js PTY terminal with
+strict known_hosts, password/private-key auth, resize, transcript and reattach
+([details](docs/ssh.md), [connections](docs/screenshots/13-ssh-connections.png),
+[terminal](docs/screenshots/14-ssh-terminal.png)). SSH sessions stay on the
+server when the browser tab closes.
+
 ## Why
 
 Serial ports are exclusive: an agent and a human cannot both `open()` a board.
@@ -36,6 +42,7 @@ arbitrates writes between human and agent, records a transcript, and exposes:
 | Admin API | `/api/*` | what the SPA uses |
 | ttyd bridge WS | `ws://…/ws/bridge/{session}` | raw PTY ⇄ serial bytes for ttyd |
 | Console WS | `ws://…/ws/console/{session}` | live RX for the terminal tab |
+| SSH console WS | `ws://…/ws/ssh/{session}` | PTY input/resize and live RX |
 | Health | `GET /healthz` | liveness only |
 
 All listeners default to `127.0.0.1`.
@@ -86,6 +93,7 @@ Agent   ──HTTP────▶ /mcp ─────────────�
 * [`docs/dsh.md`](./docs/dsh.md) — registering the gateway as a DSH MCP server
 * [`docs/kernel-debug-questions.md`](./docs/kernel-debug-questions.md) — Linux kernel debugging exercises with real Pi 5 evidence
 * [`docs/ssh-plan.md`](./docs/ssh-plan.md) — SSH web terminal and MCP tools: design and phased plan
+* [`docs/ssh.md`](./docs/ssh.md) — SSH terminal: setup, security, API/WS and host-key errors
 * [`docs/kernel-advanced-questions.md`](./docs/kernel-advanced-questions.md) — harder kernel problems (deep ftrace, block I/O, hung task, modules)
 * [`docs/hung-task-report.md`](./docs/hung-task-report.md) — hung task detector experiment with a 130 s D-state kthread
 * [`docs/ftrace-uname-report.md`](./docs/ftrace-uname-report.md) — ftrace `uname` syscall trace, measured on the Pi 5

@@ -4,13 +4,14 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **95 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **102 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
 | **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | `artifacts/live-shell/report.json` |
 | **Terminal tab**: xterm.js in the built SPA, typed on the real Pi | **3 / 3 checks** (CDP) | `docs/screenshots/10-terminal-tab.png` |
+| **SSH web terminal**: Paramiko against the real Pi (OpenSSH 10.0p2) | **7 / 7 checks** | [`ssh.md`](./ssh.md), [screenshot](screenshots/14-ssh-terminal.png) |
 
 The skipped test is the HIL "open a real COM port" case while the live
 debugging server holds `COM5` exclusively (expected; it passed in the earlier run).
@@ -28,7 +29,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 95 passed + 1 skipped)
+### 1. Test suite (`pytest`, 102 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -118,7 +119,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (95 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (102 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -172,6 +173,29 @@ the newest lines including the root prompt. 25/25 checks passed.
 The DSH integration row is documented in [`dsh.md`](./dsh.md); a newly inserted
 plugin row is only composed after the DSH app restarts.
 
+### 7. SSH web terminal (7 checks)
+
+The Paramiko session manager was exercised against the **real Pi 5**
+(OpenSSH 10.0p2) over the LAN, with a dedicated Ed25519 key installed only for
+the test and removed afterwards:
+
+1. key login (`root@192.168.124.23`) opened a PTY, `state=open`;
+2. `uname -a` through the `/ws/ssh` WebSocket returned the 6.18.39 kernel;
+3. a WebSocket resize to 120×40 made the remote `stty size` return `40 120`;
+4. an empty known_hosts produced `SSH_HOST_UNKNOWN` with the SHA256 fingerprint;
+5. a wrong known_hosts entry produced `SSH_HOST_KEY_CHANGED` with both
+   expected and actual fingerprints;
+6. disconnect removed the session (`sessions=[]`);
+7. the built SPA was driven through CDP: typing `uname -r` in the SSH terminal
+   printed `6.18.39+rpt-rpi-2712`.
+
+Status showed `aes128-ctr` / `hmac-sha2-256` and the host-key fingerprint.
+Transcripts (`run/transcripts/ssh-*.jsonl`) and audit events (`ssh.connect`,
+`ssh.disconnect`, `ssh.connect_failed`) were present. Screenshots:
+[13-ssh-connections](screenshots/13-ssh-connections.png),
+[14-ssh-terminal](screenshots/14-ssh-terminal.png),
+[15-ssh-typed](screenshots/15-ssh-typed.png).
+
 ## Plan acceptance criteria (plan §14.3)
 
 | Criterion | Status | Evidence |
@@ -181,13 +205,14 @@ plugin row is only composed after the DSH app restarts.
 | Real device end to end | ✅ | live run 46/46 + agent-path MCP run 25/25 on a Raspberry Pi 5 shell through a Debug Probe |
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
+| SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
 | ttyd raw bytes on Windows and Linux | ✅ Windows, ⏳ Linux | Windows ConPTY verified; Linux termios path implemented, not run here |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |
 | Replug reconnects, cursor continues, gap reported | ✅ | reconnect test, gap unit tests, HIL enumeration |
 | Config changes never leave a half-open state | ✅ | config validation + update/reopen path tests |
 | Unauthenticated/unauthorised/illegal port requests rejected + audited | ✅ | security suite (10 tests) |
 | 24 h soak without leaks/data loss | ⚠️ not run | short connection/soak behaviour only; no 24 h run in this environment |
-| Docs for install/config/MCP/ttyd/troubleshooting | ✅ | `docs/install.md`, `mcp.md`, `ttyd.md`, `architecture.md` |
+| Docs for install/config/MCP/ttyd/troubleshooting | ✅ | `docs/install.md`, `mcp.md`, `ttyd.md`, `ssh.md`, `architecture.md` |
 
 ## Defects found and fixed during verification
 

@@ -22,6 +22,7 @@ dependencies = [
   "mcp>=2.3,<3",
   "tomli-w>=1.0",
   "regex>=2024.5",
+  "paramiko>=3.4",
 ]
 
 [project.optional-dependencies]
