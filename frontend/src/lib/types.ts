@@ -172,6 +172,7 @@ export interface SshHost {
   id: string;
   name: string;
   host: string;
+  description: string;
   port: number;
   username: string;
   auth: SshAuth;
@@ -191,6 +192,7 @@ export interface SshHostInput {
   id?: string;
   name: string;
   host: string;
+  description?: string;
   port: number;
   username: string;
   auth: SshAuth;

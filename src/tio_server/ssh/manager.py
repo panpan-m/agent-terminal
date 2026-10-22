@@ -10,7 +10,7 @@ from typing import Any
 import paramiko
 
 from ..config import Config
-from ..errors import CONFLICT, NOT_FOUND, SSH_UNREACHABLE, ToolFailure
+from ..errors import CONFLICT, NOT_FOUND, PERMISSION_DENIED, SSH_UNREACHABLE, ToolFailure
 from ..transcript import AuditLog, TranscriptRegistry
 from .profiles import SshHost, SshProfileStore
 from .secrets import SshSecretStore
@@ -159,6 +159,36 @@ class SshManager:
         with self._lock:
             sessions = list(self._sessions.values())
         return [session.status() for session in sessions]
+
+    def host_info(self, host_id: str) -> dict[str, Any]:
+        host = self.profiles.get(host_id)
+        with self._lock:
+            sessions = [session for session in self._sessions.values() if session.host.id == host_id]
+        visible = [session for session in sessions if session.agent_visible]
+        if not visible:
+            raise ToolFailure(
+                PERMISSION_DENIED,
+                "this SSH host has no agent-visible session",
+                {"host_id": host_id},
+            )
+        fields = self.secrets.fields(host_id)
+        return {
+            "host_id": host.id,
+            "name": host.name,
+            "description": host.description,
+            "host": host.host,
+            "port": host.port,
+            "username": host.username,
+            "auth": host.auth,
+            "term": host.term,
+            "jump_host_id": host.jump_host_id or None,
+            "auto_reconnect": host.auto_reconnect,
+            "key_file": host.key_file,
+            "known_hosts": host.known_hosts,
+            "has_saved_secrets": bool(fields),
+            "saved_fields": fields,
+            "visible_sessions": [session.session_id for session in visible],
+        }
 
     def disconnect(self, session_id: str) -> None:
         session = self.get(session_id)

@@ -1770,7 +1770,7 @@ ttyd.exe -p 7682 -i 127.0.0.1 -O -W -c operator:change-me -m 2 `
 |---|---|
 | 6 串口层 | `SerialBackend` 协议 + Windows(pyserial) / POSIX(termios, flock, TIOCEXCL, termios2, RS-485 ioctl) / 模拟器(`sim://`) 三个后端 |
 | 7 会话/缓冲 | 绝对 cursor 环形缓冲、gap/lost 报告、每会话 reader 线程、写锁仲裁、断线重连（指数退避）、transcript JSONL 轮转 + 审计日志 |
-| 8 MCP | 15 个工具（8 串口 + 7 SSH：`ssh_sessions/status/read/tail/write/exec/expect`）、Streamable HTTP `/mcp`、Bearer、结构化错误、outputSchema、readOnly/destructive 注解、速率限制、regex 超时 |
+| 8 MCP | 16 个工具（8 串口 + 8 SSH：`ssh_sessions/host_info/status/read/tail/write/exec/expect`）、Streamable HTTP `/mcp`、Bearer、结构化错误、outputSchema、readOnly/destructive 注解、速率限制、regex 超时 |
 | 9 管理端 | React SPA + FastAPI Admin API（登录、CSRF、Origin、端口枚举、会话 CRUD、open/close/reset、权限与控制权、transcript/audit 查询） |
 | 10 浏览器终端 | ttyd 1.7.7 + `tio-web-bridge`（POSIX raw / Windows ConPTY），server 作为 supervisor 管理只读/可写入口 |
 | 8.7 stdio | `tio-mcp`（stdio ↔ HTTP，SSE、会话头、离线报错） |
@@ -1794,7 +1794,7 @@ ttyd.exe -p 7682 -i 127.0.0.1 -O -W -c operator:change-me -m 2 `
 
 | 套件 | 结果 |
 |---|---|
-| pytest（单元/集成/协议/安全/HIL） | 110 passed（1 skipped：真机占用端口时 HIL 跳过） |
+| pytest（单元/集成/协议/安全/HIL） | 111 passed（1 skipped：真机占用端口时 HIL 跳过） |
 | 端到端（真实服务进程 + MCP + 串口收發 + 重连 + 浏览器 UI） | 41/41 |
 | ttyd（真实 Windows ConPTY） | 13/13 —— P0 go/no-go 通过，含会话创建自动拉起/删除自动停止 |
 | PyInstaller 产物（server + tio-mcp） | 11/11 |

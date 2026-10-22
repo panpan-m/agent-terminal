@@ -230,6 +230,7 @@ class SshHostBody(BaseModel):
     id: str | None = None
     name: str = ""
     host: str
+    description: str = ""
     port: int = Field(default=22, ge=1, le=65535)
     username: str = ""
     auth: Literal["password", "key", "agent", "interactive"] = "password"

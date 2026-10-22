@@ -37,6 +37,15 @@ def _clean(value: Any, field_name: str, *, max_len: int = 255) -> str:
     return text
 
 
+def _clean_notes(value: Any) -> str:
+    text = "" if value is None else str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(text) > 4000:
+        raise _bad("description is too long", field="description")
+    if any(ord(ch) < 32 and ch not in "\n\t" for ch in text):
+        raise _bad("description contains control characters", field="description")
+    return text
+
+
 def _slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return (slug or "ssh")[:32].rstrip("-")
@@ -47,6 +56,7 @@ class SshHost:
     id: str
     name: str
     host: str
+    description: str = ""
     port: int = 22
     username: str = ""
     auth: str = "password"
@@ -174,6 +184,7 @@ class SshProfileStore:
                 id=host_id,
                 name=name or host_id,
                 host=_clean(payload.get("host"), "host", max_len=255),
+                description=_clean_notes(payload.get("description")),
                 port=22 if payload.get("port") is None else int(payload["port"]),
                 username=_clean(payload.get("username"), "username", max_len=64),
                 auth=str(payload.get("auth") or "password"),
@@ -200,6 +211,7 @@ class SshProfileStore:
             for key in (
                 "name",
                 "host",
+                "description",
                 "port",
                 "username",
                 "auth",
@@ -216,6 +228,7 @@ class SshProfileStore:
                 id=host_id,
                 name=_clean(merged["name"], "name", max_len=80) or host_id,
                 host=_clean(merged["host"], "host", max_len=255),
+                description=_clean_notes(merged.get("description")),
                 port=int(merged["port"]),
                 username=_clean(merged["username"], "username", max_len=64),
                 auth=str(merged["auth"]),

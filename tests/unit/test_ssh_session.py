@@ -103,6 +103,7 @@ def ssh_bundle(tmp_path):
             "name": "Test host",
             "host": "127.0.0.1",
             "username": "root",
+            "description": "data in /srv, logs in /var/log",
             "auth": "key",
             "key_file": str(tmp_path / "id"),
         }
@@ -172,3 +173,27 @@ def test_agent_auth_uses_the_ssh_agent(ssh_bundle):
     assert client.connect_kwargs["allow_agent"] is True
     assert "key_filename" not in client.connect_kwargs
     session.close()
+
+
+class _HostInfoSession:
+    def __init__(self, host, session_id, visible):
+        self.host = host
+        self.session_id = session_id
+        self.agent_visible = visible
+
+
+def test_host_info_requires_agent_visible_session(ssh_bundle):
+    manager, profiles, _transcripts, _audit = ssh_bundle
+    host = profiles.get("test")
+    session = _HostInfoSession(host, "ssh-info", False)
+    manager._sessions["ssh-info"] = session
+
+    with pytest.raises(Exception) as exc:
+        manager.host_info("test")
+    assert getattr(exc.value, "code", None) == "PERMISSION_DENIED"
+
+    session.agent_visible = True
+    info = manager.host_info("test")
+    assert info["description"] == "data in /srv, logs in /var/log"
+    assert info["visible_sessions"] == ["ssh-info"]
+    assert info["has_saved_secrets"] is False

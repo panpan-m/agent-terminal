@@ -21,7 +21,7 @@ server keeps transport sessions; the *serial* session is always selected by the
 
 ## Tools
 
-Fifteen tools: eight for serial sessions and seven for SSH sessions. The SSH
+Sixteen tools: eight for serial sessions and eight for SSH sessions. The SSH
 tools never connect or disconnect — they only operate sessions the operator has
 already opened in the UI.
 
@@ -36,6 +36,7 @@ already opened in the UI.
 | `serial_command` | no | write one line and collect the response (expect, or a POSIX end marker with exit code) |
 | `serial_expect` | yes | wait for a pattern without writing |
 | `ssh_sessions` | yes | list SSH sessions the operator has already opened |
+| `ssh_host_info` | yes | host metadata + free-form description/path notes (requires an agent-visible session) |
 | `ssh_status` | yes | host/user/state, host-key fingerprint, cipher/MAC, counters |
 | `ssh_read` | yes | buffered SSH output by cursor or tail |
 | `ssh_tail` | yes | newest N lines from an SSH session |

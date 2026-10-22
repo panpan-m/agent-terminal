@@ -55,7 +55,7 @@ place, but a newly inserted plugin row only appears after the app restarts. So:
 3. start a session — the tool list now contains
    `mcp__tio__serial_sessions`, `serial_status`, `serial_read`, `serial_tail`,
    `serial_write`, `serial_break`, `serial_command`, `serial_expect`,
-   `ssh_sessions`, `ssh_status`, `ssh_read`, `ssh_tail`, `ssh_write`,
+   `ssh_sessions`, `ssh_host_info`, `ssh_status`, `ssh_read`, `ssh_tail`, `ssh_write`,
    `ssh_exec`, `ssh_expect`.
 
 The same behaviour was verified here: the row was added at 16:31 and the running
@@ -74,6 +74,7 @@ app did not spawn the shim; restarting is the supported path.
 | `mcp__tio__serial_break` | framing BREAK (U-Boot/failsafe), needs write control |
 | `mcp__tio__serial_expect` | wait for a pattern without writing |
 | `mcp__tio__ssh_sessions` | list operator-opened SSH sessions |
+| `mcp__tio__ssh_host_info` | host description/path notes, auth/jump/keys metadata |
 | `mcp__tio__ssh_status` | SSH state, host-key fingerprint, cipher/MAC, counters |
 | `mcp__tio__ssh_read` | cursor/tail reads from an SSH session |
 | `mcp__tio__ssh_tail` | newest N lines from an SSH session |

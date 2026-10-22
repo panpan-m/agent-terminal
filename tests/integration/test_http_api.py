@@ -161,6 +161,7 @@ def test_mcp_status_endpoint(app_bundle):
         "serial_command",
         "serial_expect",
         "ssh_sessions",
+        "ssh_host_info",
         "ssh_status",
         "ssh_read",
         "ssh_tail",

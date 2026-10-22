@@ -28,6 +28,7 @@ def test_ssh_host_crud_and_auth_gate(tmp_path):
             "name": "Raspberry Pi",
             "host": "192.168.124.23",
             "username": "root",
+            "description": "data: /srv\nlogs: /var/log",
             "auth": "password",
             "known_hosts": str(tmp_path / "known_hosts"),
         }
@@ -35,6 +36,7 @@ def test_ssh_host_crud_and_auth_gate(tmp_path):
         assert created.status_code == 201, created.text
         host = created.json()
         assert host["id"] == "raspberry-pi"
+        assert host["description"] == "data: /srv\nlogs: /var/log"
         assert "password" not in host
 
         listed = client.get("/api/ssh/hosts").json()["hosts"]

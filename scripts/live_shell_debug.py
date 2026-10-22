@@ -80,7 +80,7 @@ async def main() -> int:
                 )
                 tools = await session.list_tools()
                 check(
-                    "fifteen tools advertised",
+                    "sixteen tools advertised",
                     [tool.name for tool in tools.tools]
                     == [
                         "serial_sessions",
@@ -92,6 +92,7 @@ async def main() -> int:
                         "serial_command",
                         "serial_expect",
                         "ssh_sessions",
+                        "ssh_host_info",
                         "ssh_status",
                         "ssh_read",
                         "ssh_tail",

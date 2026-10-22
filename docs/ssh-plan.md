@@ -294,7 +294,7 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
 ### Phase 3 — MCP ✅ 已实现（2026-10-22）
 
-- `ssh_sessions/status/exec/read/tail/write/expect`；
+- `ssh_sessions/host_info/status/exec/read/tail/write/expect`；
 - 权限与审计；
 - DSH 安装提示/工具列表更新；
 - 只操作 operator 已打开**且标记 Agent visible**的会话；未标记的会话不出现在
@@ -303,7 +303,7 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 实现证据：真实 Pi 会话上通过 MCP 调用 `ssh_sessions`、`ssh_status`、
 `ssh_exec("uname -r")`（exit 0）、`ssh_read`、`ssh_tail`、`ssh_write` +
 `ssh_expect`（匹配 `mcp-ssh-ok`），随后断开并删除临时 profile。MCP 工具总数为
-**15**（8 串口 + 7 SSH）；没有 `ssh_connect`/`ssh_disconnect`。
+**16**（8 串口 + 8 SSH）；没有 `ssh_connect`/`ssh_disconnect`。
 
 ### Phase 4 — 进阶（大部分完成）
 

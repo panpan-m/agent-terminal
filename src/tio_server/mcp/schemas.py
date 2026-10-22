@@ -197,3 +197,24 @@ class SshExecResult(BaseModel):
     stderr: str
     exit_code: int
     elapsed_ms: int
+
+
+class SshHostInfoResult(BaseModel):
+    host_id: str
+    name: str
+    description: str = ""
+    host: str
+    port: int
+    username: str
+    auth: str
+    term: str
+    jump_host_id: str | None = None
+    auto_reconnect: bool = True
+    key_file: str = ""
+    known_hosts: str = ""
+    has_saved_secrets: bool = False
+    saved_fields: list[str] = Field(default_factory=list)
+    visible_sessions: list[str] = Field(
+        default_factory=list,
+        description="Agent-visible sessions currently open for this host.",
+    )

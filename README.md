@@ -6,7 +6,7 @@ full terminal in its own tab), and agents use **MCP** tools. Nobody else opens
 the port.
 
 > Implementation of the design in [`tio-server-plan.md`](./tio-server-plan.md).
-> Verified on Windows 10: **110 tests**, **41/41 end-to-end checks**,
+> Verified on Windows 10: **111 tests**, **41/41 end-to-end checks**,
 > **13/13 real ttyd checks**, **11/11 packaged-binary checks**,
 > **46/46 live-hardware checks** and **25/25 agent-path MCP checks** against a
 > Raspberry Pi 5 shell, plus an xterm.js **Terminal** tab verified by typing
@@ -46,7 +46,7 @@ arbitrates writes between human and agent, records a transcript, and exposes:
 
 | Surface | Endpoint | Purpose |
 |---|---|---|
-| MCP (Streamable HTTP) | `POST /mcp` | 15 tools for agents |
+| MCP (Streamable HTTP) | `POST /mcp` | 16 tools for agents |
 | Admin UI (SPA) | `GET /` | sessions, terminal, config, permissions, logs |
 | Admin API | `/api/*` | what the SPA uses |
 | ttyd bridge WS | `ws://…/ws/bridge/{session}` | raw PTY ⇄ serial bytes for ttyd |

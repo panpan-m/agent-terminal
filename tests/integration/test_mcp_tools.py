@@ -41,6 +41,7 @@ async def test_tools_list_contract(mcp_setup):
         "serial_command",
         "serial_expect",
         "ssh_sessions",
+        "ssh_host_info",
         "ssh_status",
         "ssh_read",
         "ssh_tail",
@@ -129,6 +130,25 @@ class _FakeSshManager:
     def get(self, session_id):
         return self.sessions[session_id]
 
+    def host_info(self, host_id):
+        return {
+            "host_id": host_id,
+            "name": "Host",
+            "description": "data: /srv\nlogs: /var/log",
+            "host": "127.0.0.1",
+            "port": 22,
+            "username": "root",
+            "auth": "key",
+            "term": "xterm-256color",
+            "jump_host_id": None,
+            "auto_reconnect": True,
+            "key_file": "C:/keys/id",
+            "known_hosts": "C:/keys/known_hosts",
+            "has_saved_secrets": False,
+            "saved_fields": [],
+            "visible_sessions": ["visible"],
+        }
+
 
 async def test_ssh_agent_only_sees_marked_sessions(mcp_setup):
     mgr, _, cfg = mcp_setup
@@ -149,6 +169,13 @@ async def test_ssh_agent_only_sees_marked_sessions(mcp_setup):
     res = await _call(mcp, "ssh_status", {"session_id": "visible"})
     assert res.is_error is False
     assert _structured(res)["agent_visible"] is True
+
+    res = await _call(mcp, "ssh_host_info", {"host_id": "host"})
+    assert res.is_error is False
+    info = _structured(res)
+    assert info["description"] == "data: /srv\nlogs: /var/log"
+    assert info["visible_sessions"] == ["visible"]
+    assert "key_file" in info and "password" not in info
 
 
 async def test_sessions_and_status(mcp_setup):

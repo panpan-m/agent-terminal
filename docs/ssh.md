@@ -54,6 +54,10 @@ import. Keyboard-interactive/2FA is implemented but not yet tested against a rea
    the absolute path to the file used for strict verification.
 5. **Connect**; the terminal opens at `#/ssh/<session-id>`.
 
+The optional **Description / path notes** field is read-only metadata for
+`ssh_host_info` (for example `data: /srv/app`, `logs: /var/log/app`). It is only
+returned while the host has an agent-visible session.
+
 Password auth works the same way; the password prompt appears per connection.
 
 ### Remember credentials
@@ -155,6 +159,7 @@ The same operator-opened sessions are exposed over MCP (Phase 3):
 | Tool | Use |
 |---|---|
 | `ssh_sessions` | list open SSH sessions; empty means ask the operator |
+| `ssh_host_info` | host metadata + `description`/path notes (requires an agent-visible session) |
 | `ssh_status` | state, host-key fingerprint, cipher/MAC, counters |
 | `ssh_read` / `ssh_tail` | cursor/tail reads, ANSI-stripped lines |
 | `ssh_write` | raw input to the interactive shell |

@@ -101,7 +101,7 @@ export function SystemPage({
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`}
             </div>
             <p className="text-[11px] text-zinc-500">
-              Tools: serial_sessions · serial_status · serial_read · serial_tail · serial_write · serial_break · serial_command · serial_expect · ssh_sessions · ssh_status · ssh_read · ssh_tail · ssh_write · ssh_exec · ssh_expect
+              Tools: serial_sessions · serial_status · serial_read · serial_tail · serial_write · serial_break · serial_command · serial_expect · ssh_sessions · ssh_host_info · ssh_status · ssh_read · ssh_tail · ssh_write · ssh_exec · ssh_expect
             </p>
           </CardContent>
         </Card>

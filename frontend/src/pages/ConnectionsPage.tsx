@@ -27,6 +27,7 @@ import { formatBytes, formatTime } from "@/lib/utils";
 const EMPTY: SshHostInput = {
   name: "",
   host: "",
+  description: "",
   port: 22,
   username: "root",
   auth: "password",
@@ -115,6 +116,7 @@ export function ConnectionsPage({
       id: host.id,
       name: host.name,
       host: host.host,
+      description: host.description,
       port: host.port,
       username: host.username,
       auth: host.auth,
@@ -369,6 +371,9 @@ export function ConnectionsPage({
                   <p className="mt-1 truncate font-mono text-[11px] text-zinc-500">
                     {host.username}@{host.host}:{host.port}
                   </p>
+                  {host.description ? (
+                    <p className="mt-1 line-clamp-2 text-[10px] text-zinc-500">{host.description}</p>
+                  ) : null}
                 </div>
                 <Badge tone={host.auth === "key" ? "accent" : "default"}>
                   {host.auth === "key" ? <KeyRound className="mr-1 h-3 w-3" /> : <ShieldCheck className="mr-1 h-3 w-3" />}
@@ -581,6 +586,19 @@ export function ConnectionsPage({
                 </Select>
               </Field>
             </div>
+            <Field
+              label="Description / path notes"
+              hint="Read-only metadata for agents via ssh_host_info, e.g. data in /srv, logs in /var/log"
+            >
+              <textarea
+                value={form.description ?? ""}
+                onChange={(event) => setForm({ ...form, description: event.target.value })}
+                rows={3}
+                maxLength={4000}
+                className="w-full rounded-md border border-zinc-700 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-emerald-500/60 focus:outline-none"
+                placeholder={"data: /srv/app\nlogs: /var/log/app\nbackups: /mnt/backup"}
+              />
+            </Field>
             {form.auth === "key" ? (
               <Field label="Private key file" hint="path on the tio-server machine; never uploaded">
                 <Input

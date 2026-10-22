@@ -36,6 +36,7 @@ from .schemas import (
     SessionsResult,
     SessionSummary,
     SshExecResult,
+    SshHostInfoResult,
     SshSessionsResult,
     SshSessionSummary,
     SshStatusResult,
@@ -590,6 +591,25 @@ def build_mcp_server(
                 )
             )
         return SshSessionsResult(sessions=out)
+
+    @mcp.tool(
+        name="ssh_host_info",
+        description=(
+            "Read-only metadata for an SSH host: name, free-form description/path notes, "
+            "host/port/user, auth type, jump host, known_hosts/key paths and saved-credential "
+            "flags. Requires at least one agent-visible open session for that host; otherwise "
+            "returns PERMISSION_DENIED. Never returns password or key contents."
+        ),
+        annotations=READ_ONLY,
+    )
+    @_guard
+    async def ssh_host_info(
+        host_id: Annotated[str, "Saved SSH host id (for example 'pi')."],
+    ) -> SshHostInfoResult:
+        manager.limiter.check()
+        if ssh_manager is None:
+            raise ToolFailure(NO_SESSION, "SSH support is not configured")
+        return SshHostInfoResult(**ssh_manager.host_info(host_id))
 
     @mcp.tool(
         name="ssh_status",

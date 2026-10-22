@@ -4,7 +4,7 @@
 
 | Suite | Result | Artifact |
 |---|---|---|
-| `pytest` (unit + integration + protocol + security + HIL) | **110 passed, 1 skipped** | `pytest -q` |
+| `pytest` (unit + integration + protocol + security + HIL) | **111 passed, 1 skipped** | `pytest -q` |
 | End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **41 / 41 checks** | `artifacts/e2e/report.json` |
 | ttyd browser terminal (real ConPTY, real ttyd 1.7.7) | **13 / 13 checks** | `artifacts/ttyd/report.json` |
 | Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
@@ -30,7 +30,7 @@ debugging server holds `COM5` exclusively (expected; it passed in the earlier ru
 
 ## What was executed
 
-### 1. Test suite (`pytest`, 110 passed + 1 skipped)
+### 1. Test suite (`pytest`, 111 passed + 1 skipped)
 
 * **Unit** — ring buffer cursors/gap/wrap/timestamps, config validation/round-trip/atomic
   save, Argon2 + cookie + CSRF + origin + login limiter, transcript rotation
@@ -120,7 +120,7 @@ rendered terminal rows back.
 * the device output comes back over `/ws/console` and is rendered by xterm:
   `uname -r` → `6.18.39+rpt-rpi-2712`.
 
-The surrounding API behaviour is covered by pytest (110 tests): `serial_break`
+The surrounding API behaviour is covered by pytest (111 tests): `serial_break`
 (control gate + duration), raw log export (`txt`/`hex`, timestamps), and
 cursor-resumed console subscriptions (no replay of old bytes, catch-up only
 after the cursor). The build was also checked with the **Keys** panel open
@@ -224,12 +224,12 @@ Phase 2 additions were verified on the same Pi host:
   `open` with `reconnect_count=1`, and `ssh_exec("uname -r")` returned
   `6.18.39+rpt-rpi-2712` (exit 0).
 
-### 8. SSH MCP tools (7 checks)
+### 8. SSH MCP tools (8 checks)
 
 Through the live `/mcp` endpoint (Bearer + `Mcp-Session-Id`), with an
 operator-opened SSH session to the Pi:
 
-1. `tools/list` returned **15 tools** (8 serial + 7 SSH) with schemas/annotations;
+1. `tools/list` returned **16 tools** (8 serial + 8 SSH) with schemas/annotations;
 2. `ssh_sessions` listed the open session and its host-key fingerprint;
 3. `ssh_status` reported `state=open`, `aes128-ctr`, SHA256 fingerprint;
 4. `ssh_exec("uname -r")` returned `exit_code=0`, stdout `6.18.39+rpt-rpi-2712`;
@@ -237,7 +237,10 @@ operator-opened SSH session to the Pi:
 6. `ssh_write("echo mcp-ssh-ok")` + `ssh_expect("mcp-ssh-ok")` matched;
 7. disconnect/delete removed the session/profile; the temporary key was removed
    from the Pi and the artifacts deleted. No `ssh_connect`/`ssh_disconnect`
-   tools exist (operator-opened sessions only).
+   tools exist (operator-opened sessions only);
+8. `ssh_host_info` contract is covered by a unit test with a fake manager
+   (description/path notes, visible_sessions, no password); it is gated on an
+   agent-visible session just like the other SSH tools.
 
 ### 9. SSH Phase 4 (SFTP, jump host, agent, config import)
 
@@ -290,7 +293,7 @@ With one SSH session to the Pi (default `agent_visible=false`):
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
 | Browser ttyd sees the same RX; operator can type after authorisation | ✅ | ttyd 13/13 (banner, `help`, Ctrl-C, auth, auto-start/stop) |
 | SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
-| SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 15 tools total |
+| SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 16 tools total; host_info contract tested |
 | SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; pytest 110 |
 | SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
 | Unified Terminal: serial + SSH in one tab bar | ✅ | COM5 + two SSH sessions; screenshots 19/20; per-tab × disconnect verified |
