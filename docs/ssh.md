@@ -182,12 +182,16 @@ the same SSH connection without touching the interactive shell.
 
 ## Files (SFTP)
 
-The **Files** button in the SSH terminal opens a directory browser over the same
-SSH transport:
+The right-hand panel of the SSH terminal (folder icon in the toolbar toggles it;
+the ℹ tab next to it shows connection details) is a remote file browser over
+the same SSH transport:
 
-- list directories, navigate up/enter, show size/mode;
-- **Upload** (max 32 MiB) and **Download**;
+- list directories, navigate up/enter, show size/mode, path bar with reload;
+- **drag & drop upload** — drop files or whole folders onto the panel; folders
+  are walked recursively (mkdir + upload per file), with an n/m progress line;
+- **Upload** button (max 32 MiB per file) and **Download**;
 - **New folder**, **Rename**, **Delete** (empty directories only);
+- the panel state (files / details / hidden) persists per browser;
 - operations are audited as `ssh.sftp_*` and run over SFTP, not the PTY.
 
 ## Jump host, 2FA, agent, config import

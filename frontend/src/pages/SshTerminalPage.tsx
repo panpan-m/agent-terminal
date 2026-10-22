@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
-  ChevronUp,
   Download,
   Eye,
   EyeOff,
-  File as FileIcon,
   FolderOpen,
-  FolderPlus,
+  Info,
   Keyboard,
   Loader2,
-  Pencil,
   RefreshCw,
   Search,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -22,8 +18,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { SshFilesPanel } from "@/components/SshFilesPanel";
 import { TerminalSearchBar } from "@/components/TerminalSearchBar";
 import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
 import { api, sshConsoleUrl } from "@/lib/api";
@@ -37,7 +32,7 @@ import {
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
 import { b64ToBytes, bytesToB64, cn, formatBytes, isModalOpen } from "@/lib/utils";
-import type { SshFileList, SshSessionStatus } from "@/lib/types";
+import type { SshSessionStatus } from "@/lib/types";
 
 export function SshTerminalPage({
   sessionId,
@@ -69,13 +64,10 @@ export function SshTerminalPage({
   const [keysOpen, setKeysOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [generation, setGeneration] = useState(0);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [filesPath, setFilesPath] = useState("");
-  const [filesDraft, setFilesDraft] = useState("");
-  const [files, setFiles] = useState<SshFileList | null>(null);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [filesError, setFilesError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  /** Right-hand panel: SFTP files (default), connection details, or hidden. */
+  const [panel, setPanel] = useState<"files" | "details" | null>(() =>
+    window.localStorage.getItem("tio-ssh-panel") === "none" ? null : "files",
+  );
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentPulse, setAgentPulse] = useState<{
     action: string;
@@ -88,7 +80,6 @@ export function SshTerminalPage({
     elapsed_ms?: number | null;
   } | null>(null);
   const agentTimerRef = useRef<number | undefined>(undefined);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { theme } = useTheme();
   const themeRef = useRef(theme);
   themeRef.current = theme;
@@ -113,94 +104,6 @@ export function SshTerminalPage({
     const timer = window.setInterval(() => void refreshStatus(), 2500);
     return () => window.clearInterval(timer);
   }, [refreshStatus]);
-
-  const joinPath = (base: string, name: string) => (base === "/" ? `/${name}` : `${base.replace(/\/+$/, "")}/${name}`);
-  const parentPath = (path: string) => {
-    const trimmed = path.replace(/\/+$/, "");
-    if (!trimmed || trimmed === "/") return "/";
-    const parts = trimmed.split("/");
-    parts.pop();
-    return parts.join("/") || "/";
-  };
-
-  const loadFiles = useCallback(
-    async (path: string) => {
-      setFilesLoading(true);
-      setFilesError(null);
-      try {
-        const result = await api.sshSftpList(sessionId, path);
-        setFiles(result);
-        setFilesPath(result.path);
-        setFilesDraft(result.path);
-      } catch (error) {
-        setFilesError(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`);
-      } finally {
-        setFilesLoading(false);
-      }
-    },
-    [sessionId],
-  );
-
-  useEffect(() => {
-    if (filesOpen && filesPath) void loadFiles(filesPath);
-  }, [filesOpen, filesPath, loadFiles]);
-
-  const openFiles = () => {
-    const initial =
-      status?.username === "root" ? "/root" : `/home/${status?.username || "root"}`;
-    setFilesPath(initial);
-    setFilesDraft(initial);
-    setFiles(null);
-    setFilesOpen(true);
-  };
-
-  const uploadFile = async (file: File) => {
-    if (!filesPath) return;
-    setUploading(true);
-    setFilesError(null);
-    try {
-      await api.sshSftpUpload(sessionId, joinPath(filesPath, file.name), file);
-      notify(`uploaded ${file.name}`, "success");
-      await loadFiles(filesPath);
-    } catch (error) {
-      setFilesError(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const mkdir = async () => {
-    const name = window.prompt("New directory name");
-    if (!name) return;
-    try {
-      await api.sshSftpMkdir(sessionId, joinPath(filesPath, name));
-      await loadFiles(filesPath);
-    } catch (error) {
-      setFilesError(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`);
-    }
-  };
-
-  const removeEntry = async (path: string, name: string) => {
-    if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
-    try {
-      await api.sshSftpDelete(sessionId, path);
-      await loadFiles(filesPath);
-    } catch (error) {
-      setFilesError(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`);
-    }
-  };
-
-  const renameEntry = async (path: string, name: string) => {
-    const next = window.prompt("New name", name);
-    if (!next || next === name) return;
-    try {
-      await api.sshSftpRename(sessionId, path, joinPath(parentPath(path), next));
-      await loadFiles(filesPath);
-    } catch (error) {
-      setFilesError(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`);
-    }
-  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -279,6 +182,10 @@ export function SshTerminalPage({
       termRef.current.options.theme = terminalTheme(theme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem("tio-ssh-panel", panel ?? "none");
+  }, [panel]);
 
   useEffect(() => {
     return () => {
@@ -475,7 +382,13 @@ export function SshTerminalPage({
             )}
             {status?.agent_visible ? "Agent" : "Private"}
           </Button>
-          <Button size="sm" variant="ghost" onClick={openFiles} title="SFTP files (browse, upload, download)" aria-label="Files">
+          <Button
+            size="sm"
+            variant={panel === "files" ? "outline" : "ghost"}
+            onClick={() => setPanel((value) => (value === "files" ? null : "files"))}
+            title="toggle the SFTP file panel"
+            aria-label="Files"
+          >
             <FolderOpen className="h-3.5 w-3.5" />
           </Button>
           <Button size="sm" variant="ghost" asChild title="download raw bytes with timestamps">
@@ -642,7 +555,35 @@ export function SshTerminalPage({
           ) : null}
         </div>
 
-        <aside className="hidden w-80 shrink-0 flex-col gap-2 overflow-y-auto border-l border-zinc-800/80 bg-zinc-950/40 p-3 md:flex">
+        {panel ? (
+        <aside className="hidden w-80 shrink-0 flex-col border-l border-zinc-800/80 bg-zinc-950/40 md:flex">
+          <div className="flex items-center gap-1 border-b border-zinc-800/80 px-2 py-1.5">
+            <Button
+              size="sm"
+              variant={panel === "files" ? "outline" : "ghost"}
+              title="remote files (drag & drop to upload)"
+              aria-label="Files panel"
+              onClick={() => setPanel("files")}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant={panel === "details" ? "outline" : "ghost"}
+              title="connection details"
+              aria-label="Details panel"
+              onClick={() => setPanel("details")}
+            >
+              <Info className="h-3.5 w-3.5" />
+            </Button>
+            <span className="ml-auto font-mono text-[10px] text-zinc-600">{panel}</span>
+          </div>
+          {panel === "files" ? (
+            <div className="min-h-0 flex-1">
+              <SshFilesPanel sessionId={sessionId} username={status?.username} notify={notify} />
+            </div>
+          ) : (
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
           <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/40 px-3 py-2">
             <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">host key</p>
             <p className="mt-1 break-all font-mono text-[10px] text-zinc-300">
@@ -714,7 +655,10 @@ export function SshTerminalPage({
           <p className="px-1 text-[10px] text-zinc-500" title="The SSH session lives on the server; closing this tab does not disconnect it.">
             session lives on the server · resize follows the window
           </p>
+          </div>
+          )}
         </aside>
+        ) : null}
       </div>
 
       <footer className="flex items-center gap-3 border-t border-zinc-800/80 px-4 py-1.5 text-[11px] text-zinc-500">
@@ -728,143 +672,6 @@ export function SshTerminalPage({
         {lastError ? <span className="ml-auto max-w-[50%] truncate text-red-400">{lastError}</span> : null}
       </footer>
 
-      <Dialog open={filesOpen} onOpenChange={setFilesOpen}>
-        <DialogContent
-          className="w-[min(820px,94vw)]"
-          title="SFTP files"
-          description="Directory browsing, upload and download over the same SSH transport."
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                const parent = parentPath(filesPath);
-                setFilesDraft(parent);
-                void loadFiles(parent);
-              }}
-            >
-              <ChevronUp className="h-3.5 w-3.5" /> Up
-            </Button>
-            <Input
-              value={filesDraft}
-              onChange={(event) => setFilesDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void loadFiles(filesDraft);
-              }}
-              className="h-8 min-w-0 flex-1 font-mono text-xs"
-            />
-            <Button size="sm" variant="ghost" onClick={() => void loadFiles(filesDraft)}>
-              <RefreshCw className="h-3.5 w-3.5" /> Go
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => void mkdir()}>
-              <FolderPlus className="h-3.5 w-3.5" /> New folder
-            </Button>
-            <Button size="sm" variant="secondary" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              Upload
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void uploadFile(file);
-              }}
-            />
-          </div>
-          {filesError ? <p className="mt-2 text-xs text-red-400">{filesError}</p> : null}
-          <div className="mt-3 max-h-[55vh] overflow-y-auto rounded-lg border border-zinc-800">
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 bg-zinc-900 text-[10px] uppercase tracking-widest text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Size</th>
-                  <th className="px-3 py-2">Mode</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/70">
-                {filesLoading ? (
-                  <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-zinc-500">
-                      <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                    </td>
-                  </tr>
-                ) : null}
-                {!filesLoading && files && files.entries.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-zinc-500">
-                      empty directory
-                    </td>
-                  </tr>
-                ) : null}
-                {!filesLoading
-                  ? files?.entries.map((entry) => (
-                      <tr key={entry.path} className="text-zinc-300 hover:bg-zinc-900/50">
-                        <td className="px-3 py-1.5">
-                          <button
-                            type="button"
-                            className="flex max-w-[24rem] items-center gap-2 truncate text-left"
-                            onClick={() => {
-                              if (entry.is_dir) {
-                                setFilesDraft(entry.path);
-                                void loadFiles(entry.path);
-                              }
-                            }}
-                          >
-                            {entry.is_dir ? (
-                              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                            ) : (
-                              <FileIcon className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-                            )}
-                            <span className={entry.is_dir ? "truncate text-zinc-100" : "truncate"}>{entry.name}</span>
-                            {entry.is_link ? <span className="text-[10px] text-amber-300">link</span> : null}
-                          </button>
-                        </td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] text-zinc-500">
-                          {entry.is_dir ? "—" : formatBytes(entry.size)}
-                        </td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] text-zinc-500">{entry.mode}</td>
-                        <td className="px-3 py-1.5">
-                          <div className="flex justify-end gap-1">
-                            {!entry.is_dir ? (
-                              <Button size="sm" variant="ghost" asChild title="download">
-                                <a
-                                  href={`/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/download?path=${encodeURIComponent(entry.path)}`}
-                                  download
-                                >
-                                  <Download className="h-3 w-3" />
-                                </a>
-                              </Button>
-                            ) : null}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              title="rename"
-                              onClick={() => void renameEntry(entry.path, entry.name)}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              title="delete"
-                              onClick={() => void removeEntry(entry.path, entry.name)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  : null}
-              </tbody>
-            </table>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
