@@ -14,23 +14,25 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 
 from ..auth import AuthManager
 from ..config import Config, ResetStep, SessionConfig
-from ..errors import CONFLICT, UNAUTHORIZED, ToolFailure
+from ..errors import CONFLICT, INVALID_ARGUMENT, UNAUTHORIZED, ToolFailure
 from ..mcp import build_mcp_server
+from ..mcp.audit import McpAuditLog
 from ..observability import setup_logging
 from ..sessions import Session, SessionManager
 from ..ssh import SshManager, SshProfileStore, SshSecretStore
 from ..ssh.importers import parse_ssh_config
 from ..transcript import now_iso
+from .pet_models import PetModelStore
 
 __version__ = "0.1.0"
 
@@ -291,6 +293,10 @@ class BreakBody(BaseModel):
     duration_ms: int = Field(default=250, ge=1, le=5000)
 
 
+class SftpArchiveBody(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=500)
+
+
 class SshHostBody(BaseModel):
     id: str | None = None
     name: str = ""
@@ -338,6 +344,7 @@ def create_app(config: Config) -> FastAPI:
     manager = SessionManager(config, on_config_changed=_save_config)
     ssh_profiles = SshProfileStore(config.data_dir)
     ssh_secrets = SshSecretStore(config.data_dir)
+    pet_models = PetModelStore(config.data_dir)
     ssh_manager = SshManager(
         config,
         ssh_profiles,
@@ -352,7 +359,8 @@ def create_app(config: Config) -> FastAPI:
     def session_payload(sess) -> dict:
         return sess.status()
 
-    mcp_server = build_mcp_server(manager, config, ssh_manager)
+    mcp_audit = McpAuditLog()
+    mcp_server = build_mcp_server(manager, config, ssh_manager, audit=mcp_audit)
     allowed_hosts = _allowed_hosts(config)
     transport = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
@@ -388,6 +396,7 @@ def create_app(config: Config) -> FastAPI:
     app.state.ssh = ssh_manager
     app.state.ssh_profiles = ssh_profiles
     app.state.ssh_secrets = ssh_secrets
+    app.state.pet_models = pet_models
     app.state.auth = auth
     app.state.logger = logger
     app.add_middleware(_McpPathRewrite)
@@ -568,6 +577,10 @@ def create_app(config: Config) -> FastAPI:
         return result
 
     # ------------------------------------------------------------------ SFTP
+    @app.get("/api/mcp/audit")
+    async def mcp_audit_events(limit: int = 100):
+        return {"events": mcp_audit.recent(limit)}
+
     @app.get("/api/ssh/sessions/{session_id}/sftp/list")
     async def ssh_sftp_list(
         session_id: str,
@@ -582,12 +595,42 @@ def create_app(config: Config) -> FastAPI:
         path: str,
     ):
         sess = ssh_manager.get(session_id)
-        data = await asyncio.to_thread(sess.sftp_read, path, max_bytes=32 * 1024 * 1024)
-        filename = posixpath.basename(path).replace('"', "") or "download"
-        return Response(
-            content=data,
+        info = await asyncio.to_thread(sess.sftp_stat, path)
+        if info["is_dir"]:
+            raise ToolFailure(INVALID_ARGUMENT, "cannot download a directory")
+        name = posixpath.basename(path).replace('"', "") or "download"
+        fallback = name if name.isascii() else "download"
+        manager.audit.write("ssh.sftp_download", session=session_id, path=path, bytes=info["size"])
+        return StreamingResponse(
+            sess.sftp_stream(path),
             media_type="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Length": str(info["size"]),
+                "Content-Disposition": f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(name)}',
+            },
+        )
+
+    @app.post("/api/ssh/sessions/{session_id}/sftp/download-archive")
+    async def ssh_sftp_download_archive(
+        session_id: str,
+        body: SftpArchiveBody,
+    ):
+        sess = ssh_manager.get(session_id)
+        stream, file_count, total_bytes = await asyncio.to_thread(sess.sftp_archive, body.paths)
+        roots = [posixpath.basename(p.rstrip("/")) or "root" for p in body.paths]
+        archive_name = f"{roots[0]}.zip" if len(roots) == 1 else "archive.zip"
+        fallback = archive_name if archive_name.isascii() else "archive.zip"
+        manager.audit.write(
+            "ssh.sftp_download_archive", session=session_id, paths=body.paths, files=file_count, bytes=total_bytes
+        )
+        return StreamingResponse(
+            stream,
+            media_type="application/zip",
+            headers={
+                "X-Archive-Files": str(file_count),
+                "X-Archive-Bytes": str(total_bytes),
+                "Content-Disposition": f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(archive_name)}',
+            },
         )
 
     @app.post("/api/ssh/sessions/{session_id}/sftp/upload")
@@ -638,6 +681,34 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_disconnect(session_id: str):
         await asyncio.to_thread(ssh_manager.disconnect, session_id)
         return {"ok": True}
+
+    # --------------------------------------------------------------- pet models
+    @app.get("/api/pet/models")
+    async def pet_model_list():
+        return {"models": await asyncio.to_thread(pet_models.list)}
+
+    @app.post("/api/pet/models", status_code=201)
+    async def pet_model_upload(file: UploadFile = File(...)):
+        data = await file.read(64 * 1024 * 1024 + 1)
+        entry = await asyncio.to_thread(pet_models.save, file.filename or "", data)
+        manager.audit.write("pet.model_upload", model=entry["id"], name=entry["name"], bytes=entry["size"])
+        return entry
+
+    @app.get("/api/pet/models/{model_id}/file")
+    async def pet_model_file(model_id: str):
+        path = await asyncio.to_thread(pet_models.path, model_id)
+        return FileResponse(
+            path,
+            media_type="model/gltf-binary",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+
+    @app.delete("/api/pet/models/{model_id}")
+    async def pet_model_delete(model_id: str):
+        await asyncio.to_thread(pet_models.delete, model_id)
+        manager.audit.write("pet.model_delete", model=model_id)
+        return {"ok": True}
+
 
     # ----------------------------------------------------------------- sessions
     @app.get("/api/sessions")

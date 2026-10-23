@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import fnmatch
 import hashlib
+import io
 import os
 import posixpath
 import queue
@@ -19,9 +20,10 @@ import socket
 import stat as stat_module
 import threading
 import time
+import zipfile
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Iterator
 
 import paramiko
 
@@ -46,7 +48,7 @@ class SshState(str, Enum):
 
 @dataclass
 class SshSubscriber:
-    maxsize: int = 1024
+    maxsize: int = 2048
     q: queue.Queue = field(default_factory=queue.Queue)
     dropped: int = 0
     overflowed: bool = False
@@ -81,6 +83,26 @@ def _key_type(key: Any) -> str:
         return str(key.get_name())
     except Exception:  # pragma: no cover - defensive
         return "unknown"
+
+
+class _ZipSink(io.RawIOBase):
+    """Unseekable sink zipfile writes into; the archive generator drains the
+    collected chunks so the download streams instead of buffering."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.chunks: list[bytes] = []
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, b) -> int:  # type: ignore[override]
+        self.chunks.append(bytes(b))
+        return len(b)
+
+    def drain(self) -> Iterator[bytes]:
+        while self.chunks:
+            yield self.chunks.pop(0)
 
 
 class SshSession:
@@ -622,7 +644,7 @@ class SshSession:
 
     # -------------------------------------------------------------- subscribers
     def subscribe(
-        self, replay_bytes: int = 0, maxsize: int = 1024, cursor: int | None = None
+        self, replay_bytes: int = 0, maxsize: int = 2048, cursor: int | None = None
     ) -> SshSubscriber:
         sub = SshSubscriber(maxsize=maxsize)
         replay = b""
@@ -634,13 +656,15 @@ class SshSession:
                 replay, offset = sl.data, sl.start
                 dropped = sl.lost_bytes if sl.gap else 0
             elif replay_bytes > 0:
-                sl = self.ring.read(tail_bytes=replay_bytes)
+                sl = self.ring.read(tail_bytes=replay_bytes, max_bytes=replay_bytes)
                 replay, offset = sl.data, sl.start
+            # history must land in the queue before the subscriber goes live,
+            # or a chunk ingested in between would render ahead of the replay
+            if dropped:
+                sub.put({"type": "overflow", "dropped": dropped})
+            if replay:
+                sub.put({"type": "replay", "offset": offset, "data": replay})
             self._subs.append(sub)
-        if dropped:
-            sub.put({"type": "overflow", "dropped": dropped})
-        if replay:
-            sub.put({"type": "replay", "offset": offset, "data": replay})
         sub.put({"type": "status", "status": self.status()})
         return sub
 
@@ -917,6 +941,130 @@ class SshSession:
         if len(data) > max_bytes:
             raise ToolFailure(INVALID_ARGUMENT, f"file larger than {max_bytes} bytes")
         return data
+
+    def sftp_stat(self, path: str) -> dict:
+        remote = self._remote_path(path)
+        try:
+            with self._sftp_lock:
+                st = self._sftp_client().stat(remote)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP stat failed: {exc}") from exc
+        return {"size": int(st.st_size), "is_dir": stat_module.S_ISDIR(st.st_mode)}
+
+    def sftp_stream(self, path: str, chunk_size: int = 262144):
+        """Stream a remote file in chunks for downloads.  The sftp lock is held
+        per chunk, not for the whole transfer, so panel operations (list,
+        upload, …) can interleave between reads."""
+        remote = self._remote_path(path)
+
+        def chunks():
+            handle = None
+            try:
+                with self._sftp_lock:
+                    handle = self._sftp_client().open(remote, "rb")
+                while True:
+                    with self._sftp_lock:
+                        chunk = handle.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            except ToolFailure:
+                raise
+            except Exception as exc:
+                raise ToolFailure(SSH_ERROR, f"SFTP download failed: {exc}") from exc
+            finally:
+                if handle is not None:
+                    with self._sftp_lock:
+                        handle.close()
+
+        return chunks()
+
+    def _sftp_walk_dir(self, root: str, base: str, plan: list[tuple[str, str, int]], errors: list[str]) -> None:
+        """Depth-first walk collecting (remote, arcname, size) for every file."""
+        stack: list[tuple[str, str]] = [(root, base)]
+        while stack:
+            remote, arc = stack.pop()
+            try:
+                with self._sftp_lock:
+                    attrs = self._sftp_client().listdir_attr(remote)
+            except ToolFailure:
+                raise
+            except Exception as exc:
+                errors.append(f"{remote}: {exc}")
+                continue
+            for attr in sorted(
+                attrs, key=lambda item: (not stat_module.S_ISDIR(item.st_mode), item.filename.lower())
+            ):
+                mode = int(attr.st_mode or 0)
+                child_remote = posixpath.join(remote, attr.filename)
+                child_arc = f"{arc}/{attr.filename}"
+                if stat_module.S_ISLNK(mode):
+                    errors.append(f"skipped symlink: {child_remote}")
+                elif stat_module.S_ISDIR(mode):
+                    stack.append((child_remote, child_arc))
+                else:
+                    plan.append((child_remote, child_arc, int(attr.st_size or 0)))
+
+    def sftp_archive(self, paths: list[str], chunk_size: int = 262144):
+        """Plan + stream the given files/directories as a zip archive.
+
+        Returns ``(iterator, file_count, uncompressed_bytes)``.  The plan runs
+        eagerly so missing paths fail before headers are sent; read failures
+        during streaming land in ``_errors.txt`` inside the zip.  Symlinks are
+        skipped (cycle-safe); the sftp lock is taken per read like sftp_stream.
+        """
+        plan: list[tuple[str, str, int]] = []
+        errors: list[str] = []
+        for raw in paths:
+            root = self._remote_path(raw)
+            base = posixpath.basename(root) or "root"
+            try:
+                with self._sftp_lock:
+                    attr = self._sftp_client().lstat(root)
+            except ToolFailure:
+                raise
+            except Exception as exc:
+                raise ToolFailure(SSH_ERROR, f"SFTP stat failed: {root}: {exc}") from exc
+            mode = int(attr.st_mode or 0)
+            if stat_module.S_ISLNK(mode):
+                errors.append(f"skipped symlink: {root}")
+            elif stat_module.S_ISDIR(mode):
+                self._sftp_walk_dir(root, base, plan, errors)
+            else:
+                plan.append((root, base, int(attr.st_size or 0)))
+
+        def chunks() -> Iterator[bytes]:
+            sink = _ZipSink()
+            with zipfile.ZipFile(sink, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for remote, arcname, _size in plan:
+                    handle = None
+                    try:
+                        with self._sftp_lock:
+                            handle = self._sftp_client().open(remote, "rb")
+                        with zf.open(arcname, "w") as target:
+                            while True:
+                                with self._sftp_lock:
+                                    chunk = handle.read(chunk_size)
+                                if not chunk:
+                                    break
+                                target.write(chunk)
+                                yield from sink.drain()
+                    except ToolFailure as exc:
+                        errors.append(f"{remote}: {exc.message}")
+                    except Exception as exc:  # pragma: no cover - mid-stream
+                        errors.append(f"{remote}: {exc}")
+                    finally:
+                        if handle is not None:
+                            with self._sftp_lock:
+                                handle.close()
+                    yield from sink.drain()
+                if errors:
+                    zf.writestr("_errors.txt", "\n".join(sorted(errors)) + "\n")
+            yield from sink.drain()
+
+        return chunks(), len(plan), sum(size for _r, _a, size in plan)
 
     def sftp_write(self, path: str, data: bytes) -> int:
         remote = self._remote_path(path)

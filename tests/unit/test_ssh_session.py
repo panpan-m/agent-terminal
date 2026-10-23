@@ -205,3 +205,90 @@ def test_host_info_requires_agent_visible_session(ssh_bundle):
     assert info["description"] == "data in /srv, logs in /var/log"
     assert info["visible_sessions"] == ["ssh-info"]
     assert info["has_saved_secrets"] is False
+
+
+def _connected_session(ssh_bundle, session_id):
+    manager, profiles, _transcripts, _audit = ssh_bundle
+    host = profiles.get("test")
+    client = FakeClient()
+    session = SshSession(host, manager, session_id, client_factory=lambda: client)
+    session.connect(password=None, cols=100, rows=30)
+    return session, client
+
+
+def test_subscribe_replay_covers_the_newest_bytes(ssh_bundle):
+    """Regression: the tail replay used to stop max_bytes (16 KiB) short of
+    the newest ring data, so a browser tab that remounted missed everything
+    from the last ~48 KiB -- including escape sequences such as the
+    mouse-tracking disable vim sends on exit, which left xterm reporting
+    mouse moves into the shell."""
+    session, client = _connected_session(ssh_bundle, "ssh-replay")
+    client.channel.incoming.put(b"a" * 30000)
+    client.channel.incoming.put(b"\x1b[?1000l end")
+    marker = b"\x1b[?1000l end"
+    deadline = time.time() + 2
+    while time.time() < deadline and session.rx_bytes < 30000 + len(marker):
+        time.sleep(0.01)
+    assert session.rx_bytes >= 30000 + len(marker)
+    head = session.ring.head
+
+    sub = session.subscribe(replay_bytes=65536)
+    try:
+        replay = None
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            item = sub.get(0.1)
+            if item and item.get("type") == "replay":
+                replay = item
+                break
+        assert replay is not None, "expected a replay frame"
+        assert replay["offset"] + len(replay["data"]) == head, "replay must end at the ring head"
+        assert replay["data"].endswith(marker), "replay must contain the newest bytes"
+    finally:
+        session.unsubscribe(sub)
+        session.close()
+
+
+def test_subscribe_replay_precedes_live_rx_under_load(ssh_bundle):
+    """Regression: the replay frame used to be queued after the subscriber
+    went live, so a chunk ingested during subscribe could reach the browser
+    before the history and corrupt the byte-stream order xterm parses."""
+    session, client = _connected_session(ssh_bundle, "ssh-order")
+    stop = threading.Event()
+
+    def produce():
+        for _ in range(4000):
+            if stop.is_set():
+                return
+            client.channel.incoming.put(b"y" * 32)
+
+    worker = threading.Thread(target=produce, daemon=True)
+    worker.start()
+    try:
+        deadline = time.time() + 2
+        while time.time() < deadline and session.rx_bytes < 1024:
+            time.sleep(0.01)
+        assert session.rx_bytes >= 1024, "producer did not start"
+
+        for _ in range(20):
+            sub = session.subscribe(replay_bytes=4096)
+            saw_replay = False
+            prev_end = None
+            for _ in range(12):
+                item = sub.get(0.05)
+                if item is None:
+                    continue
+                if item["type"] == "replay":
+                    assert prev_end is None, "replay must be the first data frame in the queue"
+                    saw_replay = True
+                    prev_end = item["offset"] + len(item["data"])
+                elif item["type"] == "rx":
+                    assert saw_replay, "live rx was queued ahead of the replay frame"
+                    assert item["offset"] >= prev_end, "rx frames must never go backwards"
+                    prev_end = item["offset"] + len(item["data"])
+            assert saw_replay, "expected a replay frame while the ring held data"
+            session.unsubscribe(sub)
+    finally:
+        stop.set()
+        worker.join(timeout=2)
+        session.close()
