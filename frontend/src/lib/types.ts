@@ -135,6 +135,18 @@ export interface McpToolInfo {
   destructive: boolean;
 }
 
+export interface McpAuditEvent {
+  ts: string;
+  tool: string;
+  agent: string;
+  agent_version: string | null;
+  session: string | null;
+  ok: boolean;
+  duration_ms: number;
+  input: string;
+  output: string;
+}
+
 export interface McpStatus {
   status: string;
   transport: string;
@@ -273,4 +285,12 @@ export interface SshConfigCandidate {
   auth: SshAuth;
   key_file: string;
   proxy_jump: string;
+}
+
+/** A user-uploaded desktop-pet VRM model (server-side store). */
+export interface PetModel {
+  id: string;
+  name: string;
+  size: number;
+  created_at: string;
 }

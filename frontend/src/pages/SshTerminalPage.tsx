@@ -27,11 +27,14 @@ import { useTheme } from "@/lib/theme";
 import { terminalTheme } from "@/lib/termTheme";
 import {
   applyTerminalSettings,
+  attachScrollFollow,
   attachTerminalEnhancements,
+  createOverflowResync,
   terminalOptions,
   type Enhancements,
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
+import { petNoteCommandExit, petNoteLink, petNoteOutput, petNoteTyping } from "@/lib/pet-events";
 import { b64ToBytes, bytesToB64, cn, formatBytes, isModalOpen } from "@/lib/utils";
 import type { SshSessionStatus } from "@/lib/types";
 
@@ -41,12 +44,15 @@ export function SshTerminalPage({
   onSelect,
   notify,
   showSessionTabs = true,
+  active = true,
 }: {
   sessionId: string;
   onBack: () => void;
   onSelect: (sessionId: string) => void;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
   showSessionTabs?: boolean;
+  /** false while this terminal is kept alive but hidden behind another tab */
+  active?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -55,6 +61,9 @@ export function SshTerminalPage({
   const socketRef = useRef<WebSocket | null>(null);
   const cursorRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
+  const shouldResyncRef = useRef(createOverflowResync());
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [status, setStatus] = useState<SshSessionStatus | null>(null);
   const [openSessions, setOpenSessions] = useState<SshSessionStatus[]>([]);
   const [connected, setConnected] = useState(false);
@@ -65,10 +74,8 @@ export function SshTerminalPage({
   const [keysOpen, setKeysOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [generation, setGeneration] = useState(0);
-  /** Right-hand panel: SFTP files (default), connection details, or hidden. */
-  const [panel, setPanel] = useState<"files" | "details" | null>(() =>
-    window.localStorage.getItem("tio-ssh-panel") === "none" ? null : "files",
-  );
+  /** Right-hand panel: starts collapsed; the toolbar buttons open it. */
+  const [panel, setPanel] = useState<"files" | "details" | null>(null);
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentPulse, setAgentPulse] = useState<{
     action: string;
@@ -123,10 +130,12 @@ export function SshTerminalPage({
     const sendInput = (data: string) => {
       const socket = socketRef.current;
       if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      petNoteTyping();
       socket.send(JSON.stringify({ type: "input", data_b64: bytesToB64(data) }));
     };
     const disposable = term.onData(sendInput);
     enhancementsRef.current = attachTerminalEnhancements(term, host, notify, sendInput);
+    const follow = attachScrollFollow(term, setAutoScroll);
 
     const sendResize = () => {
       const socket = socketRef.current;
@@ -141,6 +150,7 @@ export function SshTerminalPage({
     });
     observer.observe(host);
     const onKey = (event: KeyboardEvent) => {
+      if (!activeRef.current) return; // hidden keep-alive terminals never steal shortcuts
       if (isModalOpen()) return; // dialogs own Escape/shortcuts; never steal focus behind them
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -162,6 +172,7 @@ export function SshTerminalPage({
       window.clearInterval(refreshTimer);
       window.removeEventListener("keydown", onKey);
       observer.disconnect();
+      follow.dispose();
       enhancementsRef.current?.dispose();
       enhancementsRef.current = null;
       disposable.dispose();
@@ -184,9 +195,10 @@ export function SshTerminalPage({
     }
   }, [theme]);
 
+  // reclaim keyboard focus when this terminal becomes the visible tab again
   useEffect(() => {
-    window.localStorage.setItem("tio-ssh-panel", panel ?? "none");
-  }, [panel]);
+    if (active) termRef.current?.focus();
+  }, [active]);
 
   useEffect(() => {
     return () => {
@@ -211,6 +223,7 @@ export function SshTerminalPage({
       socket.onopen = () => {
         if (closed) return;
         setConnected(true);
+        petNoteLink(true);
         setLastError(null);
         const term = termRef.current;
         if (term) socket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
@@ -218,6 +231,7 @@ export function SshTerminalPage({
       socket.onclose = () => {
         if (closed) return;
         setConnected(false);
+        petNoteLink(false);
         retry = window.setTimeout(connect, 1500);
       };
       socket.onmessage = (event) => {
@@ -244,6 +258,9 @@ export function SshTerminalPage({
             return;
           }
           if (message.type === "agent" && message.action && message.source === "agent") {
+            if (message.action === "command" && message.exit_code !== null && message.exit_code !== undefined) {
+              petNoteCommandExit(message.exit_code);
+            }
             setAgentPulse({
               action: message.action,
               source: message.source ?? "agent",
@@ -260,6 +277,9 @@ export function SshTerminalPage({
           }
           if (message.type === "overflow") {
             setDropped((value) => value + (message.dropped ?? 0));
+            // the frames were dropped server-side but still live in the ring;
+            // reconnecting with the cursor replays the missing bytes
+            if (shouldResyncRef.current()) socketRef.current?.close();
             return;
           }
           if (message.type === "error") {
@@ -271,6 +291,7 @@ export function SshTerminalPage({
             const term = termRef.current;
             if (!term) return;
             term.write(bytes);
+            if (message.type === "rx") petNoteOutput(bytes.length);
             if (autoScrollRef.current) term.scrollToBottom();
             cursorRef.current =
               typeof message.offset === "number"
@@ -426,7 +447,7 @@ export function SshTerminalPage({
           >
             <Keyboard className="h-3.5 w-3.5" />
           </Button>
-          <TerminalSettingsDialog />
+          <TerminalSettingsDialog notify={notify} />
         </div>
       </header>
 
@@ -517,8 +538,8 @@ export function SshTerminalPage({
                 <td>search this scrollback (case / regex / whole word)</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+C / V</td>
-                <td>copy / paste via the browser clipboard (toggle in Settings ▸ Clipboard)</td>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+V / Ctrl+Shift+V</td>
+                <td>paste (Ctrl+Shift+C copies; also right-click — Settings ▸ Clipboard)</td>
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-emerald-300">Escape</td>
@@ -557,10 +578,13 @@ export function SshTerminalPage({
         <div className="ml-auto flex items-center gap-2 text-zinc-500">
           <button
             type="button"
-            onClick={() => setAutoScroll((value) => !value)}
+            onClick={() => {
+              termRef.current?.scrollToBottom();
+              setAutoScroll(true);
+            }}
             className={cn(autoScroll ? "text-emerald-300" : "text-zinc-500 hover:text-zinc-300")}
           >
-            auto-scroll
+            {autoScroll ? "auto-scroll" : "follow live ↓"}
           </button>
           <span>scrollback {received}</span>
         </div>

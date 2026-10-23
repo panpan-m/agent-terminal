@@ -156,6 +156,64 @@ html[data-theme="sheet"] [data-input] {
   border-radius: 0;
 }
 
+/* toast: the tone utilities above are the dark baseline; each theme restyles
+   background, border, radius, shadow and the inner text to match. */
+html[data-theme="pixel"] [data-toast] {
+  background: #0f150e;
+  border: 2px solid #24351f;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 #000;
+  backdrop-filter: none;
+  color: #dcf0cf;
+  font-family: "Silkscreen", ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+html[data-theme="pixel"] [data-toast="success"] {
+  border-color: #3f8a37;
+  color: #a4ff96;
+}
+
+html[data-theme="pixel"] [data-toast="error"] {
+  border-color: #d94f42;
+  color: #ff8b7e;
+}
+
+html[data-theme="sheet"] [data-toast] {
+  background: #fbf9f4;
+  border: 1px solid #d8d2c3;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  color: #191b1a;
+}
+
+html[data-theme="sheet"] [data-toast="success"] {
+  border-color: #3f6b3a;
+}
+
+html[data-theme="sheet"] [data-toast="error"] {
+  border-color: #a8321f;
+  color: #8c2a18;
+}
+
+html[data-theme="light"] [data-toast] {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+html[data-theme="light"] [data-toast="success"] {
+  border-color: #059669;
+  color: #047857;
+}
+
+html[data-theme="light"] [data-toast="error"] {
+  border-color: #dc2626;
+  color: #b91c1c;
+}
+
 
 
 *::-webkit-scrollbar {

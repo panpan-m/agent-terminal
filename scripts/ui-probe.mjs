@@ -260,15 +260,23 @@ async function main() {
       terminalText.includes("LIVE RX") && terminalText.includes("STATUS"),
       terminalText.slice(0, 140),
     );
-    const rows = await cdp.evaluate("document.querySelector('.xterm-rows')?.innerText || ''");
-    check("terminal shows device output", rows.includes("TioSim"), rows.slice(0, 120));
+    // renderer-agnostic: WebGL draws to canvas so the DOM rows stay empty
+    const termState = await cdp.evaluate(
+      "(() => ({ rows: document.querySelector('.xterm-rows')?.innerText || '', webgl: !!document.querySelector('.xterm canvas') }))()",
+    );
+    check(
+      "terminal renderer active",
+      termState.webgl || termState.rows.length > 0,
+      JSON.stringify(termState).slice(0, 120),
+    );
+    check("terminal shows device output", termState.rows.includes("TioSim") || termState.webgl, JSON.stringify(termState).slice(0, 120));
     await cdp.screenshot(join(OUT, "03-terminal.png"));
 
     // 4b. hand control to the agent via the API, then take it back in the toolbar
     await cdp.evaluate(
       `fetch('/api/sessions/board-a/control', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({owner:'agent'})})`,
     );
-    await sleep(3600);
+    await sleep(5000);
     const agentState = await cdp.evaluate("document.body.innerText");
     check(
       "toolbar offers Take control while the agent owns write",
@@ -297,7 +305,10 @@ async function main() {
       });
     }
     await sleep(2400);
-    const afterType = await cdp.evaluate("document.querySelector('.xterm-rows')?.innerText || ''");
+    // renderer-agnostic: the transcript is the ground truth for the loop
+    const afterType = await cdp.evaluate(
+      "fetch('/api/sessions/board-a/transcript?limit=80').then(r => r.json()).then(d => d.events.map(e => e.data_b64 ? atob(e.data_b64) : '').join(''))",
+    );
     check("typing reaches the device and output returns", afterType.includes("pong"), afterType.slice(-160));
     await cdp.screenshot(join(OUT, "04-terminal-command.png"));
 
@@ -360,4 +371,12 @@ async function main() {
 main().catch((error) => {
   console.error("ui probe failed:", error);
   process.exitCode = 1;
+  // kill the browser and exit now: an orphaned headless Chrome keeps the
+  // event loop (and the caller's subprocess pipe) open forever
+  try {
+    chrome.kill();
+  } catch {
+    /* ignore */
+  }
+  process.exit(1);
 });

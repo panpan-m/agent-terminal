@@ -5,6 +5,8 @@ import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Treat VRM avatar models as binary assets (hashed files under /assets).
+  assetsInclude: ["**/*.vrm"],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

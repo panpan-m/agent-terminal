@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Circle,
@@ -7,6 +7,7 @@ import {
   PanelRight,
   Power,
   RefreshCw,
+  RotateCcw,
   Search,
   SquareTerminal,
   Trash2,
@@ -28,11 +29,14 @@ import { useTheme } from "@/lib/theme";
 import { terminalTheme } from "@/lib/termTheme";
 import {
   applyTerminalSettings,
+  attachScrollFollow,
   attachTerminalEnhancements,
+  createOverflowResync,
   terminalOptions,
   type Enhancements,
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
+import { petNoteLink, petNoteOutput, petNoteTyping } from "@/lib/pet-events";
 import { b64ToBytes, cn, formatBytes, isModalOpen } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
 
@@ -52,6 +56,7 @@ export function TerminalPage({
   refresh,
   notify,
   showSessionPicker = true,
+  active = true,
 }: {
   sessions: SessionStatus[];
   session?: SessionStatus;
@@ -60,6 +65,8 @@ export function TerminalPage({
   refresh: () => Promise<void>;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
   showSessionPicker?: boolean;
+  /** false while this terminal is kept alive but hidden behind another tab */
+  active?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -68,8 +75,12 @@ export function TerminalPage({
   const sessionRef = useRef<SessionStatus | undefined>(session);
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
   const cursorRef = useRef<number | null>(null);
+  const shouldResyncRef = useRef(createOverflowResync());
+  const sttySigRef = useRef("");
   const sessionKeyRef = useRef<string | undefined>(undefined);
   const enhancementsRef = useRef<Enhancements | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [connected, setConnected] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -78,7 +89,9 @@ export function TerminalPage({
   const [keysOpen, setKeysOpen] = useState(false);
   const [busyBreak, setBusyBreak] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [infoOpen, setInfoOpen] = useState(true);
+  const [infoOpen, setInfoOpen] = useState<boolean>(
+    () => window.localStorage.getItem("tio-serial-info") !== "0",
+  );
   const [received, setReceived] = useState(0);
   const autoScrollRef = useRef(true);
   const bytesRef = useRef(0);
@@ -119,6 +132,7 @@ export function TerminalPage({
         setLastError("agent owns control - take control to type");
         return;
       }
+      petNoteTyping();
       queueRef.current = queueRef.current
         .then(() => api.write(current.session_id, { text: data }))
         .catch((error) => {
@@ -128,6 +142,7 @@ export function TerminalPage({
     };
     const disposable = term.onData(send);
     enhancementsRef.current = attachTerminalEnhancements(term, host, notify, send);
+    const follow = attachScrollFollow(term, setAutoScroll);
 
     let disposed = false;
     let retry: number | undefined;
@@ -141,14 +156,18 @@ export function TerminalPage({
       socket.onopen = () => {
         if (!disposed) {
           setConnected(true);
+          petNoteLink(true);
           setLastError(null);
-          fit.fit();
-          term.focus();
+          if (activeRef.current) {
+            fit.fit();
+            term.focus();
+          }
         }
       };
       socket.onclose = () => {
         if (disposed) return;
         setConnected(false);
+        petNoteLink(false);
         retry = window.setTimeout(connect, 1500);
       };
       socket.onmessage = (event) => {
@@ -161,12 +180,16 @@ export function TerminalPage({
           };
           if (message.type === "overflow") {
             setDropped((value) => value + (message.dropped ?? 0));
+            // the frames were dropped server-side but still live in the ring;
+            // reconnecting with the cursor replays the missing bytes
+            if (shouldResyncRef.current()) socketRef.current?.close();
             return;
           }
           if ((message.type === "rx" || message.type === "replay") && message.data_b64) {
             const bytes = b64ToBytes(message.data_b64);
             term.write(bytes);
             bytesRef.current += bytes.length;
+            if (message.type === "rx") petNoteOutput(bytes.length);
             if (autoScrollRef.current) term.scrollToBottom();
             cursorRef.current =
               typeof message.offset === "number"
@@ -180,17 +203,22 @@ export function TerminalPage({
     };
     connect();
 
+    let sttyTimer: number | undefined;
     const observer = new ResizeObserver(() => {
       if (host.clientWidth > 0 && host.clientHeight > 0) fit.fit();
+      window.clearTimeout(sttyTimer);
+      sttyTimer = window.setTimeout(() => syncStty(), 800);
     });
     observer.observe(host);
 
     return () => {
       disposed = true;
       if (retry) window.clearTimeout(retry);
+      window.clearTimeout(sttyTimer);
       observer.disconnect();
       socketRef.current?.close();
       disposable.dispose();
+      follow.dispose();
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
@@ -219,8 +247,31 @@ export function TerminalPage({
     });
   }, []);
 
+  // Serial links carry no window-size negotiation (no SIGWINCH), so the device
+  // tty keeps a stale rows/cols and full-screen TUIs (apt/dpkg) misdraw or
+  // wedge the screen.  Sync on open and after every resize, best effort via
+  // the human write path (skipped while the agent owns control).
+  const syncStty = useCallback(() => {
+    if (!getTerminalSettings().sttySync) return;
+    const term = termRef.current;
+    const current = sessionRef.current;
+    if (!term || !current || current.state !== "open" || current.control_owner !== "human") return;
+    const sig = `${current.session_id}:${term.rows}x${term.cols}`;
+    if (sttySigRef.current === sig) return;
+    sttySigRef.current = sig;
+    api.write(current.session_id, { text: `stty rows ${term.rows} cols ${term.cols}\n` }).catch(() => {
+      /* best effort */
+    });
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => syncStty(), 1200);
+    return () => window.clearTimeout(timer);
+  }, [session?.session_id, syncStty]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (!activeRef.current) return; // hidden keep-alive terminals never steal shortcuts
       if (isModalOpen()) return; // dialogs own Escape/shortcuts; never steal focus behind them
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -233,6 +284,11 @@ export function TerminalPage({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
+
+  // reclaim keyboard focus when this terminal becomes the visible tab again
+  useEffect(() => {
+    if (active) termRef.current?.focus();
+  }, [active]);
 
   const releasePort = async () => {
     if (!session) return;
@@ -373,14 +429,33 @@ export function TerminalPage({
           </Button>
           <Button
             size="sm"
+            variant="ghost"
+            title="reset terminal state (fixes a stuck screen after a full-screen TUI)"
+            aria-label="Reset terminal"
+            onClick={() => {
+              const term = termRef.current;
+              term?.reset();
+              term?.scrollToBottom();
+              term?.focus();
+            }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
             variant={infoOpen ? "outline" : "ghost"}
-            onClick={() => setInfoOpen((value) => !value)}
-            title="show the session status panel"
+            onClick={() =>
+              setInfoOpen((value) => {
+                window.localStorage.setItem("tio-serial-info", value ? "0" : "1");
+                return !value;
+              })
+            }
+            title="toggle the session status panel"
             aria-label="Info"
           >
             <PanelRight className="h-3.5 w-3.5" />
           </Button>
-          <TerminalSettingsDialog />
+          <TerminalSettingsDialog notify={notify} />
         </div>
       </header>
 
@@ -428,8 +503,8 @@ export function TerminalPage({
                 <td>search this scrollback (case / regex / whole word)</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+C / V</td>
-                <td>copy / paste via the browser clipboard (toggle in Settings ▸ Clipboard)</td>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+V / Ctrl+Shift+V</td>
+                <td>paste (Ctrl+Shift+C copies; also right-click — Settings ▸ Clipboard)</td>
               </tr>
               <tr>
                 <td className="py-0.5 pr-2 font-mono text-emerald-300">Escape</td>
@@ -463,14 +538,17 @@ export function TerminalPage({
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setAutoScroll((value) => !value)}
+            onClick={() => {
+              termRef.current?.scrollToBottom();
+              setAutoScroll(true);
+            }}
             className={cn(
               "inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px]",
               autoScroll ? "text-emerald-300" : "text-zinc-500 hover:text-zinc-300",
             )}
-            title="toggle auto-scroll"
+            title="jump to live output"
           >
-            <ArrowDownToLine className="h-3 w-3" /> auto
+            <ArrowDownToLine className="h-3 w-3" /> {autoScroll ? "auto" : "live ↓"}
           </button>
           <button
             type="button"

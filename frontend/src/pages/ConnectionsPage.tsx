@@ -47,6 +47,16 @@ const STATE_TONE: Record<string, string> = {
   error: "text-red-400",
 };
 
+/** Slug a host/IP into a valid host id: ^[a-z0-9][a-z0-9_-]{0,31}$ */
+function idFromHost(host: string): string {
+  const slug = host
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .slice(0, 32);
+  return slug;
+}
+
 export function ConnectionsPage({
   notify,
   onOpen,
@@ -61,6 +71,8 @@ export function ConnectionsPage({
   const [editing, setEditing] = useState<SshHost | null>(null);
   const [form, setForm] = useState<SshHostInput>(EMPTY);
   const [formError, setFormError] = useState<string | null>(null);
+  /** Which fields still follow the Host input; manual edits detach them. */
+  const [followHost, setFollowHost] = useState({ id: true, name: true });
   const [saving, setSaving] = useState(false);
   const [connectTarget, setConnectTarget] = useState<SshHost | null>(null);
   const [password, setPassword] = useState("");
@@ -106,6 +118,7 @@ export function ConnectionsPage({
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY });
+    setFollowHost({ id: true, name: true });
     setFormError(null);
     setFormOpen(true);
   };
@@ -127,6 +140,7 @@ export function ConnectionsPage({
       term: host.term,
       connect_timeout_s: host.connect_timeout_s,
     });
+    setFollowHost({ id: false, name: false });
     setFormError(null);
     setFormOpen(true);
   };
@@ -519,11 +533,14 @@ export function ConnectionsPage({
         >
           <form className="space-y-3" onSubmit={save}>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Host id" hint="optional; generated from the name">
+              <Field label="Host id" hint="optional; follows Host until edited">
                 <Input
                   value={form.id ?? ""}
                   disabled={Boolean(editing)}
-                  onChange={(event) => setForm({ ...form, id: event.target.value })}
+                  onChange={(event) => {
+                    setForm({ ...form, id: event.target.value });
+                    setFollowHost((state) => ({ ...state, id: false }));
+                  }}
                   placeholder="pi"
                 />
               </Field>
@@ -531,7 +548,10 @@ export function ConnectionsPage({
                 <Input
                   value={form.name}
                   required
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                  onChange={(event) => {
+                    setForm({ ...form, name: event.target.value });
+                    setFollowHost((state) => ({ ...state, name: false }));
+                  }}
                   placeholder="Raspberry Pi"
                 />
               </Field>
@@ -539,7 +559,16 @@ export function ConnectionsPage({
                 <Input
                   value={form.host}
                   required
-                  onChange={(event) => setForm({ ...form, host: event.target.value })}
+                  onChange={(event) => {
+                    const host = event.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      host,
+                      // ids must match ^[a-z0-9][a-z0-9_-]{0,31}$ — slug the host
+                      ...(followHost.id ? { id: idFromHost(host) } : {}),
+                      ...(followHost.name ? { name: host } : {}),
+                    }));
+                  }}
                   placeholder="192.168.124.23"
                 />
               </Field>

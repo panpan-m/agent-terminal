@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Shell, type Page } from "@/components/Shell";
+import { DesktopPet } from "@/components/DesktopPet";
 import { TerminalWorkspacePage } from "@/pages/TerminalWorkspacePage";
 import { McpPage } from "@/pages/McpPage";
 import { SessionsPage } from "@/pages/SessionsPage";
@@ -91,6 +92,15 @@ export default function App() {
     return sshSessions[0]?.session_id;
   }, [route.sessionId, sshSessions]);
 
+  // The terminal workspace stays mounted once visited: xterm instances, their
+  // WebSocket feeds and scrollback survive navigation, so switching pages or
+  // terminal tabs never destroys terminal state.
+  const workspaceActive = route.page === "terminal" || route.page === "ssh";
+  const [workspaceSeen, setWorkspaceSeen] = useState(false);
+  useEffect(() => {
+    if (workspaceActive) setWorkspaceSeen(true);
+  }, [workspaceActive]);
+
   const guard = useCallback(
     async (action: () => Promise<unknown>, success?: string) => {
       try {
@@ -129,6 +139,23 @@ export default function App() {
         selectedSshId={route.page === "ssh" ? selectedSshId : undefined}
         system={system}
       >
+        {workspaceSeen ? (
+          <div className={workspaceActive ? "h-full min-h-0" : "hidden"}>
+            <TerminalWorkspacePage
+              initialKind={route.page === "ssh" ? "ssh" : "serial"}
+              sessionId={route.sessionId}
+              sessions={sessions}
+              selectedId={selectedId}
+              refresh={refresh}
+              notify={notify}
+              onSelectSerial={(id) => navigate("terminal", id)}
+              onSelectSsh={(id) => navigate("ssh", id)}
+              onOpenSessions={() => navigate(route.page === "ssh" ? "connections" : "sessions")}
+              onEmpty={() => navigate("terminal")}
+            />
+          </div>
+        ) : null}
+
         {route.page === "sessions" || route.page === "connections" ? (
           <SessionsPage
             initialKind={route.page === "connections" ? "ssh" : undefined}
@@ -153,37 +180,7 @@ export default function App() {
           />
         ) : null}
 
-        {route.page === "terminal" ? (
-          <TerminalWorkspacePage
-            initialKind="serial"
-            sessionId={route.sessionId}
-            sessions={sessions}
-            selectedId={selectedId}
-            refresh={refresh}
-            notify={notify}
-            onSelectSerial={(id) => navigate("terminal", id)}
-            onSelectSsh={(id) => navigate("ssh", id)}
-            onOpenSessions={() => navigate("sessions")}
-            onEmpty={() => navigate("terminal")}
-          />
-        ) : null}
-
         {route.page === "mcp" ? <McpPage notify={notify} /> : null}
-
-        {route.page === "ssh" ? (
-          <TerminalWorkspacePage
-            initialKind="ssh"
-            sessionId={route.sessionId}
-            sessions={sessions}
-            selectedId={selectedId}
-            refresh={refresh}
-            notify={notify}
-            onSelectSerial={(id) => navigate("terminal", id)}
-            onSelectSsh={(id) => navigate("ssh", id)}
-            onOpenSessions={() => navigate("connections")}
-            onEmpty={() => navigate("terminal")}
-          />
-        ) : null}
 
         {route.page === "logs" ? (
           <LogsPage
@@ -194,8 +191,11 @@ export default function App() {
         ) : null}
       </Shell>
 
+      <DesktopPet onNotice={notify} />
+
       {toast ? (
         <div
+          data-toast={toast.tone}
           className={`fixed bottom-5 right-5 z-50 max-w-sm rounded-lg border px-4 py-3 text-xs shadow-xl backdrop-blur ${
             toast.tone === "error"
               ? "border-red-500/40 bg-red-950/80 text-red-200"

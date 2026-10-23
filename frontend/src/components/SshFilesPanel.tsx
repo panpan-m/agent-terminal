@@ -10,13 +10,15 @@ import {
   RefreshCw,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { pywebviewApi } from "@/lib/terminal-setup";
 import { cn, formatBytes } from "@/lib/utils";
-import type { SshFileList } from "@/lib/types";
+import type { SshFileEntry, SshFileList } from "@/lib/types";
 
 const joinPath = (base: string, name: string) =>
   base === "/" ? `/${name}` : `${base.replace(/\/+$/, "")}/${name}`;
@@ -33,6 +35,32 @@ interface DroppedFile {
   /** Path relative to the drop root, e.g. "src/main.py". */
   relative: string;
   file: File;
+}
+
+interface DownloadTask {
+  id: number;
+  name: string;
+  /** Where the file landed: full path (desktop), filename (picker) or null. */
+  location: string | null;
+  loaded: number;
+  total: number | null;
+  status: "active" | "done" | "error";
+  controller: AbortController;
+}
+
+interface DownloadSource {
+  path: string;
+  method: "GET" | "POST";
+  body?: Record<string, unknown>;
+}
+
+/** Minimal shape of the File System Access API save-picker handle. */
+interface SavePickerHandle {
+  name: string;
+  createWritable: () => Promise<{
+    write: (chunk: Uint8Array) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
 }
 
 /** Flatten a drop into files; folders are walked recursively. */
@@ -93,8 +121,11 @@ export function SshFilesPanel({
   const [error, setError] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<{ done: number; total: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [downloads, setDownloads] = useState<DownloadTask[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepth = useRef(0);
+  const downloadSeq = useRef(0);
 
   useEffect(() => {
     setDraft(path);
@@ -108,6 +139,7 @@ export function SshFilesPanel({
         const result = await api.sshSftpList(sessionId, target);
         setFiles(result);
         setPath(result.path);
+        setSelected(new Set());
       } catch (exc) {
         setError(`${(exc as { code?: string }).code ?? "ERROR"}: ${(exc as Error).message}`);
       } finally {
@@ -159,6 +191,154 @@ export function SshFilesPanel({
     await load(path);
   };
 
+  // the desktop shell pushes download progress through this global
+  useEffect(() => {
+    const holder = window as {
+      __tioDlProgress?: (id: number, loaded: number, total: number | null) => void;
+    };
+    holder.__tioDlProgress = (id, loaded, total) =>
+      setDownloads((prev) => prev.map((d) => (d.id === id ? { ...d, loaded, total } : d)));
+    return () => {
+      delete holder.__tioDlProgress;
+    };
+  }, []);
+
+  const runDownload = async (name: string, source: DownloadSource) => {
+    const id = (downloadSeq.current += 1);
+    const controller = new AbortController();
+    const bridge = pywebviewApi();
+
+    // destination first: the native/picker dialogs need the click gesture
+    let desktopPath: string | null = null;
+    let picker: SavePickerHandle | null = null;
+    if (bridge?.pick_save_path) {
+      desktopPath = await bridge.pick_save_path(name);
+      if (desktopPath == null) return; // cancelled
+    } else {
+      const showPicker = (
+        window as { showSaveFilePicker?: (options: { suggestedName: string }) => Promise<SavePickerHandle> }
+      ).showSaveFilePicker;
+      if (typeof showPicker === "function") {
+        try {
+          picker = await showPicker.call(window, { suggestedName: name });
+        } catch {
+          return; // cancelled
+        }
+      }
+    }
+    const location = desktopPath ?? picker?.name ?? null;
+    setDownloads((prev) => [...prev, { id, name, location, loaded: 0, total: null, status: "active", controller }]);
+
+    const patch = (fields: Partial<DownloadTask>) =>
+      setDownloads((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)));
+
+    try {
+      if (desktopPath !== null && bridge?.save_url_to) {
+        // desktop: the local python process streams straight to disk
+        const result = await bridge.save_url_to(
+          `${window.location.origin}${source.path}`,
+          desktopPath,
+          id,
+          source.method,
+          source.body ?? null,
+        );
+        if (!result.ok) {
+          if (result.cancelled) {
+            setDownloads((prev) => prev.filter((d) => d.id !== id));
+            return;
+          }
+          throw new Error(result.error || "download failed");
+        }
+        patch({ loaded: result.bytes, status: "done" });
+        return;
+      }
+
+      const response = await fetch(source.path, {
+        method: source.method,
+        credentials: "same-origin",
+        signal: controller.signal,
+        headers: source.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+        body: source.body !== undefined ? JSON.stringify(source.body) : undefined,
+      });
+      if (!response.ok) {
+        let payload: { error?: { code?: string; message?: string } } = {};
+        try {
+          payload = (await response.json()) as { error?: { code?: string; message?: string } };
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(payload.error?.message ?? `download failed (HTTP ${response.status})`);
+      }
+      const lengthHeader = response.headers.get("content-length");
+      const total = lengthHeader ? Number(lengthHeader) : null;
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("download stream unavailable");
+      let loaded = 0;
+
+      if (picker) {
+        const writer = await picker.createWritable();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          await writer.write(value);
+          loaded += value.byteLength;
+          patch({ loaded, total });
+        }
+        await writer.close();
+        patch({ status: "done" });
+        return;
+      }
+
+      // plain browser: collect into a blob and hand it to the download shelf
+      const parts: BlobPart[] = [];
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value as unknown as BlobPart);
+        loaded += value.byteLength;
+        patch({ loaded, total });
+      }
+      const url = URL.createObjectURL(new Blob(parts, { type: "application/octet-stream" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = name;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      patch({ status: "done", location: location ?? "browser downloads" });
+    } catch (exc) {
+      if ((exc as Error).name === "AbortError") {
+        setDownloads((prev) => prev.filter((d) => d.id !== id));
+        return;
+      }
+      notify(`${(exc as Error).message || "ERROR"} — ${name}`, "error");
+      patch({ status: "error" });
+    } finally {
+      // finished tasks linger briefly so the user sees they completed
+      window.setTimeout(() => {
+        setDownloads((prev) => prev.filter((d) => d.status === "active" || d.status === "error"));
+      }, 5000);
+    }
+  };
+
+  /** One file streams directly; a folder or multiple entries become one zip. */
+  const downloadEntries = (items: SshFileEntry[]) => {
+    if (items.length === 0) return;
+    if (items.length === 1 && !items[0].is_dir) {
+      void runDownload(items[0].name, {
+        path: api.sshSftpDownloadPath(sessionId, items[0].path),
+        method: "GET",
+      });
+      return;
+    }
+    const zipName = items.length === 1 ? `${items[0].name}.zip` : `archive-${items.length}-files.zip`;
+    void runDownload(zipName, {
+      path: api.sshSftpArchivePath(sessionId),
+      method: "POST",
+      body: { paths: items.map((item) => item.path) },
+    });
+    setSelected(new Set());
+  };
+
   const mkdir = async () => {
     const name = window.prompt("New directory name");
     if (!name) return;
@@ -195,6 +375,8 @@ export function SshFilesPanel({
     if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
+
+  const selectedEntries = entries.filter((entry) => selected.has(entry.path));
 
   return (
     <div
@@ -251,6 +433,19 @@ export function SshFilesPanel({
         <Button
           size="sm"
           variant="ghost"
+          title="download selected (folders become one zip)"
+          aria-label="Download selected"
+          disabled={selectedEntries.length === 0}
+          onClick={() => downloadEntries(selectedEntries)}
+        >
+          <Download className="h-3.5 w-3.5" />
+          {selectedEntries.length > 0 ? (
+            <span className="text-[10px] leading-none">{selectedEntries.length}</span>
+          ) : null}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
           title="upload files"
           aria-label="Upload"
           disabled={uploadState !== null}
@@ -292,6 +487,20 @@ export function SshFilesPanel({
             key={entry.path}
             className="group flex items-center gap-2 border-b border-zinc-800/40 px-2 py-1.5 hover:bg-zinc-900/60"
           >
+            <input
+              type="checkbox"
+              aria-label={`select ${entry.name}`}
+              className="h-3 w-3 shrink-0 accent-emerald-500"
+              checked={selected.has(entry.path)}
+              onChange={() =>
+                setSelected((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(entry.path)) next.delete(entry.path);
+                  else next.add(entry.path);
+                  return next;
+                })
+              }
+            />
             <button
               type="button"
               className="flex min-w-0 flex-1 items-center gap-2 text-left"
@@ -314,22 +523,15 @@ export function SshFilesPanel({
               <span className="shrink-0 font-mono text-[10px] text-zinc-500">{formatBytes(entry.size)}</span>
             ) : null}
             <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-              {!entry.is_dir ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  asChild
-                  title="download"
-                  aria-label="Download"
-                >
-                  <a
-                    href={`/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/download?path=${encodeURIComponent(entry.path)}`}
-                    download
-                  >
-                    <Download className="h-3 w-3" />
-                  </a>
-                </Button>
-              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                title={entry.is_dir ? "download folder as zip" : "download"}
+                aria-label="Download"
+                onClick={() => downloadEntries([entry])}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
               <Button size="sm" variant="ghost" title="rename" aria-label="Rename" onClick={() => void rename(entry.path, entry.name)}>
                 <Pencil className="h-3 w-3" />
               </Button>
@@ -340,6 +542,71 @@ export function SshFilesPanel({
           </div>
         ))}
       </div>
+
+      {downloads.length > 0 ? (
+        <div className="border-t border-zinc-800/80">
+          {downloads.map((task) => (
+            <div key={task.id} className="border-b border-zinc-800/40 px-2 py-1.5 last:border-b-0">
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate font-mono text-[10px]",
+                    task.status === "error" ? "text-red-400" : "text-zinc-300",
+                  )}
+                  title={task.location ?? task.name}
+                >
+                  {task.name}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-zinc-500">
+                  {task.status === "active"
+                    ? task.total != null
+                      ? `${Math.min(100, Math.floor((task.loaded / task.total) * 100))}% · ${formatBytes(task.loaded)}`
+                      : formatBytes(task.loaded)
+                    : task.status === "done"
+                      ? "done"
+                      : "failed"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title={task.status === "active" ? "cancel" : "dismiss"}
+                  aria-label={task.status === "active" ? "Cancel download" : "Dismiss"}
+                  onClick={() => {
+                    if (task.status === "active") {
+                      task.controller.abort();
+                      void pywebviewApi()?.cancel_save?.(task.id);
+                    } else {
+                      setDownloads((prev) => prev.filter((d) => d.id !== task.id));
+                    }
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+              {task.location ? (
+                <p
+                  className="mt-0.5 truncate font-mono text-[9px] text-zinc-600"
+                  title={task.location}
+                >
+                  {task.location}
+                </p>
+              ) : null}
+              {task.status === "active" ? (
+                <div className="mt-1 h-1 w-full overflow-hidden bg-zinc-800">
+                  {task.total != null ? (
+                    <div
+                      className="h-full bg-emerald-400 transition-[width] duration-150"
+                      style={{ width: `${Math.min(100, (task.loaded / task.total) * 100)}%` }}
+                    />
+                  ) : (
+                    <div className="h-full w-full animate-pulse bg-emerald-400/60" />
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <p
         className={cn(

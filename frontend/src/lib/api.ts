@@ -1,6 +1,8 @@
 import type {
   CommandResponse,
+  McpAuditEvent,
   McpStatus,
+  PetModel,
   PortInfo,
   SessionInput,
   SessionStatus,
@@ -123,6 +125,7 @@ export const api = {
   audit: (limit = 200) => request<{ events: Record<string, unknown>[] }>(`/api/audit?limit=${limit}`),
   system: () => request<SystemInfo>("/api/system"),
   mcp: () => request<McpStatus>("/api/mcp"),
+  mcpAudit: (limit = 100) => request<{ events: McpAuditEvent[] }>(`/api/mcp/audit?limit=${limit}`),
   sshHosts: () => request<{ hosts: SshHost[] }>("/api/ssh/hosts"),
   sshConfigCandidates: () =>
     request<{ path: string; hosts: SshConfigCandidate[] }>("/api/ssh/config"),
@@ -173,6 +176,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path, new_path: newPath }),
     }),
+  /** Streaming single-file download path (GET, has Content-Length). */
+  sshSftpDownloadPath: (sessionId: string, path: string) =>
+    `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/download?path=${encodeURIComponent(path)}`,
+  /** Folder/multi-file zip download path (POST with { paths }). */
+  sshSftpArchivePath: (sessionId: string) =>
+    `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/download-archive`,
   sshSessions: () => request<{ sessions: SshSessionStatus[] }>("/api/ssh/sessions"),
   sshTranscript: (id: string, limit = 200) =>
     request<{ events: TranscriptEvent[] }>(
@@ -189,7 +198,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ enabled }),
     }),
+  petModels: () => request<{ models: PetModel[] }>("/api/pet/models"),
+  petModelUpload: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<PetModel>("/api/pet/models", { method: "POST", body: form });
+  },
+  petModelDelete: (id: string) =>
+    request<{ ok: boolean }>(`/api/pet/models/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
+
+export function petModelFileUrl(id: string): string {
+  return `/api/pet/models/${encodeURIComponent(id)}/file`;
+}
 
 export function sshConsoleUrl(sessionId: string, replay = 65536): string {
   const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";

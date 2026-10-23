@@ -4,6 +4,8 @@ import { ChevronDown, ChevronRight, Save, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger, Switch } from "@/components/ui/dialog";
 import { Field, Input, Label, Select } from "@/components/ui/input";
+import { resetPetPosition } from "@/components/DesktopPet";
+import { PetModelsDialog } from "@/components/PetModelsDialog";
 import { customThemeDraft, saveCustomTheme, useTheme, THEMES } from "@/lib/theme";
 import { parseCustomTheme } from "@/lib/themeSpecs";
 import {
@@ -25,13 +27,14 @@ const THEME_HINTS: Record<string, string> = {
  * App settings: theme (dropdown), terminal appearance, keyboard capture and
  * clipboard behaviour.  Persisted per browser, applied live.
  */
-export function TerminalSettingsDialog() {
+export function TerminalSettingsDialog({ notify }: { notify?: (message: string, tone?: "info" | "error" | "success") => void }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<TerminalSettings>(getTerminalSettings());
   const { theme, setTheme } = useTheme();
   const [editorOpen, setEditorOpen] = useState(false);
   const [themeDraft, setThemeDraft] = useState("");
   const [themeError, setThemeError] = useState<string | null>(null);
+  const [petModelsOpen, setPetModelsOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -182,6 +185,10 @@ export function TerminalSettingsDialog() {
               />
               Shift+Enter sends ESC+CR — newline instead of submit in TUIs (Claude Code)
             </label>
+            <label className="flex items-center gap-2 text-xs text-zinc-300">
+              <Switch checked={draft.sttySync} onCheckedChange={(value) => update("sttySync", value)} />
+              stty size sync on serial open — aligns full-screen TUIs (apt/dpkg)
+            </label>
           </div>
 
           <div className="flex flex-col gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
@@ -204,6 +211,43 @@ export function TerminalSettingsDialog() {
               />
               Ctrl+Shift+C / Ctrl+Shift+V copy / paste
             </label>
+            <label className="flex items-center gap-2 text-xs text-zinc-300">
+              <Switch checked={draft.ctrlVPaste} onCheckedChange={(value) => update("ctrlVPaste", value)} />
+              Ctrl+V pastes — off sends ^V to the session (quoted-insert)
+            </label>
+            <label className="flex items-center gap-2 text-xs text-zinc-300">
+              <Switch
+                checked={draft.rightClickPaste}
+                onCheckedChange={(value) => update("rightClickPaste", value)}
+              />
+              Right-click pastes (PuTTY-style)
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Desktop pet</p>
+            <label className="flex items-center gap-2 text-xs text-zinc-300">
+              <Switch checked={draft.petEnabled} onCheckedChange={(value) => update("petEnabled", value)} />
+              显示终端桌宠 — 随打字、输出、命令成败做动作
+            </label>
+            <Field label="Pet size" hint="高度基准 96–288 px;宽度按模型比例自适应">
+              <Input
+                type="number"
+                min={96}
+                max={288}
+                value={draft.petSize}
+                onChange={(event) => update("petSize", Number(event.target.value))}
+              />
+            </Field>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={() => setPetModelsOpen(true)}>
+                管理模型…
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={resetPetPosition}>
+                恢复默认位置
+              </Button>
+            </div>
+            <PetModelsDialog open={petModelsOpen} onOpenChange={setPetModelsOpen} notify={notify} />
           </div>
 
           <div className="flex items-center justify-between">

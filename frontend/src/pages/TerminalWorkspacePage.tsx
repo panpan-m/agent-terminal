@@ -38,6 +38,9 @@ export function TerminalWorkspacePage({
 }) {
   const [sshSessions, setSshSessions] = useState<SshSessionStatus[]>([]);
   const [closingId, setClosingId] = useState<string | null>(null);
+  // keep-alive registry: every terminal that has ever been active stays
+  // mounted (hidden via CSS), so tab switches never destroy xterm state
+  const [alive, setAlive] = useState<Record<string, { kind: TerminalKind; id: string }>>({});
 
   const loadSsh = useCallback(async () => {
     try {
@@ -69,6 +72,36 @@ export function TerminalWorkspacePage({
 
   const activeId =
     activeKind === "ssh" ? sshCurrent?.session_id : serialCurrent?.session_id;
+
+  const activeKey =
+    activeKind && activeId ? `${activeKind}:${activeId}` : null;
+
+  useEffect(() => {
+    if (!activeKey || !activeKind || !activeId) return;
+    setAlive((previous) =>
+      previous[activeKey]
+        ? previous
+        : { ...previous, [activeKey]: { kind: activeKind, id: activeId } },
+    );
+  }, [activeKey, activeKind, activeId]);
+
+  // drop keep-alive entries whose session disappeared (SSH disconnects,
+  // serial sessions deleted on the Sessions page)
+  useEffect(() => {
+    setAlive((previous) => {
+      const next: typeof previous = {};
+      let changed = false;
+      for (const [key, item] of Object.entries(previous)) {
+        const exists =
+          item.kind === "ssh"
+            ? sshSessions.some((entry) => entry.session_id === item.id)
+            : sessions.some((entry) => entry.session_id === item.id);
+        if (exists) next[key] = item;
+        else changed = true;
+      }
+      return changed ? next : previous;
+    });
+  }, [sshSessions, sessions]);
 
   const closeSshTab = async (id: string) => {
     setClosingId(id);
@@ -177,33 +210,43 @@ export function TerminalWorkspacePage({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1">
-        {activeKind === "serial" && serialCurrent ? (
-          <TerminalPage
-            sessions={sessions}
-            session={serialCurrent}
-            selectedId={serialCurrent.session_id}
-            onSelect={onSelectSerial}
-            refresh={refresh}
-            notify={notify}
-            showSessionPicker={false}
-          />
-        ) : activeKind === "ssh" && sshCurrent ? (
-          <SshTerminalPage
-            sessionId={sshCurrent.session_id}
-            onBack={onOpenSessions}
-            onSelect={onSelectSsh}
-            notify={notify}
-            showSessionTabs={false}
-          />
-        ) : (
+      <div className="relative min-h-0 flex-1">
+        {Object.entries(alive).map(([key, item]) => {
+          const active = key === activeKey;
+          return (
+            <div key={key} className={cn("absolute inset-0", active ? "block" : "hidden")}>
+              {item.kind === "serial" ? (
+                <TerminalPage
+                  sessions={sessions}
+                  session={sessions.find((entry) => entry.session_id === item.id)}
+                  selectedId={item.id}
+                  onSelect={onSelectSerial}
+                  refresh={refresh}
+                  notify={notify}
+                  showSessionPicker={false}
+                  active={active}
+                />
+              ) : (
+                <SshTerminalPage
+                  sessionId={item.id}
+                  onBack={onOpenSessions}
+                  onSelect={onSelectSsh}
+                  notify={notify}
+                  showSessionTabs={false}
+                  active={active}
+                />
+              )}
+            </div>
+          );
+        })}
+        {Object.keys(alive).length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-zinc-500">
             <p>No terminal session is open.</p>
             <button type="button" onClick={onOpenSessions} className="text-emerald-300 hover:underline">
               Open a serial or SSH session
             </button>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -113,10 +113,7 @@ export function Shell({
               <button
                 key={session.session_id}
                 type="button"
-                onClick={() => {
-                  onSelectSession(session.session_id);
-                  onNavigate("terminal");
-                }}
+                onClick={() => onSelectSession(session.session_id)}
                 className={cn(
                   "flex flex-col gap-1 rounded-lg px-3 py-2 text-left transition-colors",
                   selectedId === session.session_id
@@ -144,10 +141,7 @@ export function Shell({
               <button
                 key={session.session_id}
                 type="button"
-                onClick={() => {
-                  onSelectSsh(session.session_id);
-                  onNavigate("ssh");
-                }}
+                onClick={() => onSelectSsh(session.session_id)}
                 className={cn(
                   "flex flex-col gap-1 rounded-lg px-3 py-2 text-left transition-colors",
                   selectedSshId === session.session_id

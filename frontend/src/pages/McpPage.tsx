@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Copy, Loader2, Plug, RefreshCw } from "lucide-react";
+import { Check, Copy, History, Loader2, Plug, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { McpStatus } from "@/lib/types";
+import type { McpAuditEvent, McpStatus } from "@/lib/types";
 
 function buildPrompt(status: McpStatus): string {
   const toolNames = status.tools.map((tool) => tool.name).join(", ");
@@ -61,6 +61,8 @@ export function McpPage({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
+  const [audit, setAudit] = useState<McpAuditEvent[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,6 +80,24 @@ export function McpPage({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let alive = true;
+    const pull = async () => {
+      try {
+        const result = await api.mcpAudit(50);
+        if (alive) setAudit(result.events);
+      } catch {
+        /* the audit card is best-effort */
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const prompt = useMemo(() => (status ? buildPrompt(status) : null), [status]);
   const command = useMemo(() => (status ? stdioCommand(status) : null), [status]);
@@ -265,6 +285,86 @@ export function McpPage({
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> loading MCP status…
         </div>
       ) : null}
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-4 w-4 text-emerald-400" /> Tool audit
+          </CardTitle>
+          <CardDescription>
+            Every tools/call with time, agent, session, input and output. Click a row to expand; newest
+            first, refreshed live.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {audit.length === 0 ? (
+            <p className="py-4 text-center text-[11px] text-zinc-600">
+              no tool calls yet — connect an agent and run one
+            </p>
+          ) : (
+            <div className="divide-y divide-zinc-800/60">
+              {audit.map((event, index) => {
+                const key = `${event.ts}|${event.tool}|${index}`;
+                const open = expanded === key;
+                return (
+                  <div key={key}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-1 py-1.5 text-left hover:bg-zinc-900/60"
+                      onClick={() => setExpanded(open ? null : key)}
+                    >
+                      <span className="w-[88px] shrink-0 font-mono text-[10px] text-zinc-500" title={event.ts}>
+                        {event.ts.slice(11, 23)}
+                      </span>
+                      <span
+                        className="w-24 shrink-0 truncate font-mono text-[10px] text-sky-300"
+                        title={`${event.agent}${event.agent_version ? ` ${event.agent_version}` : ""}`}
+                      >
+                        {event.agent}
+                      </span>
+                      <span className="w-20 shrink-0 truncate font-mono text-[10px] text-zinc-400" title={event.session ?? undefined}>
+                        {event.session ?? "—"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-emerald-300">{event.tool}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-zinc-500">{event.duration_ms} ms</span>
+                      <span
+                        className={cn(
+                          "shrink-0 font-mono text-[10px]",
+                          event.ok ? "text-emerald-400" : "text-red-400",
+                        )}
+                      >
+                        {event.ok ? "ok" : "err"}
+                      </span>
+                    </button>
+                    {open ? (
+                      <div className="grid gap-2 px-1 pb-2 sm:grid-cols-2">
+                        <div className="min-w-0">
+                          <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">input</p>
+                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-300">
+                            {event.input}
+                          </pre>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">output</p>
+                          <pre
+                            className={cn(
+                              "max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800",
+                              "bg-zinc-950/60 px-2 py-1.5 font-mono text-[10px] leading-relaxed",
+                              event.ok ? "text-zinc-300" : "text-red-300",
+                            )}
+                          >
+                            {event.output}
+                          </pre>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
