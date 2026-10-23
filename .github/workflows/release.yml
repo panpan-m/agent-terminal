@@ -1,0 +1,81 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -e ".[dev,desktop]"
+      - run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - name: pyinstaller + bundle (linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./packaging/pyinstaller/build.sh
+          python scripts/verify_packaged.py
+          mkdir -p release
+          cp dist/tio-suite-linux-*.tar.gz release/
+
+      - name: pyinstaller + installers (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./packaging/pyinstaller/build.ps1
+          ./packaging/pyinstaller/build_desktop.ps1
+          choco install -y innosetup --no-progress
+          $iscc = (Get-ChildItem 'C:\Program Files*\Inno Setup*\ISCC.exe' | Select-Object -First 1).FullName
+          & $iscc packaging\windows\agent-terminal.iss
+          & $iscc packaging\windows\agent-desktop.iss
+          python scripts\verify_packaged.py
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item dist\installer\*.exe release\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: release/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release/
+          merge-multiple: true
+
+      - name: checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
