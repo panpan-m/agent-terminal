@@ -212,3 +212,30 @@ def test_zero_byte_write_is_a_timeout(manager: SessionManager, monkeypatch):
         sess.write_bytes(b"x", source="human")
     assert exc.value.code == "TIMEOUT"
     assert sess.state is SessionState.OPEN
+
+
+def test_subscribe_replay_ends_at_ring_head(manager: SessionManager):
+    """Regression: the console tail replay used to stop max_bytes (16 KiB)
+    short of the ring head, so switching browser tabs back to a serial
+    terminal lost the newest output."""
+    sess = manager.get("board-a")
+    sess.open()
+    assert wait_until(lambda: sess.ring.head > 0)
+    sess.write_bytes(b"dump 30000\r", source="human")
+    assert wait_until(lambda: sess.ring.head > 30020)
+    time.sleep(0.2)  # let the dump settle so head is stable across the snapshot
+    head = sess.ring.head
+
+    sub = sess.subscribe(replay_bytes=65536)
+    try:
+        replay = None
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            item = sub.get(0.1)
+            if item and item.get("type") == "replay":
+                replay = item
+                break
+        assert replay is not None, "expected a replay frame"
+        assert replay["offset"] + len(replay["data"]) == head, "replay must end at the ring head"
+    finally:
+        sess.unsubscribe(sub)

@@ -122,16 +122,23 @@ class RingBuffer:
     ) -> ReadSlice:
         """Read at most ``max_bytes`` starting at absolute ``cursor``.
 
-        ``tail_bytes`` ignores ``cursor`` and returns the newest N bytes.
+        ``tail_bytes`` ignores ``cursor`` and returns the newest N bytes.  The
+        response always ends at ``head``; ``max_bytes`` only shrinks the window
+        from the front (it must never cut the newest bytes off, or callers that
+        replay a tail would silently miss current terminal state).
         """
         with self._cond:
             head = self._head
             start = self._start
+            requested_tail = 0
             if tail_bytes is not None:
                 if tail_bytes < 0:
                     raise ValueError("tail_bytes must be >= 0")
-                begin = max(start, head - int(tail_bytes))
+                requested_tail = int(tail_bytes)
+                limit = min(requested_tail, max(0, int(max_bytes)))
+                begin = max(start, head - limit)
                 gap = False
+                end = head
             else:
                 req = start if cursor is None else int(cursor)
                 if req > head:
@@ -142,8 +149,8 @@ class RingBuffer:
                 else:
                     gap = False
                     begin = req
-            end = min(head, begin + max(0, int(max_bytes)))
-            truncated = end < head
+                end = min(head, begin + max(0, int(max_bytes)))
+            truncated = (end < head) if requested_tail == 0 else (end - begin) < requested_tail
             data = self._slice_locked(begin, end)
             segments: list[tuple[int, float]] = []
             for c_start, c_end, ts in self._chunks:

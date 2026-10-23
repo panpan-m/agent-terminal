@@ -67,7 +67,7 @@ class SessionState(str, Enum):
 class Subscriber:
     """A bounded stream of session events for one WebSocket client."""
 
-    maxsize: int = 1024
+    maxsize: int = 2048
     q: queue.Queue = field(default_factory=queue.Queue)
     dropped: int = 0
     overflowed: bool = False
@@ -332,7 +332,7 @@ class Session:
 
     # -------------------------------------------------------------- subscribers
     def subscribe(
-        self, replay_bytes: int = 0, maxsize: int = 1024, cursor: int | None = None
+        self, replay_bytes: int = 0, maxsize: int = 2048, cursor: int | None = None
     ) -> Subscriber:
         sub = Subscriber(maxsize=maxsize)
         replay = b""
@@ -344,13 +344,15 @@ class Session:
                 replay, offset = sl.data, sl.start
                 dropped = sl.lost_bytes if sl.gap else 0
             elif replay_bytes > 0:
-                sl = self.ring.read(tail_bytes=replay_bytes)
+                sl = self.ring.read(tail_bytes=replay_bytes, max_bytes=replay_bytes)
                 replay, offset = sl.data, sl.start
+            # history must land in the queue before the subscriber goes live,
+            # or a chunk ingested in between would render ahead of the replay
+            if dropped:
+                sub.put({"type": "overflow", "dropped": dropped})
+            if replay:
+                sub.put({"type": "replay", "offset": offset, "data": replay})
             self._subs.append(sub)
-        if dropped:
-            sub.put({"type": "overflow", "dropped": dropped})
-        if replay:
-            sub.put({"type": "replay", "offset": offset, "data": replay})
         sub.put({"type": "status", "status": self.status()})
         return sub
 

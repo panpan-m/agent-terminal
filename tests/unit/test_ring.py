@@ -69,6 +69,31 @@ def test_tail_bytes():
     assert sl.next_cursor == 10
 
 
+def test_tail_bytes_always_end_at_head():
+    """Regression: a tail read used to stop max_bytes short of the newest
+    bytes (default 16 KiB), so tail replays missed recent output -- including
+    escape sequences such as the mouse-tracking disable vim sends on exit."""
+    rb = RingBuffer(1024 * 1024)
+    rb.append(b"a" * 80000)
+    rb.append(b"tail!")
+    sl = rb.read(tail_bytes=65536)  # default max_bytes shrinks the window, never the end
+    assert sl.end == rb.head
+    assert sl.data.endswith(b"tail!")
+    assert len(sl.data) == 16384  # default cap: newest 16 KiB of the window
+    assert sl.start == rb.head - 16384
+
+    full = rb.read(tail_bytes=65536, max_bytes=65536)
+    assert len(full.data) == 65536
+    assert full.end == rb.head
+    assert full.start == rb.head - 65536
+    assert full.truncated is False
+
+    capped = rb.read(tail_bytes=8192, max_bytes=4096)
+    assert len(capped.data) == 4096
+    assert capped.end == rb.head  # the cap drops the oldest bytes, never the newest
+    assert capped.truncated is True
+
+
 def test_cursor_ahead_clamps():
     rb = RingBuffer(16)
     rb.append(b"abc")
