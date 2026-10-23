@@ -88,27 +88,39 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,desktop]"
       - run: |
           npm --prefix frontend ci
           npm --prefix frontend run build
 
-      - name: pyinstaller (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./packaging/pyinstaller/build.ps1
-
-      - name: pyinstaller (linux)
+      - name: pyinstaller + bundle (linux)
         if: runner.os == 'Linux'
         run: |
-          pyinstaller --noconfirm --clean --onedir --name tio-server --paths src \
-            --add-data "src/tio_server/web/static:tio_server/web/static" \
-            --collect-submodules mcp.server --collect-submodules mcp.shared \
-            --hidden-import mcp.types --collect-all uvicorn --collect-all fastapi \
-            --collect-all starlette --collect-all pydantic --collect-all websockets \
-            --collect-submodules tio_server scripts/entry_server.py
+          ./packaging/pyinstaller/build.sh
+          python scripts/verify_packaged.py
 
-      - uses: actions/upload-artifact@v4
+      - name: pyinstaller + installers (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./packaging/pyinstaller/build.ps1
+          ./packaging/pyinstaller/build_desktop.ps1
+          choco install -y innosetup --no-progress
+          $iscc = (Get-ChildItem 'C:\Program Files*\Inno Setup*\ISCC.exe' | Select-Object -First 1).FullName
+          & $iscc packaging\windows\agent-terminal.iss
+          & $iscc packaging\windows\agent-desktop.iss
+          python scripts\verify_packaged.py
+
+      - name: upload bundle (linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
         with:
-          name: tio-server-${{ matrix.os }}
-          path: dist/
+          name: tio-suite-linux
+          path: dist/tio-suite-linux-*.tar.gz
+
+      - name: upload installers (windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tio-suite-windows
+          path: dist/installer/

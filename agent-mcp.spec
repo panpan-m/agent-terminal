@@ -1,10 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
-hiddenimports = ['mcp.types', 'mcp.server.mcpserver', 'mcp.server.transport_security', 'serial.tools.list_ports', 'serial.tools.list_ports_windows', 'uvicorn.logging', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan.on']
+_list_ports_impl = 'serial.tools.list_ports_windows' if sys.platform == 'win32' else 'serial.tools.list_ports_posix'
+hiddenimports = ['mcp.types', 'mcp.server.mcpserver', 'mcp.server.transport_security', 'serial.tools.list_ports', _list_ports_impl, 'uvicorn.logging', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan.on']
 hiddenimports += collect_submodules('mcp.server')
 hiddenimports += collect_submodules('mcp.shared')
 hiddenimports += collect_submodules('tio_server')

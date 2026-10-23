@@ -101,15 +101,34 @@ See [desktop.md](desktop.md) for the runtime, uninstall and limitations.
 
 ## 5. Linux
 
-### Bundle layout (produced by CI / PyInstaller)
+### Build the bundle
+
+```bash
+packaging/pyinstaller/build.sh        # or: PYTHON=.venv/bin/python packaging/pyinstaller/build.sh
+# dist/tio-suite-linux-<arch>.tar.gz
+```
+
+CI produces the same tar.gz on every push (artifact `tio-suite-linux`). The
+tar is self-contained — it carries the executables plus `install.sh` and the
+systemd unit:
+
+```bash
+tar xf tio-suite-linux-x86_64.tar.gz
+cd tio-suite-linux-x86_64
+sudo ./install.sh .
+```
+
+### Bundle layout
 
 ```text
 agent-terminal            onedir executable
 agent-mcp               onefile
 _internal/            PyInstaller payload (contains web/static)
+install.sh            installer (from packaging/linux)
+agent-terminal.service
 ```
 
-Install with:
+For a bundle built by hand (not from the tar), install with:
 
 ```bash
 sudo ./packaging/linux/install.sh /path/to/bundle

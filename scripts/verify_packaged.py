@@ -3,7 +3,7 @@
     python scripts/verify_packaged.py [--dist dist]
 
 Checks: exe init, service-style run, bundled SPA, admin API, MCP over HTTP, and
-the packaged ``agent-mcp.exe`` stdio shim talking to the packaged server.
+the packaged ``agent-mcp`` stdio shim talking to the packaged server.
 """
 
 from __future__ import annotations
@@ -45,8 +45,9 @@ def sse_json(text: str) -> list[dict]:
 
 def main() -> int:
     dist = ROOT / "dist"
-    server_exe = dist / "agent-terminal" / "agent-terminal.exe"
-    shim_exe = dist / "agent-mcp.exe"
+    exe_suffix = ".exe" if sys.platform == "win32" else ""
+    server_exe = dist / "agent-terminal" / f"agent-terminal{exe_suffix}"
+    shim_exe = dist / f"agent-mcp{exe_suffix}"
     out = ROOT / "artifacts" / "packaged"
     out.mkdir(parents=True, exist_ok=True)
     checks: list[dict] = []
@@ -173,7 +174,7 @@ def main() -> int:
         shim.stdin.write(json.dumps(init_msg) + "\n")
         shim.stdin.flush()
         first = json.loads(shim.stdout.readline())
-        check("packaged agent-mcp.exe initializes", first.get("result", {}).get("serverInfo", {}).get("name") == "agent-terminal", first)
+        check("packaged agent-mcp shim initializes", first.get("result", {}).get("serverInfo", {}).get("name") == "agent-terminal", first)
         shim.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         shim.stdin.flush()
         shim.stdin.write(
@@ -190,7 +191,7 @@ def main() -> int:
         shim.stdin.flush()
         status = json.loads(shim.stdout.readline())["result"]
         check(
-            "packaged agent-mcp.exe calls a tool",
+            "packaged agent-mcp shim calls a tool",
             status.get("isError") is False and status.get("structuredContent", {}).get("state") == "open",
             status.get("structuredContent", {}).get("state"),
         )
