@@ -160,7 +160,7 @@ def test_exported_status_has_contract_fields(manager: SessionManager):
         "platform",
     ):
         assert key in st
-    assert st["platform"] == "windows"
+    assert st["platform"] == ("windows" if manager.is_windows else "posix")
 
 
 def test_reset_sequence_is_recorded(manager: SessionManager):

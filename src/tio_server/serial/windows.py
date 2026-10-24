@@ -253,12 +253,17 @@ class WindowsBackend:
 
 
 class PySerialLoopbackBackend(WindowsBackend):
-    """Dev-only backend that lets ``loop://`` exercise the real pyserial I/O path."""
+    """pyserial-URL ports (``loop://``, ``socket://``, ``rfc2217://``…).
 
-    name = "pyserial-loop"
+    Pure python (no win32 imports), so POSIX routes its URL ports here through
+    :class:`BackendRouter` as well; plain device paths fall through to the
+    regular OS open path.
+    """
+
+    name = "pyserial-url"
 
     def open(self, cfg: SerialConfig) -> SerialHandle:
-        if not cfg.port.startswith(("loop://", "socket://")):
+        if "://" not in cfg.port:
             return super().open(cfg)
         try:
             ser = serial.serial_for_url(

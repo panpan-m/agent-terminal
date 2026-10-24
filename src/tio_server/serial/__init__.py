@@ -24,29 +24,37 @@ from .base import (
 def make_backend(prefer_simulator: bool = True):
     """Pick the native backend for this OS.
 
-    ``sim://`` ports are always routed to the simulator by :class:`BackendRouter`,
-    so the native backend stays the default for real ports.
+    ``sim://`` ports are always routed to the simulator by :class:`BackendRouter`;
+    other pyserial URL ports (``loop://``, ``socket://``, ``rfc2217://``…) go to
+    the pyserial-based URL backend, which is pure python and works on every OS.
     """
-    if os.name == "nt":
-        from .windows import PySerialLoopbackBackend
+    from .windows import PySerialLoopbackBackend
 
+    if os.name == "nt":
         return BackendRouter(PySerialLoopbackBackend(), SimulatorBackend())
     from .posix import PosixBackend
 
-    return BackendRouter(PosixBackend(), SimulatorBackend())
+    return BackendRouter(PosixBackend(), SimulatorBackend(), urls=PySerialLoopbackBackend())
 
 
 class BackendRouter:
-    """Routes ``sim://`` ports to the simulator and everything else to the OS."""
+    """Routes ``sim://`` ports to the simulator, URL ports to pyserial, rest to the OS."""
 
     name = "router"
 
-    def __init__(self, native, simulator) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, native, simulator, urls=None) -> None:  # type: ignore[no-untyped-def]
         self.native = native
         self.simulator = simulator
+        # pyserial-URL backend for loop://, socket://, … (None when the native
+        # backend already handles URLs itself, e.g. Windows)
+        self.urls = urls
 
     def _pick(self, port: str):
-        return self.simulator if port.startswith("sim://") else self.native
+        if port.startswith("sim://"):
+            return self.simulator
+        if self.urls is not None and "://" in port:
+            return self.urls
+        return self.native
 
     def list_ports(self) -> list[PortInfo]:
         return self.native.list_ports() + self.simulator.list_ports()
