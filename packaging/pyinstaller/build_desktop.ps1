@@ -14,7 +14,11 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $root
 
 if ($Venv -ne "") { $Python = Join-Path $Venv "Scripts\python.exe" }
-if (-not (Test-Path $Python)) { throw "python not found: $Python" }
+if (-not (Test-Path $Python)) {
+    # no local venv (e.g. CI runners): fall back to the interpreter on PATH
+    $Python = (Get-Command python -ErrorAction Stop).Source
+    Write-Host "venv python not found; using $Python"
+}
 if (-not (Test-Path "src\tio_server\web\static\index.html")) {
     throw "frontend not built; run: npm --prefix frontend ci; npm --prefix frontend run build"
 }

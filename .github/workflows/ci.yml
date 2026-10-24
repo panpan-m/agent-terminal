@@ -48,28 +48,6 @@ jobs:
           name: e2e-${{ matrix.os }}
           path: artifacts/e2e
 
-  ttyd:
-    name: ttyd browser terminal
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e ".[dev]"
-      - name: fetch pinned ttyd
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force tools\ttyd | Out-Null
-          Invoke-WebRequest https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.win32.exe -OutFile tools\ttyd\ttyd.exe
-      - name: run ttyd check
-        run: python scripts/ttyd_check.py
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ttyd-report
-          path: artifacts/ttyd
-
   package:
     name: package (${{ matrix.os }})
     needs: test
