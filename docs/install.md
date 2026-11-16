@@ -81,24 +81,6 @@ Notes:
 * Add an Authenticode signature to the installer and executables before
   distributing.
 
-## 4. Windows desktop app
-
-For a normal desktop install (no service, no browser), use the WebView2 app:
-
-```powershell
-pip install -e ".[desktop]"
-powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build_desktop.ps1
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\windows\agent-desktop.iss
-```
-
-Run `dist\installer\agent-terminal-0.1.0-setup.exe`. It installs per-user to
-`%LOCALAPPDATA%\Programs\agent-terminal`, adds Start Menu/optional desktop shortcuts
-and an optional **Start with Windows** entry. Data lives in
-`%LOCALAPPDATA%\agent-terminal`; first launch opens straight into the
-UI (no login); the MCP token is in `api-token` there.
-
-See [desktop.md](desktop.md) for the runtime, uninstall and limitations.
-
 ## 5. Linux
 
 ### Build the bundle

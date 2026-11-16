@@ -67,8 +67,6 @@ both the simulator and `COM5`.
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
 | **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | [`docs/reports/live-shell.json`](./reports/live-shell.json) |
 | **Terminal tab**: xterm.js in the built SPA, typed on the real Pi | **3 / 3 checks** (CDP) | `docs/screenshots/10-terminal-tab.png` |
-| **SSH web terminal**: Paramiko against the real Pi (OpenSSH 10.0p2) | **7 / 7 checks** | [`ssh.md`](./ssh.md), [screenshot](screenshots/14-ssh-terminal.png) |
-| **SSH MCP tools**: exec/read/tail/write/expect on a real session | **7 / 7 checks** | [`ssh-plan.md`](./ssh-plan.md) |
 
 The skipped test is the HIL "open a real COM port" case while the live
 debugging server holds `COM5` exclusively (expected; it passed in the earlier run).
@@ -209,149 +207,6 @@ the newest lines including the root prompt. 25/25 checks passed.
 The DSH integration row is documented in [`dsh.md`](./dsh.md); a newly inserted
 plugin row is only composed after the DSH app restarts.
 
-### 7. SSH web terminal (7 checks)
-
-The Paramiko session manager was exercised against the **real Pi 5**
-(OpenSSH 10.0p2) over the LAN, with a dedicated Ed25519 key installed only for
-the test and removed afterwards:
-
-1. key login (`root@192.168.124.23`) opened a PTY, `state=open`;
-2. `uname -a` through the `/ws/ssh` WebSocket returned the 6.18.39 kernel;
-3. a WebSocket resize to 120×40 made the remote `stty size` return `40 120`;
-4. an empty known_hosts produced `SSH_HOST_UNKNOWN` with the SHA256 fingerprint;
-5. a wrong known_hosts entry produced `SSH_HOST_KEY_CHANGED` with both
-   expected and actual fingerprints;
-6. disconnect removed the session (`sessions=[]`);
-7. the built SPA was driven through CDP: typing `uname -r` in the SSH terminal
-   printed `6.18.39+rpt-rpi-2712`.
-
-Status showed `aes128-ctr` / `hmac-sha2-256` and the host-key fingerprint.
-Transcripts (`run/transcripts/ssh-*.jsonl`) and audit events (`ssh.connect`,
-`ssh.disconnect`, `ssh.connect_failed`) were present. Screenshots:
-[13-ssh-connections](screenshots/13-ssh-connections.png),
-[14-ssh-terminal](screenshots/14-ssh-terminal.png),
-[15-ssh-typed](screenshots/15-ssh-typed.png).
-
-Phase 2 additions were verified on the same Pi host:
-
-- **connection test** (`POST /api/ssh/hosts/{id}/test`) returned `reachable=true`,
-  `OpenSSH_10.0p2`, `ssh-ed25519`, SHA256 fingerprint and
-  `known_hosts_status=unknown` without authenticating;
-- **log export** (`GET /api/ssh/sessions/{id}/export?format=txt`) returned the
-  timestamped RX transcript (`RX` + `Linux raspberry...`);
-- the SSH terminal header now exposes **Log** and **Keys**, and host cards expose
-  **Test**; screenshot [14-ssh-terminal](screenshots/14-ssh-terminal.png) was
-  refreshed;
-- **multi-session tabs** verified with two sessions to the Pi: both appear in the
-  tab bar and switching reattaches to the server-side ring
-  ([16-ssh-tabs](screenshots/16-ssh-tabs.png), superseded by the unified
-  workspace below);
-- **one Terminal workspace** verified with the real COM5 serial session plus two
-  SSH sessions: a single tab bar shows `USB Serial (COM5)` and both `128` SSH
-  tabs, switching keeps the matching xterm view
-  ([19-terminal-mixed-serial](screenshots/19-terminal-mixed-serial.png),
-  [20-terminal-mixed-ssh](screenshots/20-terminal-mixed-ssh.png));
-- **tab close ×** verified through CDP: clicking the × on an SSH tab called
-  `ssh_disconnect`, removed the tab and navigated to `#/terminal/board` (the
-  serial tab), not back to Sessions.
-- **auto reconnect** verified on the real Pi: stopping sshd and killing the root
-  `sshd-session` moved the session to `reconnecting`; starting sshd again restored
-  `open` with `reconnect_count=1`, and `ssh_exec("uname -r")` returned
-  `6.18.39+rpt-rpi-2712` (exit 0).
-
-### 8. SSH MCP tools (8 checks)
-
-Through the live `/mcp` endpoint (Bearer + `Mcp-Session-Id`), with an
-operator-opened SSH session to the Pi:
-
-1. `tools/list` returned **16 tools** (8 serial + 8 SSH) with schemas/annotations;
-2. `ssh_sessions` listed the open session and its host-key fingerprint;
-3. `ssh_status` reported `state=open`, `aes128-ctr`, SHA256 fingerprint;
-4. `ssh_exec("uname -r")` returned `exit_code=0`, stdout `6.18.39+rpt-rpi-2712`;
-5. `ssh_read`/`ssh_tail` returned the login banner and root prompt;
-6. `ssh_write("echo mcp-ssh-ok")` + `ssh_expect("mcp-ssh-ok")` matched;
-7. disconnect/delete removed the session/profile; the temporary key was removed
-   from the Pi and the artifacts deleted. No `ssh_connect`/`ssh_disconnect`
-   tools exist (operator-opened sessions only);
-8. `ssh_host_info` contract is covered by a unit test with a fake manager
-   (description/path notes, visible_sessions, no password); it is gated on an
-   agent-visible session just like the other SSH tools.
-
-### 9. SSH Phase 4 (SFTP, jump host, agent, config import)
-
-- **SFTP** against the Pi: listed `/root` (16 entries), uploaded
-  `/root/tio-sftp-test.txt` (19 bytes), downloaded identical bytes, created
-  `tio-sftp-dir`, renamed it, then deleted both. All steps returned 200.
-- **Jump host**: two saved profiles, target `jump_host_id=jump`; the target
-  connected through a `direct-tcpip` channel and `ssh_exec("uname -r")` returned
-  `6.18.39+rpt-rpi-2712` (exit 0).
-- **~/.ssh/config import**: unit test parses Host/HostName/User/Port/
-  IdentityFile, skips wildcard entries (`tests/unit/test_ssh_config_import.py`).
-- **SSH agent**: unit test asserts `allow_agent=True` and no key filename
-  (`tests/unit/test_ssh_session.py`); no real agent is available in this
-  environment.
-- **keyboard-interactive/2FA**: backend handler and UI response list are
-  implemented, but no 2FA host was available; **not** end-to-end verified.
-
-### 10. SSH remembered credentials
-
-Against the real Pi with a temporary `tiotest` account:
-
-1. first connect sent `password` + `remember=true`; `GET /api/ssh/hosts` then
-   returned `has_saved_secrets=true`, `saved_fields=["password"]`, and no plaintext;
-2. after disconnect, a second connect sent **no password**, only
-   `use_saved=true`, and returned `state=open` as `tiotest`;
-3. `run/ssh-secrets.json` contained no plaintext (`TioTest!123` absent) and
-   `ssh-secrets.key` existed;
-4. `DELETE /api/ssh/hosts/{id}/secrets` returned `cleared=true` and the host
-   flags went back to false;
-5. the profile and the temporary Linux user were removed afterwards.
-
-### 11. SSH agent visibility
-
-With one SSH session to the Pi (default `agent_visible=false`):
-
-1. MCP `ssh_sessions` returned `sessions=[]`;
-2. `POST /api/ssh/sessions/{id}/agent {enabled:true}` then `ssh_sessions` listed
-   exactly that session and `ssh_exec("uname -r")` returned exit 0;
-3. `enabled:false` hid it again: `ssh_sessions` empty and `ssh_status` with the
-   explicit id returned `PERMISSION_DENIED`;
-4. the session/profile and temporary key were removed afterwards.
-
-### 12. SSH agent activity in the web terminal
-
-With an agent-visible SSH session:
-
-1. MCP `ssh_write(data="ls", newline="lf")` wrote **3 bytes to the PTY**;
-   the terminal showed `ls` and the directory listing exactly as if typed by a
-   human, and `ssh_read` returned the same listing from the session ring;
-2. the session status became `last_write_source=agent`,
-   `agent_last_action=write`; the LIVE bar/AGENT ACTIVITY card and the 5 s header
-   pulse reported the action, while the terminal showed the command and output
-   directly with no separate agent panel
-   ([24-ssh-agent-pty](screenshots/24-ssh-agent-pty.png));
-3. MCP `ssh_exec` remains a separate channel: it does not echo into the PTY, but
-   still updates the activity card with action/exit/latency; use `ssh_write` for
-   transparent interactive operation;
-4. the verification session was left open for the operator; no files were
-   changed by the commands.
-
-### 13. Windows desktop app
-
-1. `packaging/pyinstaller/build_desktop.ps1` built `dist/agent-desktop` (PyInstaller
-   onedir, windowed, icon) and its `--smoke` step started the server and exited 0;
-2. `packaging/windows/agent-desktop.iss` produced
-   `dist/installer/agent-terminal-0.1.0-setup.exe` (~24.7 MB);
-3. silent per-user install exited 0; Start Menu/desktop shortcut
-   `agent-terminal Desktop` and the installed `agent-desktop.exe` were created under
-   `%LOCALAPPDATA%\Programs\agent-terminal`;
-4. the installed app opened a WebView2 window titled `agent-terminal`; first run
-   created `%LOCALAPPDATA%\agent-terminal\config.toml` + `api-token`,
-   independent from the service data directory;
-5. the desktop server bound `127.0.0.1:18765` (stable MCP endpoint), `/api`
-   answered without login, and the app/service used different data dirs and
-   ports; no service was installed or modified.
-
 ### 14. Login-free rework (this build)
 
 The admin account, login page, cookie sessions, CSRF and the login rate
@@ -377,23 +232,11 @@ service:
 | UI selects port/baud and opens a session | ✅ | browser CDP check "session created from the dialog is listed and open" |
 | Real device end to end | ✅ | live run 46/46 + agent-path MCP run 25/25 on a Raspberry Pi 5 shell through a Debug Probe |
 | Agent lists sessions, reads logs, runs commands with structured results | ✅ | MCP e2e checks + protocol tests |
-| SSH web terminal: saved hosts, strict known_hosts, PTY resize | ✅ | 7/7 real Pi checks; pytest SSH profile/session/API tests |
-| SSH MCP tools on operator-opened sessions | ✅ | 7/7 real Pi checks (exec/read/tail/write/expect); 16 tools total; host_info contract tested |
-| SSH Phase 2: connection test, log export, Keys help | ✅ | real Pi test endpoint + transcript export; covered by pytest |
-| SSH Phase 2: multi-tabs + transport auto reconnect | ✅ | two Pi sessions in tabs; sshd restart → `reconnecting` → `open`, reconnect_count=1 |
-| Unified Terminal: serial + SSH in one tab bar | ✅ | COM5 + two SSH sessions; screenshots 19/20; per-tab × disconnect verified |
-| SSH Phase 4: SFTP + jump host | ✅ | real Pi upload/download/mkdir/rename/delete; jump-host `ssh_exec` |
-| SSH remembered credentials | ✅ | encrypted at rest; second connect without password; Forget clears |
-| SSH agent visibility | ✅ | default private; marked session listed/executable; unmarked denied |
-| SSH agent activity in web UI | ✅ | `ssh_write` PTY input visible in terminal; activity card; exec separate |
-| Windows desktop app/installer | ✅ | WebView2 onedir + per-user setup; installed, launched, first-run data verified |
-| SSH agent / config import / 2FA | ⚠️ partial | agent + config parser tested; 2FA code path not end-to-end |
 | `control_owner` switch blocks/allows agent writes | ✅ | integration + UI + MCP checks |
 | Replug reconnects, cursor continues, gap reported | ✅ | reconnect test, gap unit tests, HIL enumeration |
 | Config changes never leave a half-open state | ✅ | config validation + update/reopen path tests |
 | Unauthenticated/unauthorised/illegal port requests rejected + audited | ✅ | security suite (10 tests) |
 | 24 h soak without leaks/data loss | ⚠️ not run | short connection/soak behaviour only; no 24 h run in this environment |
-| Docs for install/config/MCP/troubleshooting | ✅ | `docs/install.md`, `mcp.md`, `ssh.md`, `architecture.md` |
 
 ## Defects found and fixed during verification
 

@@ -21,9 +21,8 @@ server keeps transport sessions; the *serial* session is always selected by the
 
 ## Tools
 
-Sixteen tools: eight for serial sessions and eight for SSH sessions. The SSH
-tools never connect or disconnect — they only operate sessions the operator has
-already opened in the UI.
+Eight tools, all for the bound serial session. None of them can open, close or
+reconfigure a port — only the operator does that.
 
 | Tool | Read-only | Purpose |
 |---|---|---|
@@ -35,21 +34,9 @@ already opened in the UI.
 | `serial_break` | no | send a serial framing BREAK (`duration_ms`, default 250) |
 | `serial_command` | no | write one line and collect the response (expect, or a POSIX end marker with exit code) |
 | `serial_expect` | yes | wait for a pattern without writing |
-| `ssh_sessions` | yes | list SSH sessions the operator has already opened |
-| `ssh_host_info` | yes | host metadata + free-form description/path notes (requires an agent-visible session) |
-| `ssh_status` | yes | host/user/state, host-key fingerprint, cipher/MAC, counters |
-| `ssh_read` | yes | buffered SSH output by cursor or tail |
-| `ssh_tail` | yes | newest N lines from an SSH session |
-| `ssh_write` | no | raw input to the interactive SSH shell |
-| `ssh_exec` | no | separate exec channel: stdout, stderr, exit code |
-| `ssh_expect` | yes | wait for a pattern in SSH output |
 
 There is deliberately **no** `serial_open`, `serial_close` or
-`serial_configure`: only the operator configures ports. Likewise there is no
-`ssh_connect` or `ssh_disconnect`: the agent can only operate SSH sessions the
-operator opened **and marked Agent visible**. Unmarked SSH sessions are omitted
-from `ssh_sessions`, and direct tool calls with their id return
-`PERMISSION_DENIED`.
+`serial_configure`: only the operator configures ports.
 
 ### `serial_read`
 
@@ -251,9 +238,9 @@ mode, the current owner and the last write source.
 
 ## Session bindings
 
-The serial `serial_*` tools operate on exactly one **bound** session, and the SSH
-`ssh_*` tools on one bound SSH session; a tool whose binding is not live is not
-published at all, so `tools/list` shrinks and grows with the bindings.
+The serial `serial_*` tools operate on exactly one **bound** session; a tool
+whose binding is not live is not published at all, so `tools/list` shrinks and
+grows with the binding.
 
 * **One serial session** — bound automatically at startup (and after a session is
   created or deleted), so a single-port install works with no operator action.
