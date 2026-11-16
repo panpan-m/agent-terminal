@@ -579,6 +579,13 @@ def create_app(config: Config) -> FastAPI:
         owner = manager.set_control_owner(session_id, body.owner)
         return {"control_owner": owner}
 
+    @app.delete("/api/sessions/{session_id}/lease")
+    async def release_lease(session_id: str):
+        """Break an agent's exclusive claim — the operator always has this lever."""
+        sess = manager.get(session_id)
+        result = await asyncio.to_thread(sess.release_lease, None, force=True)
+        return result
+
     @app.put("/api/sessions/{session_id}/permissions")
     async def set_permissions(session_id: str, body: PermissionsBody):
         perms = manager.set_permissions(session_id, body.permissions)

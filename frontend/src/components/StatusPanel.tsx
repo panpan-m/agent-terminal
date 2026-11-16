@@ -3,10 +3,15 @@ import { cn, formatBytes, formatNumber } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
 
 export function StatusPanel({ session }: { session: SessionStatus }) {
+  const lease = session.lease;
   const rows: [string, string][] = [
     ["port", session.port],
     ["state", session.state],
     ["control", session.control_owner],
+    [
+      "lease",
+      lease ? `${lease.label} · ${Math.ceil(lease.remaining_ms / 1000)}s` : "free",
+    ],
     ["rx / tx", `${formatNumber(session.rx_bytes)} / ${formatNumber(session.tx_bytes)}`],
     ["buffer", `${formatBytes(session.buffer_bytes)} (${formatBytes(session.lost_bytes)} lost)`],
     ["reconnects", String(session.reconnect_count)],

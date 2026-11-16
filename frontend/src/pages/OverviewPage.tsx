@@ -3,6 +3,7 @@ import {
   Cable,
   CircleSlash,
   Eye,
+  Lock,
   Monitor,
   Pencil,
   Plus,
@@ -206,6 +207,19 @@ function SessionCard({
           >
             <UserRound className="h-3 w-3" />
           </Badge>
+          {session.lease ? (
+            <Badge
+              tone="accent"
+              title={`${session.lease.label} claimed the wire; other agents get LEASE_HELD until it is released or the ${Math.round(
+                session.lease.ttl_ms / 1000,
+              )}s TTL lapses`}
+            >
+              <span className="inline-flex items-center gap-1">
+                <Lock className="h-3 w-3" />
+                {session.lease.label}
+              </span>
+            </Badge>
+          ) : null}
           {session.lost_bytes > 0 ? <Badge tone="warn">{formatBytes(session.lost_bytes)} lost</Badge> : null}
           {session.reconnect_count > 0 ? <Badge tone="warn">{session.reconnect_count} reconnects</Badge> : null}
         </div>
@@ -251,6 +265,24 @@ function SessionCard({
             Observe
           </Button>
         )}
+        {session.lease ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                const result = await api.releaseLease(session.session_id);
+                if (result.released) notify(`lease released (was ${result.holder ?? "?"})`, "success");
+                return result.released;
+              })
+            }
+            title="break the agent's exclusive claim so another agent can start"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Release lease
+          </Button>
+        ) : null}
         <Button
           size="sm"
           variant="ghost"

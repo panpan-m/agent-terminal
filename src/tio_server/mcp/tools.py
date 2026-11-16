@@ -16,6 +16,7 @@ import json
 import re
 import secrets
 import time
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Annotated, Callable
 
@@ -32,6 +33,8 @@ from .schemas import (
     BreakResult,
     CommandResultModel,
     ExpectResult,
+    LeaseModel,
+    LeaseResult,
     LinesModel,
     ReadResult,
     SerialConfigModel,
@@ -86,6 +89,11 @@ READ_ONLY = ToolAnnotations(
 )
 WRITING = ToolAnnotations(
     read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=False
+)
+#: Claiming or releasing a lease does not touch the device, so it is not
+#: destructive — clients should not prompt the user for it.
+CONTROL = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False
 )
 
 
@@ -152,6 +160,16 @@ def _segments(sl: ReadSlice) -> list[TimestampSegment]:
     return [TimestampSegment(offset=off, ts=_ts(ts) or "") for off, ts in sl.segments]
 
 
+#: The MCP client of the tools/call in flight. `_guard` runs the tool body on a
+#: worker thread, and `asyncio.to_thread` copies the context, so a ContextVar
+#: set in `call_tool` is visible inside the body.
+_CALLER: ContextVar[tuple[str, str | None]] = ContextVar("mcp_caller", default=("unknown", None))
+
+
+def _caller() -> str:
+    return _CALLER.get()[0]
+
+
 def _client_identity(context: Any) -> tuple[str, str | None]:
     """MCP client identity from the initialize handshake, if reachable."""
     try:
@@ -182,41 +200,47 @@ class _AuditedMCPServer(MCPServer):
     async def call_tool(
         self, name: str, arguments: dict[str, Any], context: Any = None
     ) -> Any:
-        audit = self._audit_log
-        if audit is None:
-            return await super().call_tool(name, arguments, context)
+        # The caller's identity is needed by the tools themselves (the lease is
+        # keyed on it), so it must be published even when auditing is disabled.
         agent, agent_version = _client_identity(context)
+        audit = self._audit_log
         session = _session_of_args(arguments)
         started = time.monotonic()
+        token = _CALLER.set((agent, agent_version))
         try:
             result = await super().call_tool(name, arguments, context)
         except Exception as exc:  # noqa: BLE001 - recorded, then re-raised
-            await asyncio.to_thread(
-                audit.record,
-                tool=name,
-                agent=agent,
-                agent_version=agent_version,
-                session=session,
-                ok=False,
-                duration_ms=(time.monotonic() - started) * 1000,
-                arguments=arguments,
-                error=f"{type(exc).__name__}: {exc}",
-            )
+            if audit is not None:
+                await asyncio.to_thread(
+                    audit.record,
+                    tool=name,
+                    agent=agent,
+                    agent_version=agent_version,
+                    session=session,
+                    ok=False,
+                    duration_ms=(time.monotonic() - started) * 1000,
+                    arguments=arguments,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
             raise
-        # The durable record appends to the JSONL audit file: file I/O, so it
-        # goes to a worker thread like every other blocking call.
-        await asyncio.to_thread(
-            audit.record,
-            tool=name,
-            agent=agent,
-            agent_version=agent_version,
-            session=session,
-            ok=not bool(getattr(result, "is_error", False)),
-            duration_ms=(time.monotonic() - started) * 1000,
-            arguments=arguments,
-            result=result,
-        )
-        return result
+        else:
+            if audit is not None:
+                # The durable record appends to the JSONL audit file: file I/O,
+                # so it goes to a worker thread like every blocking call.
+                await asyncio.to_thread(
+                    audit.record,
+                    tool=name,
+                    agent=agent,
+                    agent_version=agent_version,
+                    session=session,
+                    ok=not bool(getattr(result, "is_error", False)),
+                    duration_ms=(time.monotonic() - started) * 1000,
+                    arguments=arguments,
+                    result=result,
+                )
+            return result
+        finally:
+            _CALLER.reset(token)
 
 
 class _BoundMCPServer(_AuditedMCPServer):
@@ -341,6 +365,7 @@ def build_mcp_server(
             config=SerialConfigModel(**st["config"]),
             control_owner=st["control_owner"],
             agent_permissions=st["agent_permissions"],
+            lease=LeaseModel(**st["lease"]) if st.get("lease") else None,
             rx_bytes=st["rx_bytes"],
             tx_bytes=st["tx_bytes"],
             rx_start=st["rx_start"],
@@ -461,6 +486,56 @@ def build_mcp_server(
             bytes_scanned=len(sl.data),
         )
 
+    # ---------------------------------------------------------------- lease
+    @mcp.tool(
+        name="serial_claim",
+        description=(
+            "Claim this session exclusively for your client before driving the console. While "
+            "you hold it, another agent's write/command/break is refused with LEASE_HELD; reads "
+            "are never blocked. The claim lapses after ttl_ms and every write renews it. Calling "
+            "it again extends your own claim; release it when you are done so the next agent can "
+            "start immediately."
+        ),
+        annotations=CONTROL,
+    )
+    @_guard
+    def serial_claim(
+        ttl_ms: Annotated[int, "Claim lifetime in milliseconds (5000-3600000); writes renew it."] = 120_000,
+        session_id: Annotated[str | None, "Session id; omit — tools use the operator-bound session."] = None,
+    ) -> LeaseResult:
+        manager.limiter.check()
+        sess = session_of(session_id)
+        info = sess.acquire_lease(_caller(), ttl_ms=ttl_ms)
+        return LeaseResult(
+            session_id=sess.id,
+            owner=info["owner"],
+            label=info["label"],
+            ttl_ms=info["ttl_ms"],
+            remaining_ms=info["remaining_ms"],
+            renewed=info["renewed"],
+        )
+
+    @mcp.tool(
+        name="serial_release",
+        description=(
+            "Release your exclusive claim on this session. Only the holder can release it; the "
+            "operator can force-release another agent's claim from the web UI."
+        ),
+        annotations=CONTROL,
+    )
+    @_guard
+    def serial_release(
+        session_id: Annotated[str | None, "Session id; omit — tools use the operator-bound session."] = None,
+    ) -> LeaseResult:
+        manager.limiter.check()
+        sess = session_of(session_id)
+        out = sess.release_lease(_caller())
+        return LeaseResult(
+            session_id=sess.id,
+            released=bool(out["released"]),
+            holder=out.get("holder"),
+        )
+
     # ---------------------------------------------------------------- write
     @mcp.tool(
         name="serial_write",
@@ -502,6 +577,7 @@ def build_mcp_server(
             source="agent",
             chunk_size=max(0, int(chunk_size)),
             delay_ms=max(0, int(delay_ms)),
+            owner=_caller(),
         )
         return WriteResult(
             session_id=sess.id,
@@ -526,7 +602,7 @@ def build_mcp_server(
     ) -> BreakResult:
         manager.limiter.check()
         sess = session_of(session_id)
-        result = sess.send_break(max(1, min(int(duration_ms), 5000)), source="agent")
+        result = sess.send_break(max(1, min(int(duration_ms), 5000)), source="agent", owner=_caller())
         return BreakResult(session_id=sess.id, duration_ms=result["duration_ms"])
 
     # -------------------------------------------------------------- command
@@ -586,6 +662,7 @@ def build_mcp_server(
             settle_ms=max(0, min(int(settle_ms), 5000)),
             ignore_case=ignore_case,
             source="agent",
+            owner=_caller(),
         )
         text = _decode(res.rx_data, "utf-8", True)
         exit_code: int | None = None

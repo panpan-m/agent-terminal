@@ -39,6 +39,14 @@ class LinesModel(BaseModel):
     ri: bool | None = None
 
 
+class LeaseModel(BaseModel):
+    owner: str = Field(description="Client name that holds the claim.")
+    label: str
+    ttl_ms: int
+    remaining_ms: int = Field(description="Milliseconds left before the claim lapses.")
+    acquired_at: str
+
+
 class StatusResult(BaseModel):
     session_id: str
     name: str
@@ -47,6 +55,10 @@ class StatusResult(BaseModel):
     config: SerialConfigModel
     control_owner: str = Field(description="Who may write right now: human or agent.")
     agent_permissions: list[str]
+    lease: LeaseModel | None = Field(
+        default=None,
+        description="The exclusive agent claim, or null when no agent holds one.",
+    )
     rx_bytes: int
     tx_bytes: int
     rx_start: int = Field(description="Absolute offset of the oldest byte still buffered.")
@@ -103,6 +115,17 @@ class TailResult(BaseModel):
 class BreakResult(BaseModel):
     session_id: str
     duration_ms: int
+
+
+class LeaseResult(BaseModel):
+    session_id: str
+    owner: str | None = Field(default=None, description="Client name holding the claim.")
+    label: str | None = None
+    ttl_ms: int | None = None
+    remaining_ms: int | None = Field(default=None, description="Milliseconds left on the claim.")
+    renewed: bool = Field(default=False, description="True when an existing claim was extended.")
+    released: bool = Field(default=False, description="True when this call released a claim.")
+    holder: str | None = Field(default=None, description="Who held it, when releasing.")
 
 
 class CommandResultModel(BaseModel):

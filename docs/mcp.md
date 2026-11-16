@@ -21,15 +21,17 @@ server keeps transport sessions; the *serial* session is always selected by the
 
 ## Tools
 
-Eight tools, all for the bound serial session. None of them can open, close or
+Ten tools, all for the bound serial session. None of them can open, close or
 reconfigure a port — only the operator does that.
 
 | Tool | Read-only | Purpose |
 |---|---|---|
 | `serial_sessions` | yes | list configured sessions |
-| `serial_status` | yes | state, config, counters, cursors, control lines, owner |
+| `serial_status` | yes | state, config, counters, cursors, control lines, owner, lease |
 | `serial_read` | yes | buffered RX by absolute cursor or tail |
 | `serial_tail` | yes | newest N lines of terminal output (ANSI stripped, CR normalised) |
+| `serial_claim` | no | take the exclusive agent claim on the session |
+| `serial_release` | no | give the exclusive claim back |
 | `serial_write` | no | raw bytes (text or hex) with optional newline/chunking |
 | `serial_break` | no | send a serial framing BREAK (`duration_ms`, default 250) |
 | `serial_command` | no | write one line and collect the response (expect, or a POSIX end marker with exit code) |
@@ -196,6 +198,30 @@ Every `tools/call` is recorded twice, on purpose:
 
 The durable record is what answers "which agent ran what command, and what came
 back". The transcript holds the raw bytes; the audit holds the intent.
+
+## Exclusive agent lease
+
+Several agents may connect at once, but only one drives the console. The lease
+is that arbitration, and it lives in the session engine, so every write path
+obeys it — the MCP tools, the admin API and the console WebSocket alike.
+
+* `serial_claim(ttl_ms)` takes or extends the claim for **your** client. The
+  default TTL is 120 s (5 s – 1 h); every write renews it, so a busy agent never
+  loses it mid-task.
+* While you hold it, another agent's `serial_write`/`serial_command`/
+  `serial_break` fails with `LEASE_HELD`, whose `details.holder` names the
+  current owner. Reads are never blocked, so a second agent can still watch.
+* `serial_release()` hands the wire over immediately. Only the holder can
+  release; the operator can force-release from the Sessions card ("Release
+  lease"), which is audited as `lease.release` with `forced=true`.
+* **No claim, no exclusion.** Without a claim, writes behave exactly as they did
+  before — single-agent use needs no extra step, and two agents that never claim
+  can still interleave. The guarantee only exists while a claim is held.
+* Identity is the `clientInfo.name` your client sends at `initialize`. Two
+  connections that declare the same name are the same owner, so give each agent
+  a distinct name if you want them treated separately.
+
+`serial_status.lease` reports the holder and its remaining TTL, or `null`.
 
 ## Rate limiting
 

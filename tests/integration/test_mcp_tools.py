@@ -40,6 +40,8 @@ async def test_tools_list_contract(mcp_setup):
         "serial_status",
         "serial_read",
         "serial_tail",
+        "serial_claim",
+        "serial_release",
         "serial_write",
         "serial_break",
         "serial_command",
@@ -68,7 +70,7 @@ async def test_bindings_gate_the_tool_surface(mcp_setup):
 
     bindings.set(serial_session_id="board-a")
     serial_names = [t.name for t in await mcp.list_tools()]
-    assert len(serial_names) == 8
+    assert len(serial_names) == 10
     assert all(n.startswith("serial_") for n in serial_names)
     res = await _call(mcp, "serial_sessions")
     assert res.is_error is False

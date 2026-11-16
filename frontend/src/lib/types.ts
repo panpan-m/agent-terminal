@@ -24,6 +24,16 @@ export interface LineState {
   ri: boolean | null;
 }
 
+/** Exclusive claim one agent holds on a session's write path. */
+export interface LeaseInfo {
+  owner: string;
+  label: string;
+  ttl_ms: number;
+  remaining_ms: number;
+  acquired_at: string;
+  mine?: boolean;
+}
+
 export interface SessionStatus {
   session_id: string;
   name: string;
@@ -34,6 +44,7 @@ export interface SessionStatus {
   control: "agent" | "shared";
   human_writable: boolean;
   agent_permissions: string[];
+  lease: LeaseInfo | null;
   rx_bytes: number;
   tx_bytes: number;
   rx_start: number;

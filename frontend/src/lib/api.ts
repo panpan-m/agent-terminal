@@ -130,6 +130,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ owner }),
     }),
+  releaseLease: (id: string) =>
+    request<{ released: boolean; holder?: string }>(
+      `/api/sessions/${encodeURIComponent(id)}/lease`,
+      { method: "DELETE" },
+    ),
   setPermissions: (id: string, permissions: string[]) =>
     request<{ agent_permissions: string[] }>(`/api/sessions/${encodeURIComponent(id)}/permissions`, {
       method: "PUT",

@@ -36,6 +36,7 @@ from .errors import (
     RATE_LIMITED,
     READ_DISABLED,
     READ_ONLY,
+    LEASE_HELD,
     SESSION_NOT_FOUND,
     WRITE_DISABLED,
     WRITE_LOCKED,
@@ -72,6 +73,42 @@ class CommandResult:
     timed_out: bool
     elapsed_ms: int
     truncated: bool
+
+
+@dataclass(slots=True)
+class Lease:
+    """An exclusive claim on one session's write path.
+
+    The lease is cooperative arbitration *between agents*: the agent that holds
+    it may write, every other agent gets ``LEASE_HELD`` until it is released or
+    the TTL expires.  The operator is never blocked by it (they hold control via
+    ``control``/``control_owner`` and can force-release from the UI).
+    """
+
+    owner: str
+    label: str
+    ttl_ms: int
+    acquired_at: str
+    deadline: float  # time.monotonic() value
+
+    def remaining_ms(self) -> int:
+        return max(0, int((self.deadline - time.monotonic()) * 1000))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "owner": self.owner,
+            "label": self.label,
+            "ttl_ms": self.ttl_ms,
+            "remaining_ms": self.remaining_ms(),
+            "acquired_at": self.acquired_at,
+        }
+
+
+#: Lease bounds. A claim shorter than the minimum is pointless; longer than the
+#: maximum hides a crashed agent for too long.
+MIN_LEASE_MS = 5_000
+MAX_LEASE_MS = 3_600_000
+DEFAULT_LEASE_MS = 120_000
 
 
 class RateLimiter:
@@ -118,6 +155,9 @@ class Session(StreamSession):
         self._stop = threading.Event()
         self._reader: threading.Thread | None = None
         self._write_lock = threading.Lock()
+        #: Exclusive agent claim; see :class:`Lease`.  Guarded by ``_lease_lock``.
+        self._lease: Lease | None = None
+        self._lease_lock = threading.Lock()
         self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self.transcript: TranscriptWriter = manager.transcripts.writer(cfg.id, cfg.transcript)
         self._identity = cfg.port
@@ -154,6 +194,112 @@ class Session(StreamSession):
         if self.cfg.control == "agent":
             return "agent"
         return self._shared_owner
+
+    # ------------------------------------------------------------------- lease
+    def _expire_lease_locked(self) -> None:
+        """Drop the lease if its deadline passed. Caller holds ``_lease_lock``."""
+        lease = self._lease
+        if lease is not None and lease.remaining_ms() <= 0:
+            self._lease = None
+            self.audit_event("lease.expire", owner=lease.owner, label=lease.label)
+
+    def audit_event(self, event: str, **fields: Any) -> None:
+        self.manager.audit.write(event, session=self.id, **fields)
+
+    def lease_snapshot(self, owner: str | None = None) -> dict[str, Any] | None:
+        """Current lease (expiring it lazily), or None when the wire is free."""
+        with self._lease_lock:
+            self._expire_lease_locked()
+            lease = self._lease
+            if lease is None:
+                return None
+            data = lease.to_dict()
+            data["mine"] = owner is not None and owner == lease.owner
+            return data
+
+    def acquire_lease(
+        self,
+        owner: str,
+        *,
+        label: str | None = None,
+        ttl_ms: int = DEFAULT_LEASE_MS,
+    ) -> dict[str, Any]:
+        """Take or renew the exclusive claim for ``owner``."""
+        if self.state is not SessionState.OPEN:
+            raise ToolFailure(DISCONNECTED, f"session is not open (state={self.state.value})", {"session_id": self.id})
+        ttl = max(MIN_LEASE_MS, min(int(ttl_ms), MAX_LEASE_MS))
+        who = owner or "unknown"
+        label = label or who
+        with self._lease_lock:
+            self._expire_lease_locked()
+            current = self._lease
+            if current is not None and current.owner != who:
+                self.audit_event("lease.denied", owner=who, holder=current.owner)
+                raise ToolFailure(
+                    LEASE_HELD,
+                    f"another agent ({current.label}) holds the wire for this session",
+                    {
+                        "session_id": self.id,
+                        "holder": current.to_dict(),
+                        "requester": who,
+                    },
+                    retryable=True,
+                )
+            renewed = current is not None
+            lease = Lease(
+                owner=who,
+                label=label,
+                ttl_ms=ttl,
+                acquired_at=current.acquired_at if renewed else now_iso(),
+                deadline=time.monotonic() + ttl / 1000.0,
+            )
+            self._lease = lease
+        self.audit_event("lease.renew" if renewed else "lease.acquire", owner=who, ttl_ms=ttl)
+        self._broadcast_status()
+        data = lease.to_dict()
+        data["mine"] = True
+        data["renewed"] = renewed
+        return data
+
+    def release_lease(self, owner: str | None = None, *, force: bool = False) -> dict[str, Any]:
+        """Release the claim; ``force`` lets the operator break someone else's."""
+        with self._lease_lock:
+            self._expire_lease_locked()
+            lease = self._lease
+            if lease is None:
+                return {"released": False, "session_id": self.id}
+            if not force and owner is not None and lease.owner != owner:
+                raise ToolFailure(
+                    LEASE_HELD,
+                    f"the lease belongs to {lease.label}; ask the operator to release it",
+                    {"session_id": self.id, "holder": lease.to_dict(), "requester": owner},
+                )
+            self._lease = None
+            released_from = lease.owner
+        self.audit_event(
+            "lease.release",
+            owner=released_from,
+            by=owner or "operator",
+            forced=bool(force),
+        )
+        self._broadcast_status()
+        return {"released": True, "session_id": self.id, "holder": released_from}
+
+    def _assert_lease(self, owner: str | None, need: str) -> None:
+        """Block an agent write when a *different* agent holds the lease."""
+        with self._lease_lock:
+            self._expire_lease_locked()
+            lease = self._lease
+            if lease is None:
+                return
+            if owner is not None and owner == lease.owner:
+                return
+            raise ToolFailure(
+                LEASE_HELD,
+                f"{lease.label} is driving this session; wait or ask the operator to release the lease",
+                {"session_id": self.id, "holder": lease.to_dict(), "requester": owner or "unknown", "need": need},
+                retryable=True,
+            )
 
     def _seat_shared_owner(self, owner: str) -> str:
         """Set the ``shared``-mode owner (the only writable owner state)."""
@@ -396,7 +542,7 @@ class Session(StreamSession):
         return sl, matched, match_text, groups, timed_out
 
     # -------------------------------------------------------------- write path
-    def _check_write(self, source: str, need: str = "write") -> None:
+    def _check_write(self, source: str, need: str = "write", owner: str | None = None) -> None:
         if self.state is SessionState.RECONNECTING:
             raise ToolFailure(DISCONNECTED, "serial device is reconnecting", {"session_id": self.id}, retryable=True)
         if self.state is not SessionState.OPEN:
@@ -420,6 +566,7 @@ class Session(StreamSession):
                     f"agent {need} permission is disabled",
                     {"session_id": self.id, "permissions": self.cfg.agent_permissions},
                 )
+            self._assert_lease(owner, need)
             return
         # shared control: the live control_owner switch arbitrates both sides
         if source == "agent":
@@ -436,6 +583,7 @@ class Session(StreamSession):
                     {"session_id": self.id, "control_owner": self.control_owner},
                     retryable=True,
                 )
+            self._assert_lease(owner, need)
         else:  # human
             if self.control_owner != "human":
                 raise ToolFailure(
@@ -446,21 +594,29 @@ class Session(StreamSession):
                 )
 
     @contextmanager
-    def writing(self, source: str, need: str = "write", timeout_s: float = 30.0) -> Iterator[None]:
-        self._check_write(source, need)
+    def writing(
+        self,
+        source: str,
+        need: str = "write",
+        timeout_s: float = 30.0,
+        owner: str | None = None,
+    ) -> Iterator[None]:
+        self._check_write(source, need, owner)
         acquired = self._write_lock.acquire(timeout=timeout_s)
         if not acquired:
             raise ToolFailure(BUSY, "another writer is active on this session", {"session_id": self.id}, retryable=True)
         try:
-            self._check_write(source, need)
+            self._check_write(source, need, owner)
             yield
         finally:
             self._write_lock.release()
 
-    def send_break(self, duration_ms: int = 250, *, source: str = "human") -> dict[str, Any]:
+    def send_break(
+        self, duration_ms: int = 250, *, source: str = "human", owner: str | None = None
+    ) -> dict[str, Any]:
         """Send a serial BREAK (framing break, not a data byte)."""
         duration = max(1, min(int(duration_ms), 5000))
-        with self.writing(source, "write"):
+        with self.writing(source, "write", owner=owner):
             handle = self.handle
             if handle is None:
                 raise ToolFailure(DISCONNECTED, "serial device is not open", {"session_id": self.id})
@@ -477,8 +633,9 @@ class Session(StreamSession):
         need: str = "write",
         chunk_size: int = 0,
         delay_ms: int = 0,
+        owner: str | None = None,
     ) -> int:
-        with self.writing(source, need):
+        with self.writing(source, need, owner=owner):
             written = self._write_raw(data, source, chunk_size=chunk_size, delay_ms=delay_ms)
         if written == 0 and data:
             # A stalled USB-UART (e.g. a bridge that stops draining while DTR is
@@ -533,13 +690,14 @@ class Session(StreamSession):
         settle_ms: int = 100,
         ignore_case: bool = False,
         source: str = "agent",
+        owner: str | None = None,
     ) -> CommandResult:
         if newline not in NEWLINE_BYTES:
             raise ToolFailure(INVALID_ARGUMENT, f"newline must be one of {sorted(NEWLINE_BYTES)}")
         payload = command.encode("utf-8") + NEWLINE_BYTES[newline]
         started = time.monotonic()
         matcher = self._make_matcher(expect, expect_mode, ignore_case) if expect else None
-        with self.writing(source, "command"):
+        with self.writing(source, "command", owner=owner):
             head_before = self.ring.head
             written = self._write_raw(payload, source)
             collected = bytearray()
@@ -735,6 +893,7 @@ class Session(StreamSession):
             "control_owner": self.control_owner,
             "control": cfg.control,
             "human_writable": self.human_writable,
+            "lease": self.lease_snapshot(),
             "agent_permissions": list(cfg.agent_permissions),
             "rx_bytes": self.rx_bytes,
             "tx_bytes": self.tx_bytes,
