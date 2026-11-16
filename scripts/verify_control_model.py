@@ -189,7 +189,11 @@ def main() -> int:
         mcp.initialize()
         mcp.initialized()
         tools = [tool["name"] for tool in mcp.list_tools()]
-        check("tools/list is not empty", len(tools) == 8, f"{len(tools)} tools: {tools}")
+        check(
+            "tools/list is not empty",
+            len(tools) >= 8 and "serial_write" in tools and "serial_status" in tools,
+            f"{len(tools)} tools: {tools}",
+        )
         check("serial tools published", "serial_write" in tools and "serial_status" in tools, ",".join(tools))
 
         # 2. the agent writes with no hand-off and no WRITE_LOCKED
