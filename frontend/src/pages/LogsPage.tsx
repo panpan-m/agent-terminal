@@ -40,6 +40,9 @@ export function LogsPage({
   const [events, setEvents] = useState<TranscriptEvent[]>([]);
   const [audit, setAudit] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
+  // "" = every client; otherwise one MCP client name
+  const [client, setClient] = useState<string>("");
+  const [clients, setClients] = useState<string[]>([]);
   const [selected, setSelected] = useState<Selection>(() => {
     const serial = sessions.find((session) => session.session_id === selectedId) ?? sessions[0];
     return { id: serial?.session_id ?? "", name: serial?.name ?? "" };
@@ -55,12 +58,14 @@ export function LogsPage({
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const result = await api.auditClients();
+      setClients(result.clients);
       if (tab === "transcript" && selected.id) {
-        const result = await api.transcript(selected.id, 300);
-        setEvents(result.events);
+        const page = await api.transcript(selected.id, 300, client || null);
+        setEvents(page.events);
       } else if (tab === "audit") {
-        const result = await api.audit(300);
-        setAudit(result.events);
+        const page = await api.audit(300, client || null);
+        setAudit(page.events);
       }
     } catch {
       setEvents([]);
@@ -68,7 +73,7 @@ export function LogsPage({
     } finally {
       setLoading(false);
     }
-  }, [tab, selected]);
+  }, [tab, selected, client]);
 
   useEffect(() => {
     void load();
@@ -87,6 +92,13 @@ export function LogsPage({
   };
 
   const rows = tab === "transcript" ? events : audit;
+
+  /** Client attribution differs per record type: owner (tx), agent (tool call), by (lease). */
+  const clientOf = (record: TranscriptEvent | Record<string, unknown>): string => {
+    const raw = record as Record<string, unknown>;
+    const name = raw.owner ?? raw.agent ?? raw.by;
+    return typeof name === "string" && name ? name : "—";
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-6">
@@ -113,6 +125,19 @@ export function LogsPage({
               ))}
             </Select>
           ) : null}
+          <Select
+            value={client}
+            onChange={(event) => setClient(event.target.value)}
+            className="h-8 w-auto px-2 text-xs"
+            title="show only one MCP client's activity"
+          >
+            <option value="">all clients</option>
+            {clients.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </Select>
           <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
@@ -159,6 +184,7 @@ export function LogsPage({
                 <thead className="sticky top-0 bg-zinc-900/95 text-zinc-500">
                   <tr>
                     <th className="px-4 py-2 font-medium">time</th>
+                    <th className="px-4 py-2 font-medium">client</th>
                     <th className="px-4 py-2 font-medium">kind</th>
                     <th className="px-4 py-2 font-medium">detail</th>
                   </tr>
@@ -174,6 +200,9 @@ export function LogsPage({
                         <tr key={index} className="border-t border-zinc-800/60 hover:bg-zinc-900/40">
                           <td className="whitespace-nowrap px-4 py-1.5 font-mono text-zinc-500">
                             {new Date(String(record.ts)).toLocaleTimeString()}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-1.5 font-mono text-zinc-400">
+                            {clientOf(record)}
                           </td>
                           <td className="whitespace-nowrap px-4 py-1.5">
                             {isAudit ? (

@@ -85,9 +85,13 @@ class McpAuditLog:
             except OSError:  # disk full / file gone: never break the tool call
                 pass
 
-    def recent(self, limit: int = 100) -> list[dict[str, Any]]:
+    def recent(self, limit: int = 100, client: str | None = None) -> list[dict[str, Any]]:
+        """Newest calls first; `client` keeps only one MCP client's calls."""
         with self._lock:
-            return list(self._events)[: max(1, min(int(limit), MAX_EVENTS))]
+            events = list(self._events)
+        if client is not None:
+            events = [event for event in events if event.get("agent") == client]
+        return events[: max(1, min(int(limit), MAX_EVENTS))]
 
 
 def _result_text(result: Any) -> str:

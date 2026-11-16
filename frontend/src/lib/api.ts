@@ -155,11 +155,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ duration_ms: durationMs }),
     }),
-  transcript: (id: string, limit = 200) =>
+  auditClients: () => request<{ clients: string[] }>("/api/audit/clients"),
+  transcript: (id: string, limit = 200, client?: string | null) =>
     request<{ events: TranscriptEvent[] }>(
-      `/api/sessions/${encodeURIComponent(id)}/transcript?limit=${limit}`,
+      `/api/sessions/${encodeURIComponent(id)}/transcript?limit=${limit}` +
+        (client ? `&client=${encodeURIComponent(client)}` : ""),
     ),
-  audit: (limit = 200) => request<{ events: Record<string, unknown>[] }>(`/api/audit?limit=${limit}`),
+  audit: (limit = 200, client?: string | null) =>
+    request<{ events: Record<string, unknown>[] }>(
+      `/api/audit?limit=${limit}` + (client ? `&client=${encodeURIComponent(client)}` : ""),
+    ),
   system: () => request<SystemInfo>("/api/system"),
   mcp: () => request<McpStatus>("/api/mcp"),
   mcpAudit: (limit = 100) => request<{ events: McpAuditEvent[] }>(`/api/mcp/audit?limit=${limit}`),

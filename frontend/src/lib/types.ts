@@ -106,6 +106,8 @@ export interface TranscriptEvent {
   len?: number;
   data_b64?: string;
   source?: string;
+  /** MCP client that wrote these bytes (tx records only). */
+  owner?: string;
   [key: string]: unknown;
 }
 

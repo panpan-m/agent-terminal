@@ -650,9 +650,9 @@ def create_app(config: Config) -> FastAPI:
         }
 
     @app.get("/api/sessions/{session_id}/transcript")
-    async def transcript(session_id: str, limit: int = 200):
+    async def transcript(session_id: str, limit: int = 200, client: str | None = None):
         sess = manager.get(session_id)
-        return {"events": sess.transcript.tail(max(1, min(limit, 2000)))}
+        return {"events": sess.transcript.tail(max(1, min(limit, 2000)), client=client)}
 
     @app.get("/api/sessions/{session_id}/export")
     async def export_session(
@@ -672,8 +672,13 @@ def create_app(config: Config) -> FastAPI:
         )
 
     @app.get("/api/audit")
-    async def audit(limit: int = 200):
-        return {"events": manager.audit.tail(max(1, min(limit, 2000)))}
+    async def audit(limit: int = 200, client: str | None = None):
+        return {"events": manager.audit.tail(max(1, min(limit, 2000)), client=client)}
+
+    @app.get("/api/audit/clients")
+    async def audit_clients():
+        """MCP clients that appear in the audit file, for the log filter."""
+        return {"clients": await asyncio.to_thread(manager.audit.clients)}
 
     # -------------------------------------------------------------------- system
     @app.get("/api/system")
@@ -695,8 +700,8 @@ def create_app(config: Config) -> FastAPI:
         }
 
     @app.get("/api/mcp/audit")
-    async def mcp_audit_events(limit: int = 100):
-        return {"events": mcp_audit.recent(limit)}
+    async def mcp_audit_events(limit: int = 100, client: str | None = None):
+        return {"events": mcp_audit.recent(limit, client=client)}
 
     @app.get("/api/mcp/bindings")
     async def mcp_get_bindings():

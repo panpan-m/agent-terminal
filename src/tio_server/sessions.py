@@ -636,7 +636,7 @@ class Session(StreamSession):
         owner: str | None = None,
     ) -> int:
         with self.writing(source, need, owner=owner):
-            written = self._write_raw(data, source, chunk_size=chunk_size, delay_ms=delay_ms)
+            written = self._write_raw(data, source, chunk_size=chunk_size, delay_ms=delay_ms, owner=owner)
         if written == 0 and data:
             # A stalled USB-UART (e.g. a bridge that stops draining while DTR is
             # low) accepts nothing; that is a timeout, not a successful write.
@@ -648,7 +648,15 @@ class Session(StreamSession):
             )
         return written
 
-    def _write_raw(self, data: bytes, source: str, *, chunk_size: int = 0, delay_ms: int = 0) -> int:
+    def _write_raw(
+        self,
+        data: bytes,
+        source: str,
+        *,
+        chunk_size: int = 0,
+        delay_ms: int = 0,
+        owner: str | None = None,
+    ) -> int:
         handle = self.handle
         if handle is None:
             raise ToolFailure(DISCONNECTED, "serial device is not open", {"session_id": self.id})
@@ -675,7 +683,7 @@ class Session(StreamSession):
         self.tx_bytes += total
         self.last_tx_at = now_iso()
         self.last_write_source = source
-        self._fan_tx(data[:total], source, transcript=self.cfg.transcript)
+        self._fan_tx(data[:total], source, transcript=self.cfg.transcript, owner=owner)
         return total
 
     def command(
@@ -699,7 +707,7 @@ class Session(StreamSession):
         matcher = self._make_matcher(expect, expect_mode, ignore_case) if expect else None
         with self.writing(source, "command", owner=owner):
             head_before = self.ring.head
-            written = self._write_raw(payload, source)
+            written = self._write_raw(payload, source, owner=owner)
             collected = bytearray()
             read_cursor = head_before
             matched = False

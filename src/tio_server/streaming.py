@@ -139,12 +139,26 @@ class StreamSession:
                 sub.put({"type": "rx", "offset": offset, "data": data})
             return offset
 
-    def _fan_tx(self, data: bytes, source: str, *, transcript: bool = True) -> None:
-        """Record written bytes and fan them out."""
+    def _fan_tx(
+        self,
+        data: bytes,
+        source: str,
+        *,
+        transcript: bool = True,
+        owner: str | None = None,
+    ) -> None:
+        """Record written bytes and fan them out.
+
+        ``owner`` is the MCP client that wrote them; it goes into the transcript
+        record so the log can be read one client at a time.
+        """
         offset = self.ring.head
         if transcript:
-            self.transcript.data("tx", offset, data, source)
-        self._broadcast({"type": "tx", "data": data, "source": source})
+            self.transcript.data("tx", offset, data, source, owner=owner)
+        payload: dict[str, Any] = {"type": "tx", "data": data, "source": source}
+        if owner is not None:
+            payload["owner"] = owner
+        self._broadcast(payload)
 
     def read_slice(
         self,

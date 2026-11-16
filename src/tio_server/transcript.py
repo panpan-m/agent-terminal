@@ -51,20 +51,66 @@ class AuditLog:
             with self.path.open("a", encoding="utf-8", newline="\n") as fh:
                 fh.write(line)
 
-    def tail(self, limit: int = 200) -> list[dict]:
+    #: Fields that name the MCP client behind an audit record. ``agent`` is a
+    #: tool call; ``owner``/``by`` only mean "client" on lease events — on
+    #: ``session.control_owner`` the same field holds ``human``/``agent`` as a
+    #: role, not a client, so it must not be picked up here.
+    CLIENT_FIELDS = ("agent", "owner", "by")
+
+    @classmethod
+    def client_of(cls, record: dict) -> str | None:
+        agent = record.get("agent")
+        if isinstance(agent, str) and agent:
+            return agent
+        if not str(record.get("event", "")).startswith("lease."):
+            return None
+        for field in ("owner", "by"):
+            value = record.get(field)
+            if isinstance(value, str) and value and value != "operator":
+                return value
+        return None
+
+    def tail(self, limit: int = 200, client: str | None = None) -> list[dict]:
+        """Newest records, optionally only those attributable to one client.
+
+        The file is streamed and records are filtered while reading, so a filter
+        searches the whole file rather than only the last `limit` lines.
+        """
         if not self.path.exists():
             return []
+        records: deque[dict] = deque(maxlen=max(1, limit))
         with self.path.open("r", encoding="utf-8") as fh:
-            lines = deque(fh, maxlen=max(1, limit))
-        out = []
-        for line in lines:
-            line = line.strip()
-            if line:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
-                    out.append(json.loads(line))
+                    record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-        return out
+                if client is not None and self.client_of(record) != client:
+                    continue
+                records.append(record)
+        return list(records)
+
+    def clients(self) -> list[str]:
+        """Every MCP client name that appears in the audit file, sorted."""
+        if not self.path.exists():
+            return []
+        seen: set[str] = set()
+        with self.path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                name = self.client_of(record)
+                if name:
+                    seen.add(name)
+        return sorted(seen)
 
 
 class TranscriptWriter:
@@ -124,18 +170,28 @@ class TranscriptWriter:
     def event(self, event: str, **fields: Any) -> None:
         self._write({"ts": now_iso(), "session": self.session_id, "event": event, **fields})
 
-    def data(self, direction: str, offset: int, payload: bytes, source: str) -> None:
-        self._write(
-            {
-                "ts": now_iso(),
-                "session": self.session_id,
-                "dir": direction,
-                "offset": offset,
-                "len": len(payload),
-                "data_b64": base64.b64encode(payload).decode("ascii"),
-                "source": source,
-            }
-        )
+    def data(
+        self,
+        direction: str,
+        offset: int,
+        payload: bytes,
+        source: str,
+        owner: str | None = None,
+    ) -> None:
+        record = {
+            "ts": now_iso(),
+            "session": self.session_id,
+            "dir": direction,
+            "offset": offset,
+            "len": len(payload),
+            "data_b64": base64.b64encode(payload).decode("ascii"),
+            "source": source,
+        }
+        #: Which MCP client wrote these bytes; absent for device RX and for the
+        #: operator. Recorded so the log can be read one client at a time.
+        if owner is not None:
+            record["owner"] = owner
+        self._write(record)
 
     def _write(self, record: dict[str, Any]) -> None:
         if not self.enabled:
@@ -168,7 +224,8 @@ class TranscriptWriter:
         out = [p for p in self.directory.glob(f"{self.session_id}*.jsonl")]
         return sorted(out, key=lambda p: p.stat().st_mtime)
 
-    def tail(self, limit: int = 200) -> list[dict]:
+    def tail(self, limit: int = 200, client: str | None = None) -> list[dict]:
+        """Newest records, optionally only those written by one MCP client."""
         files = self.files()
         if not files:
             return []
@@ -181,9 +238,12 @@ class TranscriptWriter:
                         if not line:
                             continue
                         try:
-                            records.append(json.loads(line))
+                            record = json.loads(line)
                         except json.JSONDecodeError:
                             continue
+                        if client is not None and record.get("owner") != client:
+                            continue
+                        records.append(record)
             except OSError:
                 continue
         return list(records)
