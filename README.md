@@ -7,7 +7,6 @@ Nobody else opens the port.
 
 ![Serial sessions in the pixel theme](docs/screenshots/25-pixel-sessions.png)
 
-> Implementation of the design in [`agent-terminal-plan.md`](./agent-terminal-plan.md).
 > Verified on Windows 10: **142 tests**, plus end-to-end, packaged-binary and
 > live-hardware checks against a real board —
 > see [`docs/VERIFICATION.md`](./docs/VERIFICATION.md),

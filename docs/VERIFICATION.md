@@ -62,10 +62,10 @@ both the simulator and `COM5`.
 | Suite | Result | Artifact |
 |---|---|---|
 | `pytest` (unit + integration + protocol + security + HIL) | **106 passed, 1 skipped** | `pytest -q` |
-| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **37 / 37 checks** | [`docs/reports/e2e.json`](./reports/e2e.json) |
-| Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | [`docs/reports/packaged.json`](./reports/packaged.json) |
+| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **37 / 37 checks** | `scripts/verify_e2e.py` |
+| Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `scripts/verify_packaged.py` |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
-| **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | [`docs/reports/live-shell.json`](./reports/live-shell.json) |
+| **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | `scripts/live_shell_debug.py` |
 | **Terminal tab**: xterm.js in the built SPA, typed on the real Pi | **3 / 3 checks** (CDP) | `docs/screenshots/10-terminal-tab.png` |
 
 The skipped test is the HIL "open a real COM port" case while the live
