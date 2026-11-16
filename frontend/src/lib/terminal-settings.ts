@@ -1,5 +1,5 @@
 /**
- * Persisted terminal settings, shared by the serial and SSH terminals.
+ * Persisted terminal settings for the serial terminal.
  * Theme is deliberately not here: the terminals follow the app theme.
  */
 

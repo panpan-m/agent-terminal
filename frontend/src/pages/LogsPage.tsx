@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
-import type { SessionStatus, SshSessionStatus, TranscriptEvent } from "@/lib/types";
+import type { SessionStatus, TranscriptEvent } from "@/lib/types";
 import { b64ToBytes, decodeBytes, formatNumber } from "@/lib/utils";
 
 type Tab = "transcript" | "audit";
-type Selection = { kind: "serial" | "ssh"; id: string; name: string };
+type Selection = { id: string; name: string };
 
 function preview(event: TranscriptEvent): string {
   if (event.data_b64) {
@@ -31,11 +31,9 @@ function preview(event: TranscriptEvent): string {
 
 export function LogsPage({
   sessions,
-  sshSessions,
   selectedId,
 }: {
   sessions: SessionStatus[];
-  sshSessions: SshSessionStatus[];
   selectedId?: string;
 }) {
   const [tab, setTab] = useState<Tab>("transcript");
@@ -44,31 +42,21 @@ export function LogsPage({
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Selection>(() => {
     const serial = sessions.find((session) => session.session_id === selectedId) ?? sessions[0];
-    if (serial) return { kind: "serial", id: serial.session_id, name: serial.name };
-    const ssh = sshSessions[0];
-    if (ssh) return { kind: "ssh", id: ssh.session_id, name: ssh.name };
-    return { kind: "serial", id: "", name: "" };
+    return { id: serial?.session_id ?? "", name: serial?.name ?? "" };
   });
 
   useEffect(() => {
-    if (selected.kind === "serial") return;
-    if (!sshSessions.some((session) => session.session_id === selected.id)) {
-      const serial = sessions[0];
-      const ssh = sshSessions[0];
-      if (serial) setSelected({ kind: "serial", id: serial.session_id, name: serial.name });
-      else if (ssh) setSelected({ kind: "ssh", id: ssh.session_id, name: ssh.name });
-    }
+    if (selected.id && sessions.some((session) => session.session_id === selected.id)) return;
+    const serial = sessions[0];
+    if (serial) setSelected({ id: serial.session_id, name: serial.name });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sshSessions, sessions]);
+  }, [sessions]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       if (tab === "transcript" && selected.id) {
-        const result =
-          selected.kind === "serial"
-            ? await api.transcript(selected.id, 300)
-            : await api.sshTranscript(selected.id, 300);
+        const result = await api.transcript(selected.id, 300);
         setEvents(result.events);
       } else if (tab === "audit") {
         const result = await api.audit(300);
@@ -110,33 +98,19 @@ export function LogsPage({
         <div className="flex items-center gap-2">
           {tab === "transcript" ? (
             <Select
-              value={`${selected.kind}:${selected.id}`}
+              value={selected.id}
               onChange={(event) => {
-                const [kind, id] = event.target.value.split(":");
-                const name =
-                  kind === "serial"
-                    ? sessions.find((s) => s.session_id === id)?.name ?? id
-                    : sshSessions.find((s) => s.session_id === id)?.name ?? id;
-                setSelected({ kind, id, name } as Selection);
+                const id = event.target.value;
+                const name = sessions.find((s) => s.session_id === id)?.name ?? id;
+                setSelected({ id, name });
               }}
               className="h-8 w-auto px-2 text-xs"
             >
-              <optgroup label="Serial">
-                {sessions.map((item) => (
-                  <option key={item.session_id} value={`serial:${item.session_id}`}>
-                    {item.name}
-                  </option>
-                ))}
-              </optgroup>
-              {sshSessions.length > 0 ? (
-                <optgroup label="SSH">
-                  {sshSessions.map((item) => (
-                    <option key={item.session_id} value={`ssh:${item.session_id}`}>
-                      {item.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
+              {sessions.map((item) => (
+                <option key={item.session_id} value={item.session_id}>
+                  {item.name}
+                </option>
+              ))}
             </Select>
           ) : null}
           <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
@@ -170,7 +144,7 @@ export function LogsPage({
         <CardHeader className="py-3">
           <CardTitle className="text-[11px] uppercase tracking-widest text-zinc-400">
             {tab === "transcript"
-              ? `transcript · ${selected.kind} · ${selected.name || "—"}`
+              ? `transcript · ${selected.name || "—"}`
               : "audit log"}
           </CardTitle>
         </CardHeader>

@@ -25,13 +25,13 @@ src/
 │   │                        JSON editor, terminal, keyboard capture, clipboard
 │   ├── StatusPanel.tsx      live session rail
 │   └── ui/                  button, card, badge, input, dialog+switch
-├── pages/                   Sessions (overview + SSH hosts), Terminal workspace, MCP, Logs
+├── pages/                   Sessions overview, Terminal workspace, MCP, Logs
 └── lib/                     api, types, theme specs, terminal palettes, utils
 ```
 
 ## Themes
 
-Themes are JSON specs (`lib/themeSpecs.ts`, webssh2-style): `label`,
+Themes are JSON specs (`lib/themeSpecs.ts`, data-driven): `label`,
 `colorScheme`, a `vars` map of CSS custom properties (Tailwind v4 emits palette,
 radius, shadow and type scale as variables, so a spec re-skins every utility
 without forking components) and the xterm `term` palette. `applyTheme` writes

@@ -3,18 +3,17 @@ import {
   LayoutDashboard,
   Plug,
   ScrollText,
-  Server,
   SquareTerminal,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
-import type { SessionStatus, SshSessionStatus, SystemInfo } from "@/lib/types";
+import type { SessionStatus, SystemInfo } from "@/lib/types";
 import { BrandMark } from "@/components/BrandMark";
 import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
 
-export type Page = "sessions" | "terminal" | "connections" | "ssh" | "mcp" | "logs";
+export type Page = "sessions" | "terminal" | "mcp" | "logs";
 
 const NAV: { page: Page; label: string; short: string; icon: typeof Cpu }[] = [
   { page: "sessions", label: "Sessions", short: "Sessions", icon: LayoutDashboard },
@@ -27,18 +26,11 @@ type ShellProps = {
   page: Page;
   onNavigate: (page: Page) => void;
   onSelectSession: (id: string) => void;
-  onSelectSsh: (id: string) => void;
   sessions: SessionStatus[];
-  sshSessions: SshSessionStatus[];
   selectedId?: string;
-  selectedSshId?: string;
   system: SystemInfo | null;
   children: ReactNode;
 };
-
-function activePageOf(page: Page): Page {
-  return page === "ssh" ? "terminal" : page === "connections" ? "sessions" : page;
-}
 
 /**
  * One shell for every theme.  Themes are pure data (see lib/themeSpecs.ts):
@@ -48,16 +40,13 @@ export function Shell({
   page,
   onNavigate,
   onSelectSession,
-  onSelectSsh,
   sessions,
-  sshSessions,
   selectedId,
-  selectedSshId,
   system,
   children,
 }: ShellProps) {
   useTheme(); // the shell re-renders on theme switches; the layout never changes
-  const active = activePageOf(page);
+  const active = page;
   const stateDot = (state: string) =>
     state === "open"
       ? "live-dot bg-emerald-400"
@@ -74,7 +63,7 @@ export function Shell({
           <BrandMark className="h-8 w-8 rounded-lg" />
           <div>
             <div className="text-sm font-semibold tracking-tight text-zinc-100">agent-terminal</div>
-            <div className="text-[10px] uppercase tracking-widest text-zinc-500">serial · ssh · mcp</div>
+            <div className="text-[10px] uppercase tracking-widest text-zinc-500">serial · mcp</div>
           </div>
         </div>
 
@@ -130,38 +119,6 @@ export function Shell({
             ))}
           </div>
 
-          <div className="mt-4 px-3 pb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-600">
-            SSH sessions
-          </div>
-          <div className="flex flex-col gap-1">
-            {sshSessions.length === 0 ? (
-              <p className="px-3 text-xs text-zinc-600">none connected</p>
-            ) : null}
-            {sshSessions.map((session) => (
-              <button
-                key={session.session_id}
-                type="button"
-                onClick={() => onSelectSsh(session.session_id)}
-                className={cn(
-                  "flex flex-col gap-1 rounded-lg px-3 py-2 text-left transition-colors",
-                  selectedSshId === session.session_id
-                    ? "bg-zinc-900 ring-1 ring-inset ring-zinc-700"
-                    : "hover:bg-zinc-900/70",
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1 truncate text-xs font-medium text-zinc-200">
-                    <Server className="h-3 w-3 shrink-0 text-sky-400" />
-                    {session.name}
-                  </span>
-                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", stateDot(session.state))} />
-                </div>
-                <span className="truncate font-mono text-[10px] text-zinc-500">
-                  {session.username}@{session.host}
-                </span>
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="border-t border-zinc-800/80 px-4 py-2">

@@ -3,12 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Shell, type Page } from "@/components/Shell";
 import { TerminalWorkspacePage } from "@/pages/TerminalWorkspacePage";
 import { McpPage } from "@/pages/McpPage";
-import { SessionsPage } from "@/pages/SessionsPage";
+import { OverviewPage } from "@/pages/OverviewPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { ApiFailure, api } from "@/lib/api";
-import type { SessionInput, SessionStatus, SshSessionStatus, SystemInfo } from "@/lib/types";
+import type { SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 
-const PAGES: Page[] = ["sessions", "terminal", "connections", "ssh", "mcp", "logs"];
+const PAGES: Page[] = ["sessions", "terminal", "mcp", "logs"];
 
 interface Toast {
   id: number;
@@ -20,7 +20,10 @@ function parseHash(): { page: Page; sessionId?: string } {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const [pageRaw, id] = raw.split("/");
   const normalized = pageRaw === "console" ? "terminal" : pageRaw; // old chat links
-  const legacy = pageRaw === "config" ? "sessions" : pageRaw === "system" ? "sessions" : normalized;
+  const legacy =
+    pageRaw === "config" || pageRaw === "system" || pageRaw === "connections"
+      ? "sessions"
+      : normalized;
   const page = (PAGES as string[]).includes(legacy) ? (legacy as Page) : "sessions";
   return { page, sessionId: id || undefined };
 }
@@ -28,7 +31,6 @@ function parseHash(): { page: Page; sessionId?: string } {
 export default function App() {
   const [route, setRoute] = useState(parseHash());
   const [sessions, setSessions] = useState<SessionStatus[]>([]);
-  const [sshSessions, setSshSessions] = useState<SshSessionStatus[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
 
@@ -50,13 +52,8 @@ export default function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [sessionList, sshList, sys] = await Promise.all([
-        api.sessions(),
-        api.sshSessions().catch(() => ({ sessions: [] })),
-        api.system(),
-      ]);
+      const [sessionList, sys] = await Promise.all([api.sessions(), api.system()]);
       setSessions(sessionList.sessions);
-      setSshSessions(sshList.sessions);
       setSystem(sys);
     } catch {
       // server restarting; keep the last known state
@@ -84,17 +81,10 @@ export default function App() {
     return sessions[0]?.session_id;
   }, [route.sessionId, sessions]);
 
-  const selectedSshId = useMemo(() => {
-    if (route.sessionId && sshSessions.some((session) => session.session_id === route.sessionId)) {
-      return route.sessionId;
-    }
-    return sshSessions[0]?.session_id;
-  }, [route.sessionId, sshSessions]);
-
   // The terminal workspace stays mounted once visited: xterm instances, their
   // WebSocket feeds and scrollback survive navigation, so switching pages or
   // terminal tabs never destroys terminal state.
-  const workspaceActive = route.page === "terminal" || route.page === "ssh";
+  const workspaceActive = route.page === "terminal";
   const [workspaceSeen, setWorkspaceSeen] = useState(false);
   useEffect(() => {
     if (workspaceActive) setWorkspaceSeen(true);
@@ -131,33 +121,26 @@ export default function App() {
         page={route.page}
         onNavigate={navigate}
         onSelectSession={(id) => navigate("terminal", id)}
-        onSelectSsh={(id) => navigate("ssh", id)}
         sessions={sessions}
-        sshSessions={sshSessions}
         selectedId={route.page === "terminal" ? selectedId : undefined}
-        selectedSshId={route.page === "ssh" ? selectedSshId : undefined}
         system={system}
       >
         {workspaceSeen ? (
           <div className={workspaceActive ? "h-full min-h-0" : "hidden"}>
             <TerminalWorkspacePage
-              initialKind={route.page === "ssh" ? "ssh" : "serial"}
               sessionId={route.sessionId}
               sessions={sessions}
               selectedId={selectedId}
               refresh={refresh}
               notify={notify}
               onSelectSerial={(id) => navigate("terminal", id)}
-              onSelectSsh={(id) => navigate("ssh", id)}
-              onOpenSessions={() => navigate(route.page === "ssh" ? "connections" : "sessions")}
-              onEmpty={() => navigate("terminal")}
+              onOpenSessions={() => navigate("sessions")}
             />
           </div>
         ) : null}
 
-        {route.page === "sessions" || route.page === "connections" ? (
-          <SessionsPage
-            initialKind={route.page === "connections" ? "ssh" : undefined}
+        {route.page === "sessions" ? (
+          <OverviewPage
             sessions={sessions}
             system={system}
             refresh={refresh}
@@ -175,18 +158,13 @@ export default function App() {
                 notify(`reset applied (${result.steps} steps)`, "success");
               })
             }
-            onOpenSsh={(id) => navigate("ssh", id)}
           />
         ) : null}
 
         {route.page === "mcp" ? <McpPage notify={notify} /> : null}
 
         {route.page === "logs" ? (
-          <LogsPage
-            sessions={sessions}
-            sshSessions={sshSessions}
-            selectedId={selectedId}
-          />
+          <LogsPage sessions={sessions} selectedId={selectedId} />
         ) : null}
       </Shell>
 

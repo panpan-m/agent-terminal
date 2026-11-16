@@ -6,14 +6,6 @@ import type {
   PortInfo,
   SessionInput,
   SessionStatus,
-  SshConnectInput,
-  SshConfigCandidate,
-  SshFileList,
-  SshFileStat,
-  SshHost,
-  SshHostInput,
-  SshSessionStatus,
-  SshTestResult,
   SystemInfo,
   TranscriptEvent,
 } from "./types";
@@ -180,109 +172,15 @@ export const api = {
   system: () => request<SystemInfo>("/api/system"),
   mcp: () => request<McpStatus>("/api/mcp"),
   mcpAudit: (limit = 100) => request<{ events: McpAuditEvent[] }>(`/api/mcp/audit?limit=${limit}`),
-  sshHosts: () => request<{ hosts: SshHost[] }>("/api/ssh/hosts"),
-  sshConfigCandidates: () =>
-    request<{ path: string; hosts: SshConfigCandidate[] }>("/api/ssh/config"),
-  createSshHost: (body: SshHostInput) =>
-    request<SshHost>("/api/ssh/hosts", { method: "POST", body: JSON.stringify(body) }),
-  updateSshHost: (id: string, body: SshHostInput) =>
-    request<SshHost>(`/api/ssh/hosts/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
-  deleteSshHost: (id: string) =>
-    request<{ ok: boolean }>(`/api/ssh/hosts/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  sshConnect: (id: string, body: SshConnectInput) =>
-    request<{ session: SshSessionStatus }>(`/api/ssh/hosts/${encodeURIComponent(id)}/connect`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  sshTestHost: (id: string) =>
-    request<SshTestResult>(`/api/ssh/hosts/${encodeURIComponent(id)}/test`, { method: "POST" }),
-  sshForgetSecrets: (id: string) =>
-    request<{ ok: boolean; cleared: boolean }>(`/api/ssh/hosts/${encodeURIComponent(id)}/secrets`, {
-      method: "DELETE",
-    }),
-  sshSftpList: (sessionId: string, path: string) =>
-    request<SshFileList>(
-      `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/list?path=${encodeURIComponent(path)}`,
-    ),
-  sshSftpUpload: (sessionId: string, path: string, file: File) => {
-    const form = new FormData();
-    form.append("file", file);
-    return request<{ path: string; bytes: number }>(
-      `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/upload?path=${encodeURIComponent(path)}`,
-      { method: "POST", body: form },
-    );
-  },
-  sshSftpMkdir: (sessionId: string, path: string) =>
-    request<{ path: string }>(`/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/mkdir`, {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    }),
-  sshSftpDelete: (sessionId: string, path: string) =>
-    request<{ path: string }>(`/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/delete`, {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    }),
-  sshSftpRename: (sessionId: string, path: string, newPath: string) =>
-    request<{ path: string }>(`/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/rename`, {
-      method: "POST",
-      body: JSON.stringify({ path, new_path: newPath }),
-    }),
-  sshSftpStat: (sessionId: string, path: string) =>
-    request<SshFileStat>(
-      `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/stat?path=${encodeURIComponent(path)}`,
-    ),
-  /** `mode` is the numeric permission value, e.g. 0o755 = 493. */
-  sshSftpChmod: (sessionId: string, path: string, mode: number) =>
-    request<{ path: string; mode: string }>(`/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/chmod`, {
-      method: "POST",
-      body: JSON.stringify({ path, mode }),
-    }),
-  /** Download the file to a server-side temp dir and open it with the OS
-   *  default application; the server watches the file and uploads saves back. */
-  sshSftpOpenLocal: (sessionId: string, path: string) =>
-    request<{ path: string; local: string; bytes: number; reused: boolean }>(
-      `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/open-local`,
-      { method: "POST", body: JSON.stringify({ path }) },
-    ),
-  /** Streaming single-file download path (GET, has Content-Length). */
-  sshSftpDownloadPath: (sessionId: string, path: string) =>
-    `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/download?path=${encodeURIComponent(path)}`,
-  /** Folder/multi-file zip download path (POST with { paths }). */
-  sshSftpArchivePath: (sessionId: string) =>
-    `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/download-archive`,
-  sshSessions: () => request<{ sessions: SshSessionStatus[] }>("/api/ssh/sessions"),
-  sshTranscript: (id: string, limit = 200) =>
-    request<{ events: TranscriptEvent[] }>(
-      `/api/ssh/sessions/${encodeURIComponent(id)}/transcript?limit=${limit}`,
-    ),
-  sshSession: (id: string) =>
-    request<SshSessionStatus>(`/api/ssh/sessions/${encodeURIComponent(id)}`),
-  sshDisconnect: (id: string) =>
-    request<{ ok: boolean }>(`/api/ssh/sessions/${encodeURIComponent(id)}/disconnect`, {
-      method: "POST",
-    }),
-  sshRenameSession: (id: string, name: string) =>
-    request<{ name: string }>(`/api/ssh/sessions/${encodeURIComponent(id)}/rename`, {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-  /** Which sessions the MCP serial/ssh tools are bound to (null = unbound, tools hidden). */
   mcpBindings: () =>
     request<McpBindings>("/api/mcp/bindings"),
-  setMcpBindings: (body: { serial_session_id: string | null; ssh_session_id: string | null }) =>
-    request<{ serial_session_id: string | null; ssh_session_id: string | null }>("/api/mcp/bindings", {
+  setMcpBindings: (body: { serial_session_id: string | null }) =>
+    request<{ serial_session_id: string | null }>("/api/mcp/bindings", {
       method: "PUT",
       body: JSON.stringify(body),
     }),
 };
 
-export function sshConsoleUrl(sessionId: string, replay = 65536): string {
-  const query = replay > 0 ? `?replay=${replay}` : "";
-  return wsUrl(`/ws/ssh/${encodeURIComponent(sessionId)}${query}`);
-}
 
 export function consoleUrl(sessionId: string, replay = 65536): string {
   const query = replay > 0 ? `?replay=${replay}` : "";

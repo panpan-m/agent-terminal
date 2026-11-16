@@ -1,5 +1,5 @@
 /**
- * Shared xterm.js construction and enhancement for the serial and SSH
+ * xterm.js construction and enhancement for the serial
  * terminals: Unicode11 (CJK width), clickable links, clipboard integration,
  * configurable key capture and Shift+Enter mapping.  Behaviour flags are read
  * from the settings store at event time so changes apply without re-attaching.
@@ -39,52 +39,12 @@ export function applyTerminalSettings(term: Terminal, settings: TerminalSettings
 
 let notifyBlockUntil = 0;
 
-/**
- * Native bridge of the desktop shell.  WebView2 denies
- * ``navigator.clipboard`` read/write because pywebview never answers the
- * PermissionRequested event, so ``desktop.py`` exposes the Win32 clipboard
- * through a js bridge as a fallback — plus a native Save-As dialog and a
- * direct-to-disk download stream for the SFTP panel.
- */
-export interface PyWebViewBridgeApi {
-  read_clipboard?: () => Promise<string>;
-  write_clipboard?: (text: string) => Promise<void>;
-  pick_save_path?: (suggestedName: string) => Promise<string | null>;
-  save_url_to?: (
-    url: string,
-    destPath: string,
-    taskId: number,
-    method?: "GET" | "POST",
-    jsonBody?: Record<string, unknown> | null,
-  ) => Promise<{ ok: boolean; bytes: number; path: string; error?: string; cancelled?: boolean }>;
-  cancel_save?: (taskId: number) => Promise<void>;
-}
-
-export function pywebviewApi(): PyWebViewBridgeApi | undefined {
-  return (window as { pywebview?: { api?: PyWebViewBridgeApi } }).pywebview?.api;
-}
-
 async function readClipboardText(): Promise<string> {
-  try {
-    return await navigator.clipboard.readText();
-  } catch (error) {
-    const api = pywebviewApi();
-    if (api?.read_clipboard) return await api.read_clipboard();
-    throw error;
-  }
+  return await navigator.clipboard.readText();
 }
 
 export async function writeClipboardText(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (error) {
-    const api = pywebviewApi();
-    if (api?.write_clipboard) {
-      await api.write_clipboard(text);
-      return;
-    }
-    throw error;
-  }
+  await navigator.clipboard.writeText(text);
 }
 
 function throttledNotify(

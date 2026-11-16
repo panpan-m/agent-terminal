@@ -1,5 +1,5 @@
 /**
- * Themes as data (webssh2-style): one layout, many JSON specs.
+ * Themes as data (data-driven): one layout, many JSON specs.
  *
  * A spec is a flat, JSON-serializable object.  `vars` are CSS custom
  * properties written onto <html> at runtime — including the Tailwind v4
