@@ -1,29 +1,31 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatBytes, formatNumber } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 export function StatusPanel({ session }: { session: SessionStatus }) {
+  const t = useT();
   const lease = session.lease;
   const rows: [string, string][] = [
-    ["port", session.port],
-    ["state", session.state],
-    ["control", session.control_owner],
+    [t("port"), session.port],
+    [t("state"), t(session.state)],
+    [t("control"), t(session.control_owner)],
     [
-      "lease",
-      lease ? `${lease.label} · ${Math.ceil(lease.remaining_ms / 1000)}s` : "free",
+      t("lease"),
+      lease ? `${lease.label} · ${Math.ceil(lease.remaining_ms / 1000)}s` : t("free"),
     ],
-    ["rx / tx", `${formatNumber(session.rx_bytes)} / ${formatNumber(session.tx_bytes)}`],
-    ["buffer", `${formatBytes(session.buffer_bytes)} (${formatBytes(session.lost_bytes)} lost)`],
-    ["reconnects", String(session.reconnect_count)],
-    ["opened", session.opened_at ? new Date(session.opened_at).toLocaleTimeString() : "—"],
-    ["last error", session.last_error ?? "none"],
+    [t("rx / tx"), `${formatNumber(session.rx_bytes)} / ${formatNumber(session.tx_bytes)}`],
+    [t("buffer"), `${formatBytes(session.buffer_bytes)} (${formatBytes(session.lost_bytes)} ${t("lost")})`],
+    [t("reconnects"), String(session.reconnect_count)],
+    [t("opened"), session.opened_at ? new Date(session.opened_at).toLocaleTimeString() : "—"],
+    [t("last error"), session.last_error ?? t("none")],
   ];
   const lineKeys: ("dtr" | "rts" | "cts" | "dsr" | "cd" | "ri")[] = ["dtr", "rts", "cts", "dsr", "cd", "ri"];
 
   return (
     <Card className="rounded-lg">
       <CardHeader className="px-4 py-2.5">
-        <CardTitle className="text-[11px] uppercase tracking-widest text-zinc-400">status</CardTitle>
+        <CardTitle className="text-[11px] uppercase tracking-widest text-zinc-400">{t("status")}</CardTitle>
       </CardHeader>
       <CardContent className="px-4 py-3">
         <dl className="grid grid-cols-1 gap-1 text-[11px]">

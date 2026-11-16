@@ -23,6 +23,7 @@ import {
 import { getTerminalSettings, updateTerminalSettings } from "@/lib/terminal-settings";
 import { cn } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 interface TabRef {
   id: string;
@@ -50,6 +51,7 @@ export function TerminalWorkspacePage({
   onSelectSerial: (id: string) => void;
   onOpenSessions: () => void;
 }) {
+  const t = useT();
   // keep-alive registry: every terminal that was active stays mounted so tab
   // switches preserve scrollback and the WebSocket feed
   const [alive, setAlive] = useState<Record<string, string>>({});
@@ -122,7 +124,7 @@ export function TerminalWorkspacePage({
 
   const renameSession = async (id: string) => {
     const serial = sessions.find((item) => item.session_id === id);
-    const next = window.prompt("Session name", serial?.name ?? "");
+    const next = window.prompt(t("Session name"), serial?.name ?? "");
     if (!next || next === serial?.name || !serial) return;
     try {
       await api.updateSession(id, {
@@ -195,7 +197,7 @@ export function TerminalWorkspacePage({
     return [
       {
         key: "rename",
-        label: "Rename session",
+        label: t("Rename session"),
         icon: <Pencil className="h-3.5 w-3.5" />,
         onSelect: () => void renameSession(tab.id),
       },
@@ -203,7 +205,7 @@ export function TerminalWorkspacePage({
         key: "color",
         content: (
           <div className="flex items-center gap-1.5 py-0.5">
-            <span className="mr-0.5 text-[11px] text-zinc-500">color</span>
+            <span className="mr-0.5 text-[11px] text-zinc-500">{t("color")}</span>
             {SESSION_COLORS.map((color) => (
               <button
                 key={color}
@@ -219,7 +221,7 @@ export function TerminalWorkspacePage({
             ))}
             <button
               type="button"
-              aria-label="clear tab color"
+              aria-label={t("clear tab color")}
               onClick={() => patch(tab.id, { color: null })}
               className={cn(
                 "rounded px-1 text-[10px] text-zinc-500 hover:text-zinc-200",
@@ -263,33 +265,33 @@ export function TerminalWorkspacePage({
       { key: "sep-pin", separator: true },
       {
         key: "pin",
-        label: acc?.pinned ? "Unpin tab" : "Pin tab",
+        label: acc?.pinned ? t("Unpin tab") : t("Pin tab"),
         icon: acc?.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />,
         onSelect: () => patch(tab.id, { pinned: !acc?.pinned }),
       },
       {
         key: "save",
-        label: "Save terminal output",
+        label: t("Save terminal output"),
         icon: <Save className="h-3.5 w-3.5" />,
         onSelect: () => void saveOutput(tab.id),
       },
       { key: "sep-view", separator: true },
       {
         key: "font-up",
-        label: "Increase font size",
+        label: t("Increase font size"),
         hint: `${getTerminalSettings().fontSize}px`,
         icon: <ZoomIn className="h-3.5 w-3.5" />,
         onSelect: () => changeFontSize(1),
       },
       {
         key: "font-down",
-        label: "Decrease font size",
+        label: t("Decrease font size"),
         icon: <ZoomOut className="h-3.5 w-3.5" />,
         onSelect: () => changeFontSize(-1),
       },
       {
         key: "fullscreen",
-        label: document.fullscreenElement ? "Exit fullscreen" : "Fullscreen",
+        label: document.fullscreenElement ? t("Exit fullscreen") : t("Fullscreen"),
         icon: <Maximize className="h-3.5 w-3.5" />,
         onSelect: toggleFullscreen,
       },
@@ -344,7 +346,7 @@ export function TerminalWorkspacePage({
           onClick={onOpenSessions}
           className="shrink-0 rounded px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
         >
-          + session
+          {t("+ session")}
         </button>
       </div>
 
@@ -368,7 +370,7 @@ export function TerminalWorkspacePage({
         })}
         {Object.keys(alive).length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-zinc-500">
-            <p>No terminal session is open.</p>
+            <p>{t("No terminal session is open.")}</p>
             <button type="button" onClick={onOpenSessions} className="text-emerald-300 hover:underline">
               Open a serial session
             </button>

@@ -39,6 +39,7 @@ import {
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
 import { b64ToBytes, cn, formatBytes, isModalOpen } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 /**
  * Full-page interactive terminal for the serial console.
@@ -68,6 +69,7 @@ export function TerminalPage({
   /** false while this terminal is kept alive but hidden behind another tab */
   active?: boolean;
 }) {
+  const t = useT();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
@@ -305,7 +307,7 @@ export function TerminalPage({
     setBusyBreak(true);
     try {
       await api.sendBreak(session.session_id);
-      notify("BREAK sent (250 ms)", "success");
+      notify(t("BREAK sent (250 ms)"), "success");
     } catch (error) {
       const failure = error as { code?: string; message?: string };
       notify(`${failure.code ?? "ERROR"}: ${failure.message ?? String(error)}`, "error");
@@ -319,7 +321,7 @@ export function TerminalPage({
       <header className="flex flex-wrap items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/60 px-4 py-2">
         <div className="mr-1 flex items-center gap-2">
           <SquareTerminal className="h-4 w-4 text-emerald-400" />
-          <span className="text-sm font-semibold text-zinc-100">Terminal</span>
+          <span className="text-sm font-semibold text-zinc-100">{t("Terminal")}</span>
         </div>
         {showSessionPicker ? (
           <>
@@ -328,7 +330,7 @@ export function TerminalPage({
               onChange={(event) => onSelect(event.target.value)}
               className="h-8 w-auto px-2 text-xs"
             >
-              {sessions.length === 0 ? <option value="">no sessions</option> : null}
+              {sessions.length === 0 ? <option value="">{t("no sessions")}</option> : null}
               {sessions.map((item) => (
                 <option key={item.session_id} value={item.session_id}>
                   {item.name} · {item.port}
@@ -347,17 +349,17 @@ export function TerminalPage({
             {session.config.parity[0].toUpperCase()}
             {session.config.stopbits} ·{" "}
             {session.control === "agent"
-              ? "agent control"
+              ? t("agent control")
               : session.control_owner === "agent"
-                ? "agent owns control"
-                : "operator control"}
+                ? t("agent owns control")
+                : t("operator control")}
           </span>
         ) : null}
         {session && session.control === "agent" ? (
-          <Badge tone="accent" title="the agent drives this port; the terminal is a read-only audit view">
+          <Badge tone="accent" title={t("the agent drives this port; the terminal is a read-only audit view")}>
             <span className="inline-flex items-center gap-1">
               <Eye className="h-3 w-3" />
-              observe only
+              {t("observe only")}
             </span>
           </Badge>
         ) : null}
@@ -387,8 +389,8 @@ export function TerminalPage({
             variant="ghost"
             onClick={() => void releasePort()}
             disabled={!session || session.state !== "open"}
-            title="close the port and release the device for other programs"
-            aria-label="Release port"
+            title={t("close the port and release the device for other programs")}
+            aria-label={t("Release port")}
           >
             <Power className="h-3.5 w-3.5 text-red-400" />
           </Button>
@@ -397,8 +399,8 @@ export function TerminalPage({
             variant="ghost"
             onClick={sendBreak}
             disabled={!session || session.state !== "open" || busyBreak}
-            title="send a serial BREAK (250 ms framing break, not a byte)"
-            aria-label="BREAK"
+            title={t("send a serial BREAK (250 ms framing break, not a byte)")}
+            aria-label={t("BREAK")}
           >
             <Zap className="h-3.5 w-3.5" />
           </Button>
@@ -406,25 +408,25 @@ export function TerminalPage({
             size="sm"
             variant="ghost"
             onClick={() => setSearchOpen((value) => !value)}
-            title="search the scrollback (Ctrl+Shift+F)"
-            aria-label="Find"
+            title={t("search the scrollback (Ctrl+Shift+F)")}
+            aria-label={t("Find")}
           >
             <Search className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => termRef.current?.clear()} title="clear the screen" aria-label="Clear">
+          <Button size="sm" variant="ghost" onClick={() => termRef.current?.clear()} title={t("clear the screen")} aria-label={t("Clear")}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => setGeneration((value) => value + 1)}
-            title="resume the stream from the last received cursor"
-            aria-label="Reconnect"
+            title={t("resume the stream from the last received cursor")}
+            aria-label={t("Reconnect")}
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           {session ? (
-            <Button size="sm" variant="ghost" asChild title="download raw bytes with timestamps">
+            <Button size="sm" variant="ghost" asChild title={t("download raw bytes with timestamps")}>
               <a href={`/api/sessions/${encodeURIComponent(session.session_id)}/export?format=txt`} download>
                 <Download className="h-3.5 w-3.5" />
               </a>
@@ -434,16 +436,16 @@ export function TerminalPage({
             size="sm"
             variant={keysOpen ? "outline" : "ghost"}
             onClick={() => setKeysOpen((value) => !value)}
-            title="browser-reserved keys and alternatives"
-            aria-label="Keys"
+            title={t("browser-reserved keys and alternatives")}
+            aria-label={t("Keys")}
           >
             <Keyboard className="h-3.5 w-3.5" />
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            title="reset terminal state (fixes a stuck screen after a full-screen TUI)"
-            aria-label="Reset terminal"
+            title={t("reset terminal state (fixes a stuck screen after a full-screen TUI)")}
+            aria-label={t("Reset terminal")}
             onClick={() => {
               const term = termRef.current;
               term?.reset();
@@ -462,8 +464,8 @@ export function TerminalPage({
                 return !value;
               })
             }
-            title="toggle the session status panel"
-            aria-label="Info"
+            title={t("toggle the session status panel")}
+            aria-label={t("Info")}
           >
             <PanelRight className="h-3.5 w-3.5" />
           </Button>
@@ -483,7 +485,7 @@ export function TerminalPage({
 
       {keysOpen ? (
         <div className="absolute right-3 top-12 z-20 w-[27rem] rounded-md border border-zinc-700 bg-zinc-950/95 p-3 text-[11px] text-zinc-300 shadow-2xl">
-          <p className="mb-2 font-semibold text-zinc-100">Browser keys vs this terminal</p>
+          <p className="mb-2 font-semibold text-zinc-100">{t("Browser keys vs this terminal")}</p>
           <p className="mb-2 text-zinc-400">
             Some keys are eaten by the browser. Where Settings ▸ Keyboard capture offers a fix, it is listed
             below; everything else needs a native terminal.
@@ -491,43 +493,43 @@ export function TerminalPage({
           <table className="w-full">
             <tbody className="align-top">
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+W</td>
-                <td>closes the tab → <span className="font-mono">Alt+Backspace</span> deletes a word</td>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">{t("Ctrl+W")}</td>
+                <td>closes the tab → <span className="font-mono">{t("Alt+Backspace")}</span> deletes a word</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+N / Ctrl+P</td>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">{t("Ctrl+N / Ctrl+P")}</td>
                 <td>new window / print → use ↓ / ↑ for history</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+T</td>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">{t("Ctrl+T")}</td>
                 <td>new tab → transpose chars needs the full terminal</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-amber-300">Ctrl+L</td>
-                <td>address bar → type <span className="font-mono">clear</span></td>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">{t("Ctrl+L")}</td>
+                <td>address bar → type <span className="font-mono">{t("clear")}</span></td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-amber-300">F5 / F11 / F12</td>
+                <td className="py-0.5 pr-2 font-mono text-amber-300">{t("F5 / F11 / F12")}</td>
                 <td>reload / fullscreen / devtools → add to capture keys in Settings if needed</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+Shift+F</td>
-                <td>search this scrollback (case / regex / whole word)</td>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">{t("Ctrl+Shift+F")}</td>
+                <td>{t("search this scrollback (case / regex / whole word)")}</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+V / Ctrl+Shift+V</td>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">{t("Ctrl+V / Ctrl+Shift+V")}</td>
                 <td>paste (Ctrl+Shift+C copies; also right-click — Settings ▸ Clipboard)</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-emerald-300">Escape</td>
-                <td>enable <span className="font-mono">Capture Escape</span> in Settings if the device misses it</td>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">{t("Escape")}</td>
+                <td>enable <span className="font-mono">{t("Capture Escape")}</span> in Settings if the device misses it</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-emerald-300">Ctrl+B</td>
-                <td>enable <span className="font-mono">Capture Ctrl+B</span> for the tmux prefix</td>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">{t("Ctrl+B")}</td>
+                <td>enable <span className="font-mono">{t("Capture Ctrl+B")}</span> for the tmux prefix</td>
               </tr>
               <tr>
-                <td className="py-0.5 pr-2 font-mono text-emerald-300">Shift+Enter</td>
+                <td className="py-0.5 pr-2 font-mono text-emerald-300">{t("Shift+Enter")}</td>
                 <td>optionally sends ESC+CR (newline) for TUIs — Settings ▸ Keyboard capture</td>
               </tr>
             </tbody>
@@ -543,7 +545,7 @@ export function TerminalPage({
               connected ? "fill-emerald-400 text-emerald-400" : "fill-zinc-600 text-zinc-600",
             )}
           />
-          live rx
+          {t("live rx")}
         </span>
         <Badge>{formatBytes(received)}</Badge>
         {dropped > 0 ? <Badge tone="warn">{dropped} dropped</Badge> : null}
@@ -558,15 +560,15 @@ export function TerminalPage({
               "inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px]",
               autoScroll ? "text-emerald-300" : "text-zinc-500 hover:text-zinc-300",
             )}
-            title="jump to live output"
+            title={t("jump to live output")}
           >
-            <ArrowDownToLine className="h-3 w-3" /> {autoScroll ? "auto" : "live ↓"}
+            <ArrowDownToLine className="h-3 w-3" /> {autoScroll ? t("auto") : t("live ↓")}
           </button>
           <button
             type="button"
             onClick={() => termRef.current?.clear()}
             className="rounded px-1.5 py-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-            title="clear view (does not clear the buffer)"
+            title={t("clear view (does not clear the buffer)")}
           >
             <Trash2 className="h-3 w-3" />
           </button>
@@ -587,7 +589,7 @@ export function TerminalPage({
           <aside className="hidden w-72 shrink-0 flex-col gap-2 overflow-y-auto border-l border-zinc-800/80 bg-zinc-950/40 p-3 md:flex">
             <StatusPanel session={session} />
             <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/40 px-3 py-2 text-[11px] text-zinc-500">
-              <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">session</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">{t("session")}</p>
               <p className="mt-1 text-zinc-300">{session.name}</p>
               <p className="mt-0.5 font-mono text-[10px] text-zinc-500">
                 {session.session_id} · {session.config.baudrate} {session.config.bytesize}
@@ -595,7 +597,7 @@ export function TerminalPage({
                 {session.config.stopbits} · {session.config.flow}
               </p>
               <p className="mt-2 text-[10px] text-zinc-500">
-                Status refreshes with the session poll (3 s). DTR/RTS/CTS/DSR/CD/RI live in the card above.
+                {t("Status refreshes with the session poll (3 s).")} {t("DTR/RTS/CTS/DSR/CD/RI live in the card above.")}
               </p>
             </div>
           </aside>
@@ -604,11 +606,11 @@ export function TerminalPage({
 
       <footer className="flex items-center gap-3 border-t border-zinc-800/80 px-4 py-1.5 text-[11px] text-zinc-500">
         <span className={connected ? "text-emerald-400" : "text-amber-400"}>
-          {connected ? "● live" : "○ disconnected"}
+          {connected ? t("● live") : t("○ disconnected")}
         </span>
-        <span>raw serial · no local echo · keys go straight to the device</span>
-        {!canType && session ? <span className="text-amber-300">input disabled: agent owns control</span> : null}
-        {dropped > 0 ? <span className="text-red-400">dropped {dropped} bytes (slow reader)</span> : null}
+        <span>{t("raw serial · no local echo · keys go straight to the device")}</span>
+        {!canType && session ? <span className="text-amber-300">{t("input disabled: agent owns control")}</span> : null}
+        {dropped > 0 ? <span className="text-red-400">{t("dropped {n} bytes (slow reader)", { n: dropped })}</span> : null}
         {lastError ? <span className="ml-auto text-red-400">{lastError}</span> : null}
       </footer>
     </div>

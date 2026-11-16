@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogTrigger, Switch } from "@/components/ui/di
 import { Field, Input, Label, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import type { SessionInput, SessionStatus } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1500000];
 
@@ -41,6 +42,7 @@ export function SessionSettingsDialog({
   onUpdate: (id: string, input: SessionInput) => Promise<void>;
   trigger: React.ReactNode;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<SessionInput>(fromSession(session));
   const [steps, setSteps] = useState<ResetStep[]>([]);
@@ -87,19 +89,19 @@ export function SessionSettingsDialog({
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent
         title={`Configure ${session.name}`}
-        description="Saving closes and reopens an open session atomically; runtime counters are kept."
+        description={t("Saving closes and reopens an open session atomically; runtime counters are kept.")}
       >
         <form onSubmit={save} className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Session id" hint="immutable; used by MCP tools">
+            <Field label={t("Session id")} hint={t("immutable; used by MCP tools")}>
               <Input value={form.id ?? ""} disabled className="font-mono text-xs" />
             </Field>
-            <Field label="Display name">
+            <Field label={t("Display name")}>
               <Input value={form.name ?? ""} onChange={(event) => update("name", event.target.value)} />
             </Field>
           </div>
 
-          <Field label="Port" hint="prefer /dev/serial/by-id on Linux">
+          <Field label={t("Port")} hint={t("prefer /dev/serial/by-id on Linux")}>
             <Input
               value={form.port}
               onChange={(event) => update("port", event.target.value)}
@@ -108,7 +110,7 @@ export function SessionSettingsDialog({
           </Field>
 
           <div className="grid grid-cols-4 gap-3">
-            <Field label="Baud rate">
+            <Field label={t("Baud rate")}>
               <Select value={String(form.baudrate)} onChange={(event) => update("baudrate", Number(event.target.value))}>
                 {Array.from(new Set([...BAUD_RATES, form.baudrate ?? 115200]))
                   .sort((a, b) => a - b)
@@ -119,7 +121,7 @@ export function SessionSettingsDialog({
                   ))}
               </Select>
             </Field>
-            <Field label="Bits">
+            <Field label={t("Bits")}>
               <Select value={String(form.bytesize)} onChange={(event) => update("bytesize", Number(event.target.value))}>
                 {[8, 7, 6, 5].map((bits) => (
                   <option key={bits} value={bits}>
@@ -128,7 +130,7 @@ export function SessionSettingsDialog({
                 ))}
               </Select>
             </Field>
-            <Field label="Parity">
+            <Field label={t("Parity")}>
               <Select value={form.parity} onChange={(event) => update("parity", event.target.value)}>
                 {["none", "even", "odd", "mark", "space"].map((value) => (
                   <option key={value} value={value}>
@@ -137,7 +139,7 @@ export function SessionSettingsDialog({
                 ))}
               </Select>
             </Field>
-            <Field label="Stop">
+            <Field label={t("Stop")}>
               <Select value={String(form.stopbits)} onChange={(event) => update("stopbits", Number(event.target.value))}>
                 <option value="1">1</option>
                 <option value="1.5">1.5</option>
@@ -147,7 +149,7 @@ export function SessionSettingsDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Flow control">
+            <Field label={t("Flow control")}>
               <Select value={form.flow} onChange={(event) => update("flow", event.target.value)}>
                 {["none", "hard", "soft"].map((value) => (
                   <option key={value} value={value}>
@@ -156,11 +158,11 @@ export function SessionSettingsDialog({
                 ))}
               </Select>
             </Field>
-            <Field label="Open behaviour" hint="preserve avoids touching DTR/RTS">
+            <Field label={t("Open behaviour")} hint={t("preserve avoids touching DTR/RTS")}>
               <Select value={form.open_mode} onChange={(event) => update("open_mode", event.target.value)}>
-                <option value="preserve">preserve</option>
-                <option value="assert">assert DTR/RTS</option>
-                <option value="deassert">deassert DTR/RTS</option>
+                <option value="preserve">{t("preserve")}</option>
+                <option value="assert">{t("assert DTR/RTS")}</option>
+                <option value="deassert">{t("deassert DTR/RTS")}</option>
               </Select>
             </Field>
           </div>
@@ -182,7 +184,7 @@ export function SessionSettingsDialog({
               Transcript
             </label>
             <div className="ml-auto flex items-center gap-2 text-[11px] text-zinc-500">
-              <Label htmlFor={`buffer-${session.session_id}`}>Buffer</Label>
+              <Label htmlFor={`buffer-${session.session_id}`}>{t("Buffer")}</Label>
               <Select
                 id={`buffer-${session.session_id}`}
                 className="h-7 w-24 text-xs"
@@ -199,7 +201,7 @@ export function SessionSettingsDialog({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500">Control</span>
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500">{t("Control")}</span>
             <Select
               value={form.control ?? "agent"}
               onChange={(event) => update("control", event.target.value as "agent" | "shared")}
@@ -211,7 +213,7 @@ export function SessionSettingsDialog({
           </div>
 
           <div className="flex flex-wrap gap-5 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500">Agent permissions</span>
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500">{t("Agent permissions")}</span>
             {["read", "write", "command"].map((permission) => (
               <label key={permission} className="flex items-center gap-2 text-xs text-zinc-300">
                 <Switch
@@ -225,7 +227,7 @@ export function SessionSettingsDialog({
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <Label className="text-zinc-500">Reset sequence (DTR/RTS, then delay)</Label>
+              <Label className="text-zinc-500">{t("Reset sequence (DTR/RTS, then delay)")}</Label>
               <Button
                 type="button"
                 size="sm"
@@ -240,7 +242,7 @@ export function SessionSettingsDialog({
             ) : null}
             {steps.map((step, index) => (
               <div key={index} className="flex items-end gap-2">
-                <Field label="DTR">
+                <Field label={t("DTR")}>
                   <Select
                     value={step.dtr ? "1" : "0"}
                     onChange={(event) =>
@@ -249,11 +251,11 @@ export function SessionSettingsDialog({
                       )
                     }
                   >
-                    <option value="1">assert</option>
-                    <option value="0">deassert</option>
+                    <option value="1">{t("assert")}</option>
+                    <option value="0">{t("deassert")}</option>
                   </Select>
                 </Field>
-                <Field label="RTS">
+                <Field label={t("RTS")}>
                   <Select
                     value={step.rts ? "1" : "0"}
                     onChange={(event) =>
@@ -262,11 +264,11 @@ export function SessionSettingsDialog({
                       )
                     }
                   >
-                    <option value="1">assert</option>
-                    <option value="0">deassert</option>
+                    <option value="1">{t("assert")}</option>
+                    <option value="0">{t("deassert")}</option>
                   </Select>
                 </Field>
-                <Field label="Delay (ms)">
+                <Field label={t("Delay (ms)")}>
                   <Input
                     type="number"
                     value={step.delay_ms}

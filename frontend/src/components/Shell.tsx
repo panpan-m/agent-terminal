@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { LANGS, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
 import type { SessionStatus, SystemInfo } from "@/lib/types";
@@ -46,6 +47,7 @@ export function Shell({
   children,
 }: ShellProps) {
   useTheme(); // the shell re-renders on theme switches; the layout never changes
+  const { lang, setLang, t } = useI18n();
   const active = page;
   const stateDot = (state: string) =>
     state === "open"
@@ -84,7 +86,7 @@ export function Shell({
                 )}
               >
                 <Icon className="h-4 w-4" />
-                {item.label}
+                {t(item.label)}
               </button>
             );
           })}
@@ -92,11 +94,11 @@ export function Shell({
 
         <div className="mt-6 flex-1 overflow-y-auto px-3">
           <div className="px-3 pb-2 text-[10px] font-medium uppercase tracking-widest text-zinc-600">
-            Serial sessions
+            {t("Serial sessions")}
           </div>
           <div className="flex flex-col gap-1">
             {sessions.length === 0 ? (
-              <p className="px-3 text-xs text-zinc-600">none configured</p>
+              <p className="px-3 text-xs text-zinc-600">{t("none configured")}</p>
             ) : null}
             {sessions.map((session) => (
               <button
@@ -126,10 +128,11 @@ export function Shell({
             <span>{system ? `v${system.version}` : "—"}</span>
             <span className="inline-flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              {system?.health.sessions_open ?? 0} open
+              {t("{n} open", { n: system?.health.sessions_open ?? 0 })}
             </span>
           </div>
-          <div className="mt-1.5 flex justify-end">
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <LanguageSwitch lang={lang} onSelect={setLang} />
             <TerminalSettingsDialog />
           </div>
         </div>
@@ -140,6 +143,7 @@ export function Shell({
           <BrandMark className="h-5 w-5 rounded" />
           <span className="text-sm font-semibold">agent-terminal</span>
           <div className="ml-auto flex items-center gap-2">
+            <LanguageSwitch lang={lang} onSelect={setLang} />
             <TerminalSettingsDialog />
             {NAV.map((item) => (
               <button
@@ -151,13 +155,44 @@ export function Shell({
                   active === item.page ? "bg-emerald-500/15 text-emerald-200" : "text-zinc-400",
                 )}
               >
-                {item.short}
+                {t(item.short)}
               </button>
             ))}
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
+    </div>
+  );
+}
+
+/** EN / 中 toggle. Kept tiny so it fits the sidebar footer and the mobile bar. */
+function LanguageSwitch({
+  lang,
+  onSelect,
+}: {
+  lang: string;
+  onSelect: (next: "en" | "zh") => void;
+}) {
+  return (
+    <div className="inline-flex overflow-hidden rounded border border-zinc-800" role="group">
+      {LANGS.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onSelect(item.id)}
+          aria-pressed={lang === item.id}
+          title={item.label}
+          className={cn(
+            "px-1.5 py-0.5 text-[10px] transition-colors",
+            lang === item.id
+              ? "bg-emerald-500/15 text-emerald-200"
+              : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200",
+          )}
+        >
+          {item.short}
+        </button>
+      ))}
     </div>
   );
 }

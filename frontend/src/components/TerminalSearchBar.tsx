@@ -5,6 +5,7 @@ import type { SearchAddon, ISearchOptions } from "@xterm/addon-search";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 /**
  * Shared scrollback search bar: case / regex / whole-word toggles, live match
@@ -17,6 +18,7 @@ export function TerminalSearchBar({
   searchRef: RefObject<SearchAddon | null>;
   onClose: () => void;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [regex, setRegex] = useState(false);
@@ -67,12 +69,12 @@ export function TerminalSearchBar({
           if (event.key === "Enter") run(event.shiftKey);
           if (event.key === "Escape") onClose();
         }}
-        placeholder="search scrollback"
+        placeholder={t("search scrollback")}
         className="h-7 w-64 text-xs"
       />
       <button
         type="button"
-        title="match case"
+        title={t("match case")}
         onClick={() => {
           setCaseSensitive((value) => !value);
           rerun();
@@ -86,7 +88,7 @@ export function TerminalSearchBar({
       </button>
       <button
         type="button"
-        title="regular expression"
+        title={t("regular expression")}
         onClick={() => {
           setRegex((value) => !value);
           rerun();
@@ -100,7 +102,7 @@ export function TerminalSearchBar({
       </button>
       <button
         type="button"
-        title="whole word"
+        title={t("whole word")}
         onClick={() => {
           setWholeWord((value) => !value);
           rerun();

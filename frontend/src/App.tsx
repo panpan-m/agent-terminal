@@ -6,6 +6,7 @@ import { McpPage } from "@/pages/McpPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { ApiFailure, api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 
 const PAGES: Page[] = ["sessions", "terminal", "mcp", "logs"];
@@ -29,6 +30,7 @@ function parseHash(): { page: Page; sessionId?: string } {
 }
 
 export default function App() {
+  const t = useT();
   const [route, setRoute] = useState(parseHash());
   const [sessions, setSessions] = useState<SessionStatus[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
@@ -107,12 +109,12 @@ export default function App() {
   );
 
   const createSession = async (input: SessionInput) => {
-    const ok = await guard(() => api.createSession(input), `session ${input.id} created`);
+    const ok = await guard(() => api.createSession(input), t("session {id} created", { id: input.id ?? "" }));
     if (ok && input.id) navigate("terminal", input.id);
   };
 
   const updateSession = async (id: string, input: SessionInput) => {
-    await guard(() => api.updateSession(id, input), "configuration saved");
+    await guard(() => api.updateSession(id, input), t("configuration saved"));
   };
 
   return (
@@ -148,14 +150,14 @@ export default function App() {
             onCreate={createSession}
             onUpdate={updateSession}
             onTerminal={(id) => navigate("terminal", id)}
-            onControl={(id, owner) => guard(() => api.setControl(id, owner), `control → ${owner}`)}
-            onOpenSession={(id) => guard(() => api.openSession(id), "session opened")}
-            onCloseSession={(id) => guard(() => api.closeSession(id), "session closed")}
-            onDelete={(id) => guard(() => api.deleteSession(id), "session deleted")}
+            onControl={(id, owner) => guard(() => api.setControl(id, owner), t("control → {owner}", { owner }))}
+            onOpenSession={(id) => guard(() => api.openSession(id), t("session opened"))}
+            onCloseSession={(id) => guard(() => api.closeSession(id), t("session closed"))}
+            onDelete={(id) => guard(() => api.deleteSession(id), t("session deleted"))}
             onReset={(id) =>
               guard(async () => {
                 const result = await api.resetSession(id);
-                notify(`reset applied (${result.steps} steps)`, "success");
+                notify(t("reset applied ({n} steps)", { n: result.steps }), "success");
               })
             }
           />

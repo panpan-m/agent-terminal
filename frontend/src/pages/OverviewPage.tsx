@@ -22,6 +22,7 @@ import { SessionSettingsDialog } from "@/components/SessionSettingsDialog";
 import { api } from "@/lib/api";
 import type { PortInfo, SessionInput, SessionStatus, SystemInfo } from "@/lib/types";
 import { formatBytes, formatNumber, formatUptime } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1500000];
 
@@ -52,22 +53,23 @@ export function OverviewPage({
   onDelete: (id: string) => Promise<boolean>;
   onReset: (id: string) => Promise<boolean>;
 }) {
+  const t = useT();
   const openCount = sessions.filter((session) => session.state === "open").length;
   const agentOwned = sessions.filter((session) => session.control === "agent" || session.control_owner === "agent").length;
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Serial sessions</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-100">{t("Serial sessions")}</h1>
         <p className="flex items-center gap-3 font-mono text-[11px] text-zinc-500">
-          <span title="sessions configured">{sessions.length} cfg</span>
-          <span title="ports open" className={openCount ? "text-emerald-300" : undefined}>
-            {openCount} open
+          <span title={t("sessions configured")}>{sessions.length} {t("cfg")}</span>
+          <span title={t("ports open")} className={openCount ? "text-emerald-300" : undefined}>
+            {openCount} {t("open")}
           </span>
-          <span title="sessions where the agent owns write" className={agentOwned ? "text-amber-300" : undefined}>
-            {agentOwned} agent
+          <span title={t("sessions where the agent owns write")} className={agentOwned ? "text-amber-300" : undefined}>
+            {agentOwned} {t("agent")}
           </span>
-          <span title="server uptime">{system ? formatUptime(system.uptime_seconds) : "—"}</span>
+          <span title={t("server uptime")}>{system ? formatUptime(system.uptime_seconds) : "—"}</span>
         </p>
         <NewSessionDialog onCreate={onCreate} />
       </div>
@@ -79,7 +81,7 @@ export function OverviewPage({
               <Cable className="h-5 w-5 text-zinc-400" />
             </div>
             <div>
-              <p className="text-sm text-zinc-200">No serial session yet</p>
+              <p className="text-sm text-zinc-200">{t("No serial session yet")}</p>
               <p className="mt-1 text-xs text-zinc-500">
                 Pick a port and open it. The server becomes the only process that touches the device.
               </p>
@@ -134,6 +136,7 @@ function SessionCard({
   refresh: () => Promise<void>;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const isOpen = session.state === "open";
   const agentOwns = session.control === "agent" || session.control_owner === "agent";
@@ -166,7 +169,7 @@ function SessionCard({
               <button
                 type="button"
                 className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
-                title="configure session"
+                title={t("configure session")}
                 disabled={busy}
               >
                 <Pencil className="h-4 w-4" />
@@ -176,7 +179,7 @@ function SessionCard({
           <button
             type="button"
             className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-red-300 disabled:opacity-40"
-            title="delete session"
+            title={t("delete session")}
             disabled={busy}
             onClick={async () => {
               if (window.confirm(`Delete session "${session.name}"? The transcript stays on disk.`)) {
@@ -224,8 +227,9 @@ function SessionCard({
           {session.reconnect_count > 0 ? <Badge tone="warn">{session.reconnect_count} reconnects</Badge> : null}
         </div>
 
-        <p className="font-mono text-[11px] text-zinc-500" title="rx / tx bytes · ring buffer usage">
-          rx {formatNumber(session.rx_bytes)} · tx {formatNumber(session.tx_bytes)} · buf{" "}
+        <p className="font-mono text-[11px] text-zinc-500" title={t("rx / tx bytes · ring buffer usage")}>
+          {t("rx")} {formatNumber(session.rx_bytes)} · {t("tx")} {formatNumber(session.tx_bytes)} ·{" "}
+          {t("buf")}{" "}
           {Math.round(((session.rx_head - session.rx_start) / session.buffer_bytes) * 100)}%
         </p>
 
@@ -242,12 +246,12 @@ function SessionCard({
           </span>
           <span>CTS {session.lines?.cts ? "on" : "off"}</span>
           <span>DSR {session.lines?.dsr ? "on" : "off"}</span>
-          <span className="ml-auto">last rx {session.last_rx_at ? new Date(session.last_rx_at).toLocaleTimeString() : "—"}</span>
+          <span className="ml-auto">{t("last rx")} {session.last_rx_at ? new Date(session.last_rx_at).toLocaleTimeString() : "—"}</span>
         </div>
       </CardContent>
 
       <CardFooter className="flex-wrap">
-        <Button size="sm" variant="primary" onClick={onTerminal} disabled={!isOpen} title="open the interactive terminal tab" aria-label="Terminal">
+        <Button size="sm" variant="primary" onClick={onTerminal} disabled={!isOpen} title={t("open the interactive terminal tab")} aria-label={t("Terminal")}>
           <Monitor className="h-3.5 w-3.5" />
         </Button>
         {session.control === "shared" ? (
@@ -257,12 +261,12 @@ function SessionCard({
             disabled={busy || !isOpen}
             onClick={() => run(() => onControl(session.session_id, agentOwns ? "human" : "agent"))}
           >
-            {agentOwns ? "Take control" : "Hand to agent"}
+            {agentOwns ? t("Take control") : t("Hand to agent")}
           </Button>
         ) : (
-          <Button size="sm" variant="outline" disabled title="the agent owns this port; the operator terminal observes only">
+          <Button size="sm" variant="outline" disabled title={t("the agent owns this port; the operator terminal observes only")}>
             <Eye className="h-3.5 w-3.5" />
-            Observe
+            {t("Observe")}
           </Button>
         )}
         {session.lease ? (
@@ -277,7 +281,7 @@ function SessionCard({
                 return result.released;
               })
             }
-            title="break the agent's exclusive claim so another agent can start"
+            title={t("break the agent's exclusive claim so another agent can start")}
           >
             <Lock className="h-3.5 w-3.5" />
             Release lease
@@ -289,7 +293,7 @@ function SessionCard({
           disabled={busy}
           onClick={() => run(() => (isOpen ? onCloseSession(session.session_id) : onOpenSession(session.session_id)))}
           title={isOpen ? "close the port" : "open the port"}
-          aria-label={isOpen ? "Close" : "Open"}
+          aria-label={isOpen ? t("Close") : t("Open")}
         >
           <Power className="h-3.5 w-3.5" />
         </Button>
@@ -301,8 +305,8 @@ function SessionCard({
             const ok = await onReset(session.session_id);
             if (ok) notify("reset sequence applied", "success");
           }}
-          title="apply the configured DTR/RTS reset sequence"
-          aria-label="Reset"
+          title={t("apply the configured DTR/RTS reset sequence")}
+          aria-label={t("Reset")}
         >
           <RotateCcw className="h-3.5 w-3.5" />
         </Button>
@@ -313,6 +317,7 @@ function SessionCard({
 
 
 function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Promise<void> }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [loadingPorts, setLoadingPorts] = useState(false);
@@ -357,7 +362,7 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
     event.preventDefault();
     setError(null);
     if (!form.id || !form.port) {
-      setError("Session id and port are required.");
+      setError(t("Session id and port are required."));
       return;
     }
     setBusy(true);
@@ -376,29 +381,29 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="primary" size="sm">
-          <Plus className="h-4 w-4" /> New session
+          <Plus className="h-4 w-4" /> {t("New session")}
         </Button>
       </DialogTrigger>
-      <DialogContent title="New serial session" description="The server will keep the only handle to this port.">
+      <DialogContent title={t("New serial session")} description={t("The server will keep the only handle to this port.")}>
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Session id" hint="lowercase, used by MCP">
+            <Field label={t("Session id")} hint={t("lowercase, used by MCP")}>
               <Input
                 value={form.id}
-                placeholder="board-a"
+                placeholder={t("board-a")}
                 onChange={(event) => update("id", event.target.value.replace(/[^a-z0-9_-]/g, ""))}
               />
             </Field>
-            <Field label="Display name">
+            <Field label={t("Display name")}>
               <Input
                 value={form.name}
-                placeholder="Board A"
+                placeholder={t("Board A")}
                 onChange={(event) => update("name", event.target.value)}
               />
             </Field>
           </div>
 
-          <Field label="Port" hint={loadingPorts ? "scanning ports…" : "use by-id where possible"}>
+          <Field label={t("Port")} hint={loadingPorts ? "scanning ports…" : "use by-id where possible"}>
             <div className="flex gap-2">
               <Select
                 value={ports.some((port) => (port.by_id ?? port.port) === form.port) ? form.port : "__custom"}
@@ -407,7 +412,7 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
                 }}
                 className="flex-1"
               >
-                <option value="__custom">custom / not listed</option>
+                <option value="__custom">{t("custom / not listed")}</option>
                 {ports.map((port) => (
                   <option key={port.port} value={port.by_id ?? port.port}>
                     {port.by_id ?? port.port} — {port.description || "serial"}
@@ -417,14 +422,14 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
               <Input
                 className="flex-1 font-mono text-xs"
                 value={form.port}
-                placeholder="COM5 or /dev/serial/by-id/…"
+                placeholder={t("COM5 or /dev/serial/by-id/…")}
                 onChange={(event) => update("port", event.target.value)}
               />
             </div>
           </Field>
 
           <div className="grid grid-cols-4 gap-3">
-            <Field label="Baud">
+            <Field label={t("Baud")}>
               <Select
                 value={String(form.baudrate)}
                 onChange={(event) => update("baudrate", Number(event.target.value))}
@@ -436,7 +441,7 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
                 ))}
               </Select>
             </Field>
-            <Field label="Data bits">
+            <Field label={t("Data bits")}>
               <Select value={String(form.bytesize)} onChange={(event) => update("bytesize", Number(event.target.value))}>
                 {[8, 7, 6, 5].map((bits) => (
                   <option key={bits} value={bits}>
@@ -445,7 +450,7 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
                 ))}
               </Select>
             </Field>
-            <Field label="Parity">
+            <Field label={t("Parity")}>
               <Select value={form.parity} onChange={(event) => update("parity", event.target.value)}>
                 {["none", "even", "odd", "mark", "space"].map((value) => (
                   <option key={value} value={value}>
@@ -454,7 +459,7 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
                 ))}
               </Select>
             </Field>
-            <Field label="Stop bits">
+            <Field label={t("Stop bits")}>
               <Select value={String(form.stopbits)} onChange={(event) => update("stopbits", Number(event.target.value))}>
                 <option value="1">1</option>
                 <option value="1.5">1.5</option>
@@ -464,7 +469,7 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Flow control">
+            <Field label={t("Flow control")}>
               <Select value={form.flow} onChange={(event) => update("flow", event.target.value)}>
                 {["none", "hard", "soft"].map((value) => (
                   <option key={value} value={value}>
@@ -473,25 +478,25 @@ function NewSessionDialog({ onCreate }: { onCreate: (input: SessionInput) => Pro
                 ))}
               </Select>
             </Field>
-            <Field label="Open behaviour">
+            <Field label={t("Open behaviour")}>
               <Select value={form.open_mode} onChange={(event) => update("open_mode", event.target.value)}>
-                <option value="preserve">preserve (do not touch DTR/RTS)</option>
-                <option value="assert">assert DTR/RTS</option>
-                <option value="deassert">deassert DTR/RTS</option>
+                <option value="preserve">{t("preserve (do not touch DTR/RTS)")}</option>
+                <option value="assert">{t("assert DTR/RTS")}</option>
+                <option value="deassert">{t("deassert DTR/RTS")}</option>
               </Select>
             </Field>
           </div>
 
           <div className="flex flex-wrap items-center gap-5 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-            <Toggle label="Open on start" checked={form.auto_open ?? false} onChange={(v) => update("auto_open", v)} />
+            <Toggle label={t("Open on start")} checked={form.auto_open ?? false} onChange={(v) => update("auto_open", v)} />
             <Toggle
-              label="Auto reconnect"
+              label={t("Auto reconnect")}
               checked={form.auto_reconnect ?? true}
               onChange={(v) => update("auto_reconnect", v)}
             />
-            <Toggle label="Transcript" checked={form.transcript ?? true} onChange={(v) => update("transcript", v)} />
+            <Toggle label={t("Transcript")} checked={form.transcript ?? true} onChange={(v) => update("transcript", v)} />
             <div className="ml-auto flex items-center gap-2 text-[11px] text-zinc-500">
-              <Label htmlFor="buffer">Buffer</Label>
+              <Label htmlFor="buffer">{t("Buffer")}</Label>
               <Select
                 id="buffer"
                 className="h-7 w-24 text-xs"

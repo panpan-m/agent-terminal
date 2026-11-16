@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import type { SessionStatus, TranscriptEvent } from "@/lib/types";
 import { b64ToBytes, decodeBytes, formatNumber } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 type Tab = "transcript" | "audit";
 type Selection = { id: string; name: string };
@@ -36,6 +37,7 @@ export function LogsPage({
   sessions: SessionStatus[];
   selectedId?: string;
 }) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>("transcript");
   const [events, setEvents] = useState<TranscriptEvent[]>([]);
   const [audit, setAudit] = useState<Record<string, unknown>[]>([]);
@@ -104,8 +106,8 @@ export function LogsPage({
     <div className="mx-auto max-w-6xl px-5 py-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Logs &amp; audit</h1>
-          <p className="mt-1 text-xs text-zinc-500">One JSONL transcript per session · global audit log.</p>
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">{t("Logs & audit")}</h1>
+          <p className="mt-1 text-xs text-zinc-500">{t("One JSONL transcript per session · global audit log.")}</p>
         </div>
         <div className="flex items-center gap-2">
           {tab === "transcript" ? (
@@ -129,9 +131,9 @@ export function LogsPage({
             value={client}
             onChange={(event) => setClient(event.target.value)}
             className="h-8 w-auto px-2 text-xs"
-            title="show only one MCP client's activity"
+            title={t("show only one MCP client's activity")}
           >
-            <option value="">all clients</option>
+            <option value="">{t("all clients")}</option>
             {clients.map((name) => (
               <option key={name} value={name}>
                 {name}
@@ -142,7 +144,7 @@ export function LogsPage({
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
           <Button size="sm" variant="ghost" onClick={download} disabled={rows.length === 0}>
-            <Download className="h-3.5 w-3.5" /> Export
+            <Download className="h-3.5 w-3.5" /> {t("Export")}
           </Button>
         </div>
       </div>
@@ -157,11 +159,11 @@ export function LogsPage({
               tab === value ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            {value}
+            {t(value === "transcript" ? "Transcript" : "Audit")}
           </button>
         ))}
         <span className="ml-auto self-center pr-2 text-[11px] text-zinc-500">
-          {formatNumber(rows.length)} events
+          {t("{n} events", { n: formatNumber(rows.length) })}
         </span>
       </div>
 
@@ -176,17 +178,17 @@ export function LogsPage({
         <CardContent className="p-0">
           {rows.length === 0 ? (
             <p className="px-5 py-10 text-center text-xs text-zinc-500">
-              {loading ? "loading…" : "No events yet."}
+              {loading ? t("loading…") : t("No events yet.")}
             </p>
           ) : (
             <div className="max-h-[65vh] overflow-y-auto">
               <table className="w-full border-collapse text-left text-[11px]">
                 <thead className="sticky top-0 bg-zinc-900/95 text-zinc-500">
                   <tr>
-                    <th className="px-4 py-2 font-medium">time</th>
-                    <th className="px-4 py-2 font-medium">client</th>
-                    <th className="px-4 py-2 font-medium">kind</th>
-                    <th className="px-4 py-2 font-medium">detail</th>
+                    <th className="px-4 py-2 font-medium">{t("time")}</th>
+                    <th className="px-4 py-2 font-medium">{t("client")}</th>
+                    <th className="px-4 py-2 font-medium">{t("kind")}</th>
+                    <th className="px-4 py-2 font-medium">{t("detail")}</th>
                   </tr>
                 </thead>
                 <tbody>

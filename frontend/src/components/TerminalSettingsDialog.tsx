@@ -12,6 +12,7 @@ import {
   updateTerminalSettings,
   type TerminalSettings,
 } from "@/lib/terminal-settings";
+import { useT } from "@/lib/i18n";
 
 const THEME_HINTS: Record<string, string> = {
   sheet: "paper engineering drawing",
@@ -25,6 +26,7 @@ const THEME_HINTS: Record<string, string> = {
  * clipboard behaviour.  Persisted per browser, applied live.
  */
 export function TerminalSettingsDialog() {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<TerminalSettings>(getTerminalSettings());
   const { theme, setTheme } = useTheme();
@@ -62,20 +64,20 @@ export function TerminalSettingsDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="ghost" title="Settings (theme, terminal, keys, clipboard)">
-          <Settings className="h-3.5 w-3.5" /> Settings
+        <Button size="sm" variant="ghost" title={t("Settings (theme, terminal, keys, clipboard)")}>
+          <Settings className="h-3.5 w-3.5" /> {t("Settings")}
         </Button>
       </DialogTrigger>
       <DialogContent
         className="max-h-[88vh] overflow-y-auto"
-        title="Settings"
-        description="Theme, terminal appearance and keyboard behaviour; stored in this browser."
+        title={t("Settings")}
+        description={t("Theme, terminal appearance and keyboard behaviour; stored in this browser.")}
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Appearance</p>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("Appearance")}</p>
             <div className="flex items-center gap-3">
-              <Label htmlFor="theme-select">Theme</Label>
+              <Label htmlFor="theme-select">{t("Theme")}</Label>
               <Select
                 id="theme-select"
                 value={theme}
@@ -88,7 +90,7 @@ export function TerminalSettingsDialog() {
                   </option>
                 ))}
               </Select>
-              <span className="text-[11px] text-zinc-500">{THEME_HINTS[theme] ?? ""}</span>
+              <span className="text-[11px] text-zinc-500">{t(THEME_HINTS[theme] ?? "")}</span>
             </div>
             <button
               type="button"
@@ -96,7 +98,7 @@ export function TerminalSettingsDialog() {
               onClick={() => setEditorOpen((value) => !value)}
             >
               {editorOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              Edit custom theme (JSON)
+              {t("Edit custom theme (JSON)")}
             </button>
             {editorOpen ? (
               <div className="flex flex-col gap-2">
@@ -122,9 +124,9 @@ export function TerminalSettingsDialog() {
           </div>
 
           <div className="flex flex-col gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Terminal</p>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("Terminal")}</p>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Font size" hint="8–72">
+              <Field label={t("Font size")} hint="8–72">
                 <Input
                   type="number"
                   min={8}
@@ -133,7 +135,7 @@ export function TerminalSettingsDialog() {
                   onChange={(event) => update("fontSize", Number(event.target.value))}
                 />
               </Field>
-              <Field label="Scrollback" hint="1–200000 lines">
+              <Field label={t("Scrollback")} hint="1–200000 lines">
                 <Input
                   type="number"
                   min={1}
@@ -143,7 +145,7 @@ export function TerminalSettingsDialog() {
                 />
               </Field>
             </div>
-            <Field label="Font family" hint="CSS font stack; monospace fallback is appended by the browser">
+            <Field label={t("Font family")} hint={t("CSS font stack; monospace fallback is appended by the browser")}>
               <Input
                 value={draft.fontFamily}
                 className="font-mono text-xs"
@@ -152,25 +154,25 @@ export function TerminalSettingsDialog() {
             </Field>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch checked={draft.cursorBlink} onCheckedChange={(value) => update("cursorBlink", value)} />
-              Blinking cursor
+              {t("Blinking cursor")}
             </label>
           </div>
 
           <div className="flex flex-col gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Keyboard capture</p>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("Keyboard capture")}</p>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch checked={draft.captureEscape} onCheckedChange={(value) => update("captureEscape", value)} />
-              Capture Escape — fixes vi Escape being swallowed by the browser
+              {t("Capture Escape — fixes vi Escape being swallowed by the browser")}
             </label>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch checked={draft.captureCtrlB} onCheckedChange={(value) => update("captureCtrlB", value)} />
-              Capture Ctrl+B — tmux prefix
+              {t("Capture Ctrl+B — tmux prefix")}
             </label>
-            <Field label="Custom capture keys" hint="comma-separated, e.g. F11, Ctrl+T, Alt+D">
+            <Field label={t("Custom capture keys")} hint={t("comma-separated, e.g. F11, Ctrl+T, Alt+D")}>
               <Input
                 value={draft.customCaptureKeys}
                 className="font-mono text-xs"
-                placeholder="F11, Ctrl+T, Alt+D"
+                placeholder={t("F11, Ctrl+T, Alt+D")}
                 onChange={(event) => update("customCaptureKeys", event.target.value)}
               />
             </Field>
@@ -179,37 +181,37 @@ export function TerminalSettingsDialog() {
                 checked={draft.shiftEnterNewline}
                 onCheckedChange={(value) => update("shiftEnterNewline", value)}
               />
-              Shift+Enter sends ESC+CR — newline instead of submit in TUIs (Claude Code)
+              {t("Shift+Enter sends ESC+CR — newline instead of submit in TUIs (Claude Code)")}
             </label>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch checked={draft.sttySync} onCheckedChange={(value) => update("sttySync", value)} />
-              stty size sync on serial open — aligns full-screen TUIs (apt/dpkg)
+              {t("stty size sync on serial open — aligns full-screen TUIs (apt/dpkg)")}
             </label>
           </div>
 
           <div className="flex flex-col gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Clipboard</p>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("Clipboard")}</p>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch checked={draft.autoCopy} onCheckedChange={(value) => update("autoCopy", value)} />
-              Auto-copy on selection
+              {t("Auto-copy on selection")}
             </label>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch
                 checked={draft.middleClickPaste}
                 onCheckedChange={(value) => update("middleClickPaste", value)}
               />
-              Middle-click paste
+              {t("Middle-click paste")}
             </label>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch
                 checked={draft.clipboardShortcuts}
                 onCheckedChange={(value) => update("clipboardShortcuts", value)}
               />
-              Ctrl+Shift+C / Ctrl+Shift+V copy / paste
+              {t("Ctrl+Shift+C / Ctrl+Shift+V copy / paste")}
             </label>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch checked={draft.ctrlVPaste} onCheckedChange={(value) => update("ctrlVPaste", value)} />
-              Ctrl+V pastes — off sends ^V to the session (quoted-insert)
+              {t("Ctrl+V pastes — off sends ^V to the session (quoted-insert)")}
             </label>
             <label className="flex items-center gap-2 text-xs text-zinc-300">
               <Switch

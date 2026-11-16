@@ -13,6 +13,7 @@ import type {
   McpStatus,
   SessionStatus,
 } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 function buildPrompt(status: McpStatus): string {
   const toolNames = status.tools.map((tool) => tool.name).join(", ");
@@ -63,6 +64,7 @@ export function McpPage({
 }: {
   notify: (message: string, tone?: "info" | "error" | "success") => void;
 }) {
+  const t = useT();
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -192,7 +194,7 @@ export function McpPage({
           <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardContent className="py-3.5">
-                <p className="text-[10px] uppercase tracking-widest text-zinc-500">status</p>
+                <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("status")}</p>
                 <p className="mt-1 flex items-center gap-2 text-lg font-semibold text-emerald-300">
                   <span className="h-2 w-2 rounded-full bg-emerald-400" /> {status.status}
                 </p>
@@ -203,23 +205,23 @@ export function McpPage({
             </Card>
             <Card>
               <CardContent className="py-3.5">
-                <p className="text-[10px] uppercase tracking-widest text-zinc-500">transport</p>
-                <p className="mt-1 text-sm font-medium text-zinc-200">Streamable HTTP</p>
-                <p className="mt-0.5 text-[11px] text-zinc-500">MCP 2.x, stateful sessions</p>
+                <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("transport")}</p>
+                <p className="mt-1 text-sm font-medium text-zinc-200">{t("Streamable HTTP")}</p>
+                <p className="mt-0.5 text-[11px] text-zinc-500">{t("MCP 2.x, stateful sessions")}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="py-3.5">
-                <p className="text-[10px] uppercase tracking-widest text-zinc-500">auth</p>
-                <p className="mt-1 text-sm font-medium text-zinc-200">Bearer token</p>
+                <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("auth")}</p>
+                <p className="mt-1 text-sm font-medium text-zinc-200">{t("Bearer token")}</p>
                 <p className="mt-0.5 break-all font-mono text-[10px] text-zinc-500">{status.api_token_file}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="py-3.5">
-                <p className="text-[10px] uppercase tracking-widest text-zinc-500">tools</p>
+                <p className="text-[10px] uppercase tracking-widest text-zinc-500">{t("tools")}</p>
                 <p className="mt-1 text-2xl font-semibold text-zinc-100">{status.tools.length}</p>
-                <p className="mt-0.5 text-[11px] text-zinc-500">serial surface</p>
+                <p className="mt-0.5 text-[11px] text-zinc-500">{t("serial surface")}</p>
               </CardContent>
             </Card>
           </div>
@@ -265,7 +267,7 @@ export function McpPage({
                     </p>
                   )
                 ) : (
-                  <p className="text-[11px] text-zinc-500">open a serial session in the workspace, then pick it here.</p>
+                  <p className="text-[11px] text-zinc-500">{t("open a serial session in the workspace, then pick it here.")}</p>
                 )}
               </div>
             </CardContent>
@@ -274,7 +276,7 @@ export function McpPage({
           <Card className="mb-4">
             <CardHeader className="flex-row items-center justify-between">
               <div>
-                <CardTitle>Endpoint</CardTitle>
+                <CardTitle>{t("Endpoint")}</CardTitle>
                 <CardDescription>Point any MCP client here; the token stays on this machine.</CardDescription>
               </div>
               <Button size="sm" variant="ghost" onClick={() => void copy(status.url, "endpoint")}>
@@ -285,11 +287,11 @@ export function McpPage({
             <CardContent className="space-y-2">
               <div className="flex flex-wrap items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/60 px-3 py-2">
                 <code className="font-mono text-xs text-emerald-300">{status.url}</code>
-                <Badge tone="accent">bearer</Badge>
+                <Badge tone="accent">{t("bearer")}</Badge>
                 {status.api_token_present ? (
-                  <Badge tone="accent">token present</Badge>
+                  <Badge tone="accent">{t("token present")}</Badge>
                 ) : (
-                  <Badge tone="warn">token missing</Badge>
+                  <Badge tone="warn">{t("token missing")}</Badge>
                 )}
               </div>
               <div className="grid gap-1 text-[11px] text-zinc-500 sm:grid-cols-2">
@@ -306,7 +308,7 @@ export function McpPage({
           <Card className="mb-4">
             <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
               <div>
-                <CardTitle>Install prompt</CardTitle>
+                <CardTitle>{t("Install prompt")}</CardTitle>
                 <CardDescription>
                   Universal: any MCP client can follow it; the DSH row is included as one example.
                 </CardDescription>
@@ -317,7 +319,7 @@ export function McpPage({
                   variant="ghost"
                   onClick={() => command && void copy(command, "stdio command")}
                   disabled={!command}
-                  title="copy just the stdio shim command"
+                  title={t("copy just the stdio shim command")}
                 >
                   {copied === "stdio command" ? (
                     <Check className="h-3.5 w-3.5" />
@@ -351,16 +353,16 @@ export function McpPage({
 
           <Card>
             <CardHeader>
-              <CardTitle>Tools</CardTitle>
+              <CardTitle>{t("Tools")}</CardTitle>
               <CardDescription>{status.tools.length} tools published with outputSchema + annotations.</CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="text-[10px] uppercase tracking-widest text-zinc-500">
                   <tr>
-                    <th className="pb-2 pr-4">name</th>
-                    <th className="pb-2 pr-4">access</th>
-                    <th className="pb-2">description</th>
+                    <th className="pb-2 pr-4">{t("name")}</th>
+                    <th className="pb-2 pr-4">{t("access")}</th>
+                    <th className="pb-2">{t("description")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -368,7 +370,7 @@ export function McpPage({
                     <tr key={tool.name} className="border-t border-zinc-800/70 align-top">
                       <td className="py-2 pr-4 font-mono text-[11px] text-emerald-300">{tool.name}</td>
                       <td className="py-2 pr-4">
-                        {tool.read_only ? <Badge tone="accent">read</Badge> : <Badge tone="warn">write</Badge>}
+                        {tool.read_only ? <Badge tone="accent">{t("read")}</Badge> : <Badge tone="warn">{t("write")}</Badge>}
                       </td>
                       <td className="py-2 text-[11px] text-zinc-400">{tool.description}</td>
                     </tr>
@@ -437,13 +439,13 @@ export function McpPage({
                     {open ? (
                       <div className="grid gap-2 px-1 pb-2 sm:grid-cols-2">
                         <div className="min-w-0">
-                          <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">input</p>
+                          <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">{t("input")}</p>
                           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-zinc-300">
                             {event.input}
                           </pre>
                         </div>
                         <div className="min-w-0">
-                          <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">output</p>
+                          <p className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">{t("output")}</p>
                           <pre
                             className={cn(
                               "max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md border border-zinc-800",

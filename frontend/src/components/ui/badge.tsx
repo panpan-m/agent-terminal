@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { cn } from "../../lib/utils";
+import { useT } from "../../lib/i18n";
 import type { SessionState } from "../../lib/types";
 
 const stateStyles: Record<SessionState, string> = {
@@ -13,6 +14,7 @@ const stateStyles: Record<SessionState, string> = {
 };
 
 export function StateBadge({ state, className }: { state: SessionState; className?: string }) {
+  const t = useT();
   return (
     <span
       data-badge=""
@@ -23,7 +25,7 @@ export function StateBadge({ state, className }: { state: SessionState; classNam
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {state}
+      {t(state)}
     </span>
   );
 }
