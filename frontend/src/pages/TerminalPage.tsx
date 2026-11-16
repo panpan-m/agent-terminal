@@ -336,27 +336,30 @@ export function TerminalPage({
               ))}
             </Select>
             {session ? <StateBadge state={session.state} /> : null}
-            {session ? (
-              <span className="font-mono text-[11px] text-zinc-500">
-                {session.config.baudrate} {session.config.bytesize}
-                {session.config.parity[0].toUpperCase()}
-                {session.config.stopbits} ·{" "}
-                {session.control === "agent"
-                  ? "agent control"
-                  : session.control_owner === "agent"
-                    ? "agent owns control"
-                    : "operator control"}
-              </span>
-            ) : null}
-            {session && session.control === "agent" ? (
-              <Badge tone="accent" title="the agent drives this port; the terminal is a read-only audit view">
-                <span className="inline-flex items-center gap-1">
-                  <Eye className="h-3 w-3" />
-                  observe only
-                </span>
-              </Badge>
-            ) : null}
           </>
+        ) : null}
+
+        {/* Transport facts and the control mode stay visible in the tabbed
+            workspace too, where the session picker is hidden. */}
+        {session ? (
+          <span className="font-mono text-[11px] text-zinc-500">
+            {session.config.baudrate} {session.config.bytesize}
+            {session.config.parity[0].toUpperCase()}
+            {session.config.stopbits} ·{" "}
+            {session.control === "agent"
+              ? "agent control"
+              : session.control_owner === "agent"
+                ? "agent owns control"
+                : "operator control"}
+          </span>
+        ) : null}
+        {session && session.control === "agent" ? (
+          <Badge tone="accent" title="the agent drives this port; the terminal is a read-only audit view">
+            <span className="inline-flex items-center gap-1">
+              <Eye className="h-3 w-3" />
+              observe only
+            </span>
+          </Badge>
         ) : null}
 
         <div className="ml-auto flex items-center gap-1">
