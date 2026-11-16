@@ -11,12 +11,9 @@ dist/
 frontend/node_modules/
 frontend/dist/
 
-# Verification artifacts (reports/screenshots are copied into docs/ when needed)
+# Verification artifacts (report copies live in docs/reports/)
 artifacts/
 tools/ttyd/ttyd.exe
-
-# Design exploration scratch (candidates, local shots, font mirrors)
-design-lab/
 
 # Runtime data
 run/
@@ -24,4 +21,3 @@ run/
 
 # session/tool artifacts
 .zcode/
-Standing Clap.fbx

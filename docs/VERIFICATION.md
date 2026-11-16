@@ -2,13 +2,70 @@
 
 **Result: all automated suites pass on Windows 10 x64.**
 
+## Update — agent-first control model (2026-11-16)
+
+Sessions default to `control = "agent"` (ADR-017): the agent writes with no
+hand-off, the operator terminal is a read-only audit view, and a single serial
+session is auto-bound to MCP. Re-verified on the same machine:
+
+| Suite | Result |
+|---|---|
+| `pytest -q` | **142 passed** (was 106 passed + 1 skipped) |
+| `scripts/verify_control_model.py --port sim://board-a` | **21 / 21 checks** |
+| `scripts/verify_control_model.py --port COM5 --baud 115200` | **21 / 21 checks** |
+
+The new checks assert, against a live server: one session auto-binds and
+`tools/list` returns 8 serial tools; the agent writes and reads back with no
+`control_owner` hand-off; operator `write` / `command` / `break` and
+`PUT /control` all return `403 READ_ONLY`; and the same write still appears in
+`/api/mcp/audit` (with the client identity and the exact bytes) plus the
+transcript export, which is what the operator sees in the web UI.
+
+Observed on `COM5` in this run: the port opens and accepts the agent's 21-byte
+write, but the attached device emitted no RX during the probe, so the read-back
+was empty. That is a property of the hardware on the bench, not of the access
+model — the same script returns 21/21 on the simulator with live echo.
+
+The tables below describe the earlier build and are kept as the historical
+record.
+
+## Update — architecture fixes (2026-11-16, ADR-018)
+
+Four invariants that the docs claimed but the code did not enforce. Re-verified
+on the same machine:
+
+| Fix | Evidence |
+|---|---|
+| MCP tool bodies run on worker threads, not the event loop | `probe_event_loop_blocking.py`: `/healthz` behind an 8 s `serial_read` went **7125 ms → 63 ms** (and 6 s wait → 47 ms). Pinned by `tests/unit/test_tool_offload.py`. |
+| Subscriber queues are actually bounded and shared | `Subscriber(maxsize=4)` held 20000 items with 0 drops before; now `q.maxsize=4`, drops counted, one `overflow` notice delivered. `tests/unit/test_streaming.py`. |
+| MCP tool calls are written to the durable audit file | `tests/integration/test_audit.py`; the E2E probe's `/api/audit` now shows `mcp.tool_call` records that were absent before. |
+| Off-loopback bind requires the API token | `tests/security/test_control_plane_auth.py` (9 checks: no token → 401, token → 200, `?token=` → 200, wrong token → 401, WS gated). |
+| Rate limit covers the admin write path | `tests/security/test_rate_limit_paths.py`. |
+| `pytest -q` | **167 passed** |
+
+`scripts/verify_control_model.py` still reports **21 / 21** on both
+`sim://board-a` and the real `COM5`.
+
+## Update — structural debt P3/P4 (2026-11-16, ADR-019)
+
+| Item | Before | After | Guard |
+|---|---|---|---|
+| Streaming core duplicated across transports | `subscribe`/`unsubscribe`/`_broadcast_status`/fan-out written twice (and the queue bug copied with it) | one `streaming.StreamSession` base, both transports inherit | `tests/unit/test_streaming.py` |
+| Ring chunk metadata | one tuple per append, unbounded in append count | merged above `max(64, capacity/4096)`; 8 MiB ring keeps 2048 | `tests/unit/test_ring_bounds.py` |
+| Process exclusivity | POSIX kernel only; Windows convention | `SingleInstanceLock` on both, second start exits 3 | `tests/unit/test_single_instance.py` (incl. cross-process) |
+| `pytest -q` | 167 passed | **178 passed** | |
+
+Re-verified end to end: `probe_event_loop_blocking.py` stayed responsive
+(79 ms behind a 5 s wait) and `verify_control_model.py` returned **21 / 21** on
+both the simulator and `COM5`.
+
 | Suite | Result | Artifact |
 |---|---|---|
 | `pytest` (unit + integration + protocol + security + HIL) | **106 passed, 1 skipped** | `pytest -q` |
-| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **37 / 37 checks** | `artifacts/e2e/report.json` |
-| Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | `artifacts/packaged/report.json` |
+| End-to-end: real server process, MCP, serial I/O, reconnection, browser UI | **37 / 37 checks** | [`docs/reports/e2e.json`](./reports/e2e.json) |
+| Packaged PyInstaller binaries (server + shim) | **11 / 11 checks** | [`docs/reports/packaged.json`](./reports/packaged.json) |
 | **Live hardware**: Raspberry Pi over a Debug Probe UART | **46 / 46 checks** | [`live-debug-report.md`](./live-debug-report.md) |
-| **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | `artifacts/live-shell/report.json` |
+| **Live agent path**: MCP stdio client (DSH's client) on the Pi shell | **25 / 25 checks** | [`docs/reports/live-shell.json`](./reports/live-shell.json) |
 | **Terminal tab**: xterm.js in the built SPA, typed on the real Pi | **3 / 3 checks** (CDP) | `docs/screenshots/10-terminal-tab.png` |
 | **SSH web terminal**: Paramiko against the real Pi (OpenSSH 10.0p2) | **7 / 7 checks** | [`ssh.md`](./ssh.md), [screenshot](screenshots/14-ssh-terminal.png) |
 | **SSH MCP tools**: exec/read/tail/write/expect on a real session | **7 / 7 checks** | [`ssh-plan.md`](./ssh-plan.md) |

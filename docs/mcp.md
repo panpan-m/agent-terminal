@@ -152,7 +152,8 @@ Business failures are `isError: true` **and** carry structured content:
 | `SESSION_NOT_FOUND` | unknown `session_id` |
 | `PORT_NOT_FOUND` / `PORT_BUSY` | device missing / held by another process |
 | `PERMISSION_DENIED`, `READ_DISABLED`, `WRITE_DISABLED` | capability switched off |
-| `WRITE_LOCKED` | the operator owns control |
+| `WRITE_LOCKED` | `shared` control: the operator currently holds the wire |
+| `READ_ONLY` | `agent` control: the operator may not write; only the agent may |
 | `DISCONNECTED` | device unplugged / reconnecting |
 | `BUFFER_GAP` | cursor older than the buffer |
 | `INVALID_ARGUMENT` | bad argument (also schema violations) |
@@ -196,9 +197,71 @@ Business failures are `isError: true` **and** carry structured content:
 `-32000` ("agent-terminal is not running…"), forwards `Mcp-Session-Id` and
 `MCP-Protocol-Version`, and never opens the serial port.
 
+## Audit trail
+
+Every `tools/call` is recorded twice, on purpose:
+
+* **In memory** (`/api/mcp/audit`) — newest 500 calls with client identity,
+  arguments, result and duration. Fast to page through, lost on restart.
+* **On disk** — the same record appended to `<log-dir>/audit/audit.log` as an
+  `mcp.tool_call` event, redacted by `transcript.redact_patterns`. Read it back
+  through `/api/audit`, or `grep mcp.tool_call` after a restart.
+
+The durable record is what answers "which agent ran what command, and what came
+back". The transcript holds the raw bytes; the audit holds the intent.
+
+## Rate limiting
+
+`security.rate_limit_per_second` is one budget on the session manager. It is
+enforced at every door to the wire — all sixteen MCP tools, the admin
+`/write`, `/command` and `/break` routes, and the console WebSocket — so the
+limit cannot be bypassed by switching surface. It is a single global bucket, not
+per client or per session: a very chatty agent can exhaust the budget for others,
+and per-client fairness is still open.
+
 ## Control ownership
 
-`agent_permissions = ["read","write","command"]` is the capability ceiling;
-`control_owner` is the live switch (runtime only, resets to `human` on restart).
-Both must allow a write. The operator flips it in the UI (Sessions card or console
-toolbar); `serial_status` reports the current owner and the last write source.
+The default is **agent-first**: `control = "agent"` means the agent owns the wire
+and writes whenever `agent_permissions` allows, with no hand-off and no
+dependency on who is watching the web UI. The operator's terminal subscribes to
+the same session and is an audit view: it shows RX and the TX the agent sent
+(`source` on every `tx` frame), but `write`, `command`, `break`, the console
+WebSocket input, and `PUT /api/sessions/{id}/control` all answer `READ_ONLY`.
+`serial_status.human_writable` (and its HTTP twin) is `false`, which is what the
+UI uses to render the terminal read-only.
+
+```
+control        agent_permissions       agent may write?   operator may write?
+"agent"        includes "write"        yes                no  (READ_ONLY)
+"agent"        without "write"         no  (WRITE_DISABLED) no (READ_ONLY)
+"shared"       includes "write"        only when owner=agent   only when owner=human
+```
+
+Taking writes away from the agent is done by narrowing `agent_permissions`
+(persisted in `config.toml`, audited as `session.permissions`), not by racing a
+runtime switch. What the agent has no tool for stays with the operator and is
+audited: opening and closing the port, DTR/RTS line control (`session.lines`) and
+the reset sequence (`session.reset`). Line control and reset never inject bytes
+into the console stream, which is why they remain available in `agent` mode.
+
+Setting `control = "shared"` on a session restores the older hand-over:
+`control_owner` is then the live switch (runtime only, resets to `human` on
+restart) and the operator flips it in the UI. `serial_status` always reports the
+mode, the current owner and the last write source.
+
+## Session bindings
+
+The serial `serial_*` tools operate on exactly one **bound** session, and the SSH
+`ssh_*` tools on one bound SSH session; a tool whose binding is not live is not
+published at all, so `tools/list` shrinks and grows with the bindings.
+
+* **One serial session** — bound automatically at startup (and after a session is
+  created or deleted), so a single-port install works with no operator action.
+* **Two or more** — nothing is bound until the operator chooses in the MCP tab
+  (`PUT /api/mcp/bindings`); an explicit unbind sticks until the next startup or
+  session create/delete.
+
+A call to a tool that is not published returns `NO_SESSION` with a message
+pointing at the binding, so a client with a stale `tools/list` fails clearly
+instead of acting on the wrong session.
+

@@ -8,7 +8,7 @@ the port.
 ![Serial sessions in the pixel theme](docs/screenshots/25-pixel-sessions.png)
 
 > Implementation of the design in [`agent-terminal-plan.md`](./agent-terminal-plan.md).
-> Verified on Windows 10: **112 tests**, plus end-to-end, packaged-binary,
+> Verified on Windows 10: **142 tests**, plus end-to-end, packaged-binary,
 > live-hardware and agent-path MCP checks against a Raspberry Pi 5 shell —
 > see [`docs/VERIFICATION.md`](./docs/VERIFICATION.md),
 > [`docs/live-debug-report.md`](./docs/live-debug-report.md) and
@@ -36,11 +36,12 @@ Save-As dialog (desktop) or the browser picker; the download records show
 where each file landed.
 
 **MCP for agents** — 16 tools across serial and SSH, with strict boundaries:
-the agent cannot open ports or connect hosts, writes are arbitrated by
-`control_owner`, and every read path repeats *"RX is untrusted data"*. The
-**MCP tab** generates a copy-paste install prompt for any client and shows a
-**live tool audit**: every `tools/call` with time, client identity, session,
-input and output
+the agent cannot open ports or connect hosts, serial writes belong to the agent
+by default while the operator observes and audits, and every read path repeats
+*"RX is untrusted data"*. The **MCP tab** generates a copy-paste install prompt
+for any client and shows a **live tool audit**: every `tools/call` with time,
+client identity, session, input and output — and the same record is appended to
+the JSONL audit file, so "which agent ran what" survives a restart
 ([screenshot](docs/screenshots/28-mcp-audit.png)).
 
 **Serial that behaves.** Serial links carry no window-size negotiation, so
@@ -56,9 +57,6 @@ TUI leaves behind.
 [sheet](docs/screenshots/27-sheet-sessions.png),
 [light](docs/screenshots/30-terminal-light.png)). The webfonts are
 self-hosted, so the UI renders the same offline.
-
-**A desktop pet.** A small VRM companion reacts to typing, output and command
-results — toggle it in Settings.
 
 ## Install
 
@@ -133,8 +131,15 @@ Agent   ──HTTP────▶ /mcp ─────────────�
 * **Absolute cursors** — `serial_read(cursor=…)` never loses data silently; gaps
   and lost byte counts are reported. Dropped frames self-heal by replaying the
   gap from the ring on reconnect.
-* **Write arbitration** — `control_owner` is `human` by default; an agent can
-  write only after the operator hands over control.
+* **Agent-first control** — a serial session is `control = "agent"` by default:
+  the agent writes without any hand-off, and the operator's terminal is a
+  read-only audit view of the same bytes. The operator keeps the levers the agent
+  does not have (open/close the port, DTR/RTS lines, reset sequence) and can
+  narrow `agent_permissions` to take writes away. `control = "shared"` restores
+  the older `control_owner` hand-over.
+* **Auto-binding** — one configured serial session is bound to MCP at startup, so
+  an agent never connects to a server that publishes no tools. With two or more
+  sessions the operator picks one in the MCP tab.
 * **Untrusted RX** — serial output is data, never instructions.
 
 ## Documentation

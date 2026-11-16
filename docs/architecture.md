@@ -15,6 +15,13 @@ Agent   ─stdio───▶ agent-mcp ─HTTP───────────�
 | `agent-terminal` | long-running service | sole owner of the serial port, ring buffer, MCP, admin API/SPA, WebSockets, transcripts |
 | `agent-mcp` | per agent | stdio ⇄ HTTP JSON-RPC proxy; never touches the port |
 
+Exactly one `agent-terminal` per data directory: `SingleInstanceLock`
+(`platform/single_instance.py`) takes an advisory byte-range lock on
+`<data-dir>/agent-terminal.lock` before uvicorn starts, so a second start exits
+with code 3 instead of duplicating ownership. POSIX additionally enforces tty
+exclusivity in the kernel (`flock` + `TIOCEXCL`); Windows has no equivalent, which
+is why the process-level lock exists on both platforms.
+
 ## 2. Module map
 
 ```text
@@ -23,6 +30,7 @@ src/tio_server/
 ├── config.py            TOML model, validation, atomic save, one-time secrets
 ├── auth.py              Argon2id API/bridge token checks, origin allow-list
 ├── ring.py              byte ring buffer, absolute cursors, gap accounting, timestamps
+├── streaming.py         StreamSession (ring + fan-out + transcript) and the bounded queue
 ├── sessions.py          Session state machine, reader thread, writer lock, reconnect, command
 ├── transcript.py        JSONL transcript rotation, redaction, audit log
 ├── errors.py            stable error codes + HTTP mapping
@@ -54,15 +62,23 @@ frontend/                React 19 + Vite + Tailwind v4 + xterm.js
 * **One reader thread per session.** It blocks in `backend.read(4096, 100 ms)`,
   appends to the ring buffer and fans out to subscribers. It never runs a regex,
   never formats text and never blocks on a client.
+* **One streaming core per transport family.** Ring append, subscriber fan-out,
+  replay ordering and transcript writes live in `streaming.StreamSession`;
+  `Session` (serial) and `SshSession` both inherit it, so a third transport
+  inherits the same concurrency behaviour instead of re-deriving it.
 * **One writer lock per session.** `serial_command` holds it across *write +
   wait for response*, so a command cannot be interleaved. Other writers get
   `BUSY` after the timeout.
-* **Subscribers use bounded queues.** A slow browser drops chunks and receives
-  an `overflow` notice instead of stalling the UART.
+* **Subscribers use bounded queues** (`tio_server/streaming.py`, shared by the
+  serial and SSH transports). A slow browser drops chunks and receives an
+  `overflow` notice instead of growing the process or stalling the UART.
 * **Waiters** use `RingBuffer.wait_for_data`, so MCP reads block on a condition
   variable rather than polling.
-* **Blocking serial work runs in worker threads** (`asyncio.to_thread`) from the
-  async HTTP layer; the event loop never blocks on a UART.
+* **Blocking serial work runs in worker threads** (`asyncio.to_thread`). This
+  covers both the async HTTP layer *and* every MCP tool body: `_guard` off-loads
+  each handler, so a 30 s `serial_read` wait cannot freeze `/api`, `/ws` or
+  `/healthz`. Measured regression guard: `scripts/probe_event_loop_blocking.py`
+  and `tests/unit/test_tool_offload.py`.
 
 ## 4. State and cursors
 
@@ -81,13 +97,14 @@ rx_start ──────────────── rx_head
 
 | Surface | Authentication | Notes |
 |---|---|---|
-| `/` SPA, `/api/*` | local trust: loopback bind + Host/Origin allow-list | no accounts/cookies; DNS rebinding and cross-site browser calls rejected |
+| `/` SPA, `/api/*` | loopback: local trust (Host/Origin allow-list). **Off loopback: `Authorization: Bearer <api-token>` or `?token=`** | no accounts/cookies; a Host header is not authentication, so the guard demands the token as soon as the bind leaves loopback |
 | `/mcp` | `Authorization: Bearer <api-token>` | Argon2 hash in config, raw token in 0600 file |
-| `/ws/console/{id}`, `/ws/ssh/{id}` | Origin allow-list | browsers always send Origin on WS |
+| `/ws/console/{id}`, `/ws/ssh/{id}` | Origin allow-list, plus the same token gate off loopback (`?token=` for browsers) | browsers always send Origin on WS |
 | `/healthz`, `/readyz` | none | minimal information |
 
-Defaults: bind `127.0.0.1`, port allow-list, `control_owner = human`, MCP has no
-tool to open/close/configure a port, and every failed auth is audited.
+Defaults: bind `127.0.0.1`, port allow-list, `control = "agent"` (the agent
+drives the wire, the operator terminal observes), MCP has no tool to
+open/close/configure a port, and every failed auth is audited.
 
 Prompt injection: `instructions` and every tool description state that RX is
 untrusted device output; no tool executes or feeds RX into a shell.
@@ -127,3 +144,56 @@ untrusted device output; no tool executes or feeds RX into a shell.
   strict: unknown or changed keys abort with a SHA256 fingerprint. The MCP
   surface (Phase 3) will only operate operator-opened sessions, never connect to
   arbitrary hosts.
+* **ADR-017 — serial control is agent-first; the operator observes.**
+  `Session.control_owner` started as a human-held switch, so an agent could not
+  write until someone clicked "Hand to agent" — which in practice meant the
+  agent was useless until a human was watching, and a restart silently took the
+  wire back. Sessions now carry `control = "agent" | "shared"` (default
+  `agent`). In `agent` mode the agent writes with no hand-off, every operator
+  write path (`/write`, `/command`, `/break`, the console WebSocket, the
+  `control` switch) answers `READ_ONLY`, and `status.human_writable` is false so
+  the terminal renders as an audit view. Operator actions the agent has no tool
+  for stay available and audited: open/close, DTR/RTS lines, the reset sequence.
+  Taking writes away is now done by narrowing `agent_permissions`, which is
+  persisted in the config. `shared` keeps the old hand-over for anyone who wants
+  an interactive operator console. MCP bindings follow the same logic: a single
+  serial session is bound automatically at startup (and after create/delete), so
+  `tools/list` is never empty when there is nothing to choose.
+* **ADR-018 — the async boundary, the bounded stream, and the audit trail are
+  structural, not per-call.** A review found four places where a documented
+  invariant was not actually enforced, all with the same shape: a policy applied
+  at one entry point instead of inside the engine.
+  (1) *Event loop*: MCP handlers were `async def` but called blocking serial
+  methods inline, so an 8 s `serial_read` held `/healthz` for 7.1 s. Tool bodies
+  are now plain functions and `_guard` off-loads each one to a worker thread,
+  which also stops one client's wait from starving another.
+  (2) *Backpressure*: `Subscriber.maxsize` was never applied to its queue, so the
+  overflow branch was unreachable and a stalled client could grow the process
+  without bound; the class is now `tio_server/streaming.py`, bounded, and shared
+  by both transports instead of copied.
+  (3) *Audit*: the rich record (tool, client, arguments, result) lived only in a
+  500-entry in-memory deque and died with the process. It is now also appended to
+  the JSONL audit file through the same redactor, so "which agent ran what" is
+  durable; the in-memory ring stays as the UI cache.
+  (4) *Control plane*: `/api` and `/ws` had no authentication, and the only
+  protection off loopback was a Host allow-list that any non-browser client can
+  forge. A non-loopback bind now requires the API token on those surfaces.
+  Rule of thumb for the next transport or tool: put the policy inside the engine
+  boundary, not at the caller.
+* **ADR-019 — one streaming core, one instance, one bounded metadata structure.**
+  Three structural debts of the same family: a concept implemented per-transport
+  instead of once.
+  (1) *Transport core*: `subscribe` / `unsubscribe` / `_broadcast_status` /
+  `_broadcast` / ring fan-out existed verbatim in both `sessions.py` and
+  `ssh/session.py`. `streaming.StreamSession` now owns the ring, the subscriber
+  fan-out, the replay ordering and the transcript writes; `Session` and
+  `SshSession` inherit it and supply `status()` plus a `_after_append` hook.
+  Subclasses still implement connect/read/write, but the parts that are easy to
+  get subtly wrong exist once. The hook is not cosmetic: the ring publishes its
+  new head and wakes readers *inside* `append`, so counters must be bumped under
+  the same lock or a reader can observe data with `rx_bytes` still zero.
+  (2) *Process exclusivity*: `SingleInstanceLock` gives "one gateway per data
+  directory" on both platforms, since Windows has no kernel tty exclusivity.
+  (3) *Ring metadata*: one tuple per append was unbounded in append *count*.
+  Oldest neighbours now merge above `max(64, capacity/4096)` chunks, so memory is
+  flat; the only cost is coarser per-chunk timestamps under fragmentation.
