@@ -153,7 +153,6 @@ def test_autobind_publishes_serial_tools(tmp_path):
         mcp = app.state.mcp_server
         names = _bound_names(mcp)
         assert "serial_status" in names and "serial_command" in names
-        assert not any(name.startswith("ssh_") for name in names)
     app.state.manager.stop()
 
 

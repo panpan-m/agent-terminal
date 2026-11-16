@@ -5,7 +5,6 @@ from __future__ import annotations
 import queue
 
 from tio_server.sessions import Subscriber as SerialSubscriber
-from tio_server.ssh.session import SshSubscriber
 from tio_server.streaming import Subscriber
 
 
@@ -42,9 +41,8 @@ def test_zero_or_negative_maxsize_cannot_mean_unbounded():
         assert sub.q.qsize() <= sub.q.maxsize
 
 
-def test_both_transports_use_the_same_implementation():
+def test_the_serial_session_uses_the_shared_implementation():
     assert SerialSubscriber is Subscriber
-    assert SshSubscriber is Subscriber
 
 
 def test_get_returns_none_on_timeout():

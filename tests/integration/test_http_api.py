@@ -146,14 +146,14 @@ def test_mcp_status_endpoint(app_bundle):
     assert r.json()["serial_alive"] is True
 
     # An explicit unbind is honoured: nothing is published until re-bound.
-    r = client.put("/api/mcp/bindings", json={"serial_session_id": None, "ssh_session_id": None})
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": None})
     assert r.status_code == 200, r.text
     assert client.get("/api/mcp").json()["tools"] == []
 
-    r = client.put("/api/mcp/bindings", json={"serial_session_id": "nope", "ssh_session_id": None})
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": "nope"})
     assert r.status_code == 404
 
-    r = client.put("/api/mcp/bindings", json={"serial_session_id": "board-a", "ssh_session_id": None})
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": "board-a"})
     assert r.status_code == 200, r.text
     assert r.json()["serial_session_id"] == "board-a"
 
@@ -203,7 +203,7 @@ def test_mcp_requires_bearer(app_bundle):
 def test_mcp_end_to_end(app_bundle):
     client, _, secrets = app_bundle
     create_session(client)
-    r = client.put("/api/mcp/bindings", json={"serial_session_id": "board-a", "ssh_session_id": None})
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": "board-a"})
     assert r.status_code == 200
     headers = {
         "Authorization": f"Bearer {secrets['api_token']}",

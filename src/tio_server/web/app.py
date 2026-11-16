@@ -30,9 +30,6 @@ from ..mcp.audit import McpAuditLog
 from ..mcp.bindings import McpBindings
 from ..observability import setup_logging
 from ..sessions import Session, SessionManager
-from ..ssh import SshManager, SshProfileStore, SshSecretStore
-from ..ssh.importers import parse_ssh_config
-from ..ssh.local_open import LocalOpenManager
 from ..transcript import now_iso
 
 __version__ = "0.1.0"
@@ -375,78 +372,17 @@ class BreakBody(BaseModel):
     duration_ms: int = Field(default=250, ge=1, le=5000)
 
 
-class SftpArchiveBody(BaseModel):
-    paths: list[str] = Field(min_length=1, max_length=500)
-
-
-class SshHostBody(BaseModel):
-    id: str | None = None
-    name: str = ""
-    host: str
-    description: str = ""
-    port: int = Field(default=22, ge=1, le=65535)
-    username: str = ""
-    auth: Literal["password", "key", "agent", "interactive"] = "password"
-    key_file: str = ""
-    known_hosts: str = ""
-    jump_host_id: str = ""
-    auto_reconnect: bool = True
-    term: str = "xterm-256color"
-    connect_timeout_s: int = Field(default=10, ge=1, le=120)
-
-
-class SshConnectBody(BaseModel):
-    password: str | None = None
-    passphrase: str | None = None
-    jump_password: str | None = None
-    jump_passphrase: str | None = None
-    responses: list[str] = Field(default_factory=list)
-    use_saved: bool = True
-    remember: bool = False
-    cols: int = Field(default=120, ge=20, le=400)
-    rows: int = Field(default=30, ge=5, le=200)
-
-
-class SftpPathBody(BaseModel):
-    path: str
-
-
-class SftpChmodBody(BaseModel):
-    path: str
-    mode: int = Field(ge=0, le=0o7777)
-
-
-class SshRenameBody(BaseModel):
-    name: str = Field(max_length=120)
-
-
-class SftpRenameBody(BaseModel):
-    path: str
-    new_path: str
-
-
 class McpBindingsBody(BaseModel):
     serial_session_id: str | None = None
-    ssh_session_id: str | None = None
 
 
 # ------------------------------------------------------------------- app factory
 def create_app(config: Config) -> FastAPI:
     logger = setup_logging(config.log_dir, config.server.log_level)
     manager = SessionManager(config, on_config_changed=_save_config)
-    ssh_profiles = SshProfileStore(config.data_dir)
-    ssh_secrets = SshSecretStore(config.data_dir)
-    ssh_manager = SshManager(
-        config,
-        ssh_profiles,
-        transcripts=manager.transcripts,
-        audit=manager.audit,
-        secrets=ssh_secrets,
-    )
     auth = AuthManager(api_token_hash=config.auth.api_token_hash)
     auth.allowed_origins = _allowed_origins(config)
     started_at = time.time()
-    local_open = LocalOpenManager(audit=manager.audit)
     mcp_bindings = McpBindings()
 
     def autobind_single_serial() -> None:
@@ -472,7 +408,7 @@ def create_app(config: Config) -> FastAPI:
         return sess.status()
 
     mcp_audit = McpAuditLog(durable=manager.audit)
-    mcp_server = build_mcp_server(manager, config, ssh_manager, audit=mcp_audit, bindings=mcp_bindings)
+    mcp_server = build_mcp_server(manager, config, audit=mcp_audit, bindings=mcp_bindings)
     allowed_hosts = _allowed_hosts(config)
     # A Host header is not authentication.  The moment the admin surface leaves
     # loopback it must prove identity with the API token, or a single config
@@ -497,8 +433,6 @@ def create_app(config: Config) -> FastAPI:
             async with mcp_server.session_manager.run():
                 yield
         finally:
-            local_open.stop()
-            ssh_manager.stop()
             manager.stop()
 
     app = FastAPI(
@@ -511,9 +445,6 @@ def create_app(config: Config) -> FastAPI:
     )
     app.state.config = config
     app.state.manager = manager
-    app.state.ssh = ssh_manager
-    app.state.ssh_profiles = ssh_profiles
-    app.state.ssh_secrets = ssh_secrets
     app.state.auth = auth
     app.state.logger = logger
     app.state.mcp_server = mcp_server
@@ -588,258 +519,6 @@ def create_app(config: Config) -> FastAPI:
     @app.get("/api/ports")
     async def list_ports():
         return {"ports": manager.ports()}
-
-    # ------------------------------------------------------------------ ssh
-    @app.get("/api/ssh/hosts")
-    async def ssh_list_hosts():
-        hosts = ssh_profiles.list()
-        for host in hosts:
-            fields = ssh_secrets.fields(host["id"])
-            host["has_saved_secrets"] = bool(fields)
-            host["saved_fields"] = fields
-        return {"hosts": hosts}
-
-    @app.get("/api/ssh/config")
-    async def ssh_config_candidates():
-        path = Path.home() / ".ssh" / "config"
-        hosts = await asyncio.to_thread(parse_ssh_config, path)
-        return {"path": str(path), "hosts": hosts}
-
-    @app.post("/api/ssh/hosts", status_code=201)
-    async def ssh_create_host(body: SshHostBody):
-        host = ssh_profiles.create(body.model_dump(exclude_none=True))
-        manager.audit.write("ssh.host_created", host_id=host["id"], host=host["host"], username=host["username"])
-        return host
-
-    @app.put("/api/ssh/hosts/{host_id}")
-    async def ssh_update_host(host_id: str, body: SshHostBody):
-        host = ssh_profiles.update(host_id, body.model_dump(exclude_none=True))
-        manager.audit.write("ssh.host_updated", host_id=host_id)
-        return host
-
-    @app.delete("/api/ssh/hosts/{host_id}")
-    async def ssh_delete_host(host_id: str):
-        for session in ssh_manager.list():
-            if session["host_id"] == host_id and session["state"] in ("connecting", "open"):
-                raise ToolFailure(
-                    CONFLICT,
-                    "disconnect the open SSH session before deleting this host",
-                    {"host_id": host_id, "session_id": session["session_id"]},
-                )
-        ssh_profiles.delete(host_id)
-        ssh_secrets.clear(host_id)
-        manager.audit.write("ssh.host_deleted", host_id=host_id)
-        return {"ok": True}
-
-    @app.delete("/api/ssh/hosts/{host_id}/secrets")
-    async def ssh_forget_secrets(host_id: str):
-        ssh_profiles.get(host_id)
-        cleared = ssh_secrets.clear(host_id)
-        manager.audit.write("ssh.credentials_cleared", host_id=host_id, cleared=cleared)
-        return {"ok": True, "cleared": cleared}
-
-    @app.post("/api/ssh/hosts/{host_id}/connect")
-    async def ssh_connect(host_id: str, body: SshConnectBody):
-        session = await asyncio.to_thread(
-            ssh_manager.connect,
-            host_id,
-            password=body.password,
-            passphrase=body.passphrase,
-            jump_password=body.jump_password,
-            jump_passphrase=body.jump_passphrase,
-            responses=body.responses,
-            use_saved=body.use_saved,
-            remember=body.remember,
-            cols=body.cols,
-            rows=body.rows,
-        )
-        return {"session": session.status()}
-
-    @app.get("/api/ssh/sessions")
-    async def ssh_list_sessions():
-        return {"sessions": ssh_manager.list()}
-
-    @app.get("/api/ssh/sessions/{session_id}")
-    async def ssh_get_session(session_id: str):
-        return ssh_manager.get(session_id).status()
-
-    @app.post("/api/ssh/sessions/{session_id}/rename")
-    async def ssh_rename_session(
-        session_id: str,
-        body: SshRenameBody,
-    ):
-        sess = ssh_manager.get(session_id)
-        name = await asyncio.to_thread(sess.set_label, body.name)
-        manager.audit.write("ssh.rename", session=session_id, name=name)
-        return {"name": name}
-
-    @app.get("/api/ssh/sessions/{session_id}/transcript")
-    async def ssh_transcript(session_id: str, limit: int = 200):
-        sess = ssh_manager.get(session_id)
-        return {"events": sess.transcript.tail(max(1, min(limit, 2000)))}
-
-    @app.get("/api/ssh/sessions/{session_id}/export")
-    async def ssh_export_session(
-        session_id: str,
-        format: str = "txt",
-        limit: int = 5000,
-    ):
-        sess = ssh_manager.get(session_id)
-        if format not in ("txt", "hex"):
-            raise ToolFailure("INVALID_ARGUMENT", "format must be txt or hex")
-        body = _export_transcript(sess.transcript, format, limit)
-        return Response(
-            content=body,
-            media_type="text/plain; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{session_id}-raw-{format}.log"'},
-        )
-
-    @app.post("/api/ssh/hosts/{host_id}/test")
-    async def ssh_test_host(host_id: str):
-        result = await asyncio.to_thread(ssh_manager.test, host_id)
-        return result
-
-    # ------------------------------------------------------------------ SFTP
-    @app.get("/api/mcp/audit")
-    async def mcp_audit_events(limit: int = 100):
-        return {"events": mcp_audit.recent(limit)}
-
-    @app.get("/api/ssh/sessions/{session_id}/sftp/list")
-    async def ssh_sftp_list(
-        session_id: str,
-        path: str = "/",
-    ):
-        sess = ssh_manager.get(session_id)
-        return await asyncio.to_thread(sess.sftp_list, path)
-
-    @app.get("/api/ssh/sessions/{session_id}/sftp/download")
-    async def ssh_sftp_download(
-        session_id: str,
-        path: str,
-    ):
-        sess = ssh_manager.get(session_id)
-        info = await asyncio.to_thread(sess.sftp_stat, path)
-        if info["is_dir"]:
-            raise ToolFailure(INVALID_ARGUMENT, "cannot download a directory")
-        name = posixpath.basename(path).replace('"', "") or "download"
-        fallback = name if name.isascii() else "download"
-        manager.audit.write("ssh.sftp_download", session=session_id, path=path, bytes=info["size"])
-        return StreamingResponse(
-            sess.sftp_stream(path),
-            media_type="application/octet-stream",
-            headers={
-                "Content-Length": str(info["size"]),
-                "Content-Disposition": f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(name)}',
-            },
-        )
-
-    @app.post("/api/ssh/sessions/{session_id}/sftp/download-archive")
-    async def ssh_sftp_download_archive(
-        session_id: str,
-        body: SftpArchiveBody,
-    ):
-        sess = ssh_manager.get(session_id)
-        stream, file_count, total_bytes = await asyncio.to_thread(sess.sftp_archive, body.paths)
-        roots = [posixpath.basename(p.rstrip("/")) or "root" for p in body.paths]
-        archive_name = f"{roots[0]}.zip" if len(roots) == 1 else "archive.zip"
-        fallback = archive_name if archive_name.isascii() else "archive.zip"
-        manager.audit.write(
-            "ssh.sftp_download_archive", session=session_id, paths=body.paths, files=file_count, bytes=total_bytes
-        )
-        return StreamingResponse(
-            stream,
-            media_type="application/zip",
-            headers={
-                "X-Archive-Files": str(file_count),
-                "X-Archive-Bytes": str(total_bytes),
-                "Content-Disposition": f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(archive_name)}',
-            },
-        )
-
-    @app.post("/api/ssh/sessions/{session_id}/sftp/upload")
-    async def ssh_sftp_upload(
-        session_id: str,
-        path: str,
-        file: UploadFile = File(...),
-    ):
-        sess = ssh_manager.get(session_id)
-        data = await file.read(32 * 1024 * 1024 + 1)
-        if len(data) > 32 * 1024 * 1024:
-            raise ToolFailure("INVALID_ARGUMENT", "upload larger than 32 MiB")
-        written = await asyncio.to_thread(sess.sftp_write, path, data)
-        manager.audit.write("ssh.sftp_upload", session=session_id, path=path, bytes=written)
-        return {"path": path, "bytes": written}
-
-    @app.post("/api/ssh/sessions/{session_id}/sftp/mkdir")
-    async def ssh_sftp_mkdir(
-        session_id: str,
-        body: SftpPathBody,
-    ):
-        sess = ssh_manager.get(session_id)
-        path = await asyncio.to_thread(sess.sftp_mkdir, body.path)
-        manager.audit.write("ssh.sftp_mkdir", session=session_id, path=path)
-        return {"path": path}
-
-    @app.post("/api/ssh/sessions/{session_id}/sftp/delete")
-    async def ssh_sftp_delete(
-        session_id: str,
-        body: SftpPathBody,
-    ):
-        sess = ssh_manager.get(session_id)
-        path = await asyncio.to_thread(sess.sftp_delete, body.path)
-        manager.audit.write("ssh.sftp_delete", session=session_id, path=path)
-        return {"path": path}
-
-    @app.post("/api/ssh/sessions/{session_id}/sftp/rename")
-    async def ssh_sftp_rename(
-        session_id: str,
-        body: SftpRenameBody,
-    ):
-        sess = ssh_manager.get(session_id)
-        old, new = await asyncio.to_thread(sess.sftp_rename, body.path, body.new_path)
-        manager.audit.write("ssh.sftp_rename", session=session_id, old=old, new=new)
-        return {"path": new}
-
-    @app.get("/api/ssh/sessions/{session_id}/sftp/stat")
-    async def ssh_sftp_stat(
-        session_id: str,
-        path: str,
-    ):
-        sess = ssh_manager.get(session_id)
-        return await asyncio.to_thread(sess.sftp_stat_full, path)
-
-    @app.post("/api/ssh/sessions/{session_id}/sftp/chmod")
-    async def ssh_sftp_chmod(
-        session_id: str,
-        body: SftpChmodBody,
-    ):
-        sess = ssh_manager.get(session_id)
-        result = await asyncio.to_thread(sess.sftp_chmod, body.path, body.mode)
-        manager.audit.write("ssh.sftp_chmod", session=session_id, path=result["path"], mode=result["mode"])
-        return result
-
-    @app.post("/api/ssh/sessions/{session_id}/sftp/open-local")
-    async def ssh_sftp_open_local(
-        session_id: str,
-        body: SftpPathBody,
-        request: Request,
-    ):
-        # the OS association can only be looked up on the machine the server
-        # runs on, so refuse when the UI reaches us from another host
-        client_host = request.client.host if request.client else ""
-        if client_host not in ("127.0.0.1", "::1", "localhost"):
-            raise ToolFailure(
-                PERMISSION_DENIED,
-                "opening with a local application requires the UI to run on the same machine as the server",
-            )
-        sess = ssh_manager.get(session_id)
-        result = await asyncio.to_thread(local_open.open_remote, sess, body.path)
-        return result
-
-    @app.post("/api/ssh/sessions/{session_id}/disconnect")
-    async def ssh_disconnect(session_id: str):
-        await asyncio.to_thread(ssh_manager.disconnect, session_id)
-        return {"ok": True}
 
     # ----------------------------------------------------------------- sessions
     @app.get("/api/sessions")
@@ -1008,27 +687,23 @@ def create_app(config: Config) -> FastAPI:
             "health": {"sessions_open": sum(1 for s in manager.sessions.values() if s.is_open)},
         }
 
+    @app.get("/api/mcp/audit")
+    async def mcp_audit_events(limit: int = 100):
+        return {"events": mcp_audit.recent(limit)}
+
     @app.get("/api/mcp/bindings")
     async def mcp_get_bindings():
         serial_id = mcp_bindings.serial_session_id
-        ssh_id = mcp_bindings.ssh_session_id
         return {
             "serial_session_id": serial_id,
-            "ssh_session_id": ssh_id,
             "serial_alive": bool(serial_id and serial_id in manager.sessions),
-            "ssh_alive": bool(ssh_id and any(item["session_id"] == ssh_id for item in ssh_manager.list())),
         }
 
     @app.put("/api/mcp/bindings")
     async def mcp_set_bindings(body: McpBindingsBody):
         if body.serial_session_id is not None and body.serial_session_id not in manager.sessions:
             raise ToolFailure(NOT_FOUND, f"unknown serial session: {body.serial_session_id}")
-        if body.ssh_session_id is not None:
-            ssh_manager.get(body.ssh_session_id)  # raises NOT_FOUND for stale ids
-        result = mcp_bindings.set(
-            serial_session_id=body.serial_session_id,
-            ssh_session_id=body.ssh_session_id,
-        )
+        result = mcp_bindings.set(serial_session_id=body.serial_session_id)
         manager.audit.write("mcp.bindings", **result)
         return result
 
@@ -1175,97 +850,6 @@ def create_app(config: Config) -> FastAPI:
             task.cancel()
             sess.unsubscribe(sub)
 
-    @app.websocket("/ws/ssh/{session_id}")
-    async def ws_ssh(ws: WebSocket, session_id: str):
-        try:
-            sess = ssh_manager.get(session_id)
-        except ToolFailure:
-            await ws.close(code=4404)
-            return
-        await ws.accept()
-        replay = int(ws.query_params.get("replay") or 65536)
-        cursor_raw = ws.query_params.get("cursor")
-        try:
-            cursor = int(cursor_raw) if cursor_raw not in (None, "") else None
-        except ValueError:
-            cursor = None
-        sub = sess.subscribe(
-            replay_bytes=max(0, min(replay, 1024 * 1024)),
-            cursor=max(0, cursor) if cursor is not None else None,
-        )
-        send_lock = asyncio.Lock()
-
-        async def send_json(payload: dict) -> None:
-            async with send_lock:
-                await ws.send_json(payload)
-
-        async def pump() -> None:
-            try:
-                while True:
-                    item = await asyncio.to_thread(sub.get, 0.5)
-                    if item is None:
-                        continue
-                    if item["type"] in ("rx", "replay"):
-                        await send_json(
-                            {
-                                "type": item["type"],
-                                "offset": item["offset"],
-                                "data_b64": base64.b64encode(item["data"]).decode(),
-                            }
-                        )
-                    elif item["type"] == "status":
-                        await send_json({"type": "status", "status": item["status"]})
-                    elif item["type"] == "tx":
-                        await send_json(
-                            {"type": "tx", "data_b64": base64.b64encode(item["data"]).decode(), "source": item["source"]}
-                        )
-                    elif item["type"] == "agent":
-                        await send_json(
-                            {
-                                "type": "agent",
-                                "action": item.get("action"),
-                                "source": item.get("source"),
-                                "at": item.get("at"),
-                            }
-                        )
-                    elif item["type"] == "overflow":
-                        await send_json({"type": "overflow", "dropped": item["dropped"]})
-            except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
-                return
-
-        task = asyncio.create_task(pump())
-        await send_json({"type": "hello", "session_id": sess.id, "mode": "ssh", "replay_bytes": replay})
-        try:
-            while True:
-                msg = await ws.receive_json()
-                kind = msg.get("type")
-                req_id = msg.get("id")
-                try:
-                    if kind == "input":
-                        data = base64.b64decode(msg.get("data_b64", ""), validate=True)
-                        written = await asyncio.to_thread(sess.write_bytes, data, source="human")
-                        await send_json({"type": "ack", "id": req_id, "bytes_written": written})
-                    elif kind == "resize":
-                        await asyncio.to_thread(sess.resize, int(msg.get("cols", 120)), int(msg.get("rows", 30)))
-                        await send_json({"type": "ack", "id": req_id})
-                    elif kind == "ping":
-                        await send_json({"type": "pong", "id": req_id})
-                    else:
-                        await send_json(
-                            {
-                                "type": "error",
-                                "id": req_id,
-                                "error": {"code": "INVALID_ARGUMENT", "message": "unknown message type"},
-                            }
-                        )
-                except ToolFailure as failure:
-                    await send_json({"type": "error", "id": req_id, "error": failure.to_dict()["error"]})
-        except WebSocketDisconnect:
-            pass
-        finally:
-            task.cancel()
-            sess.unsubscribe(sub)
-
     # ------------------------------------------------------------------- MCP
     app.mount("/mcp", _RootPath(_BearerAuth(mcp_asgi, auth)))
 
@@ -1291,7 +875,7 @@ def create_app(config: Config) -> FastAPI:
 
 
 def _export_transcript(writer, format: str, limit: int) -> str:
-    """Render a transcript writer as timestamped text, shared by serial and SSH."""
+    """Render a transcript writer as timestamped text."""
     from collections import deque
 
     keep: deque[str] = deque(maxlen=max(1, min(int(limit), 200_000)))

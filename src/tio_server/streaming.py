@@ -1,6 +1,6 @@
 """Shared streaming core and per-client event streams for every transport.
 
-Both the serial session and the SSH session fan data out to WebSocket clients.
+The serial session fans data out to WebSocket clients.
 The queue is bounded on purpose: a stalled client must lose chunks (and be told
 so), never grow the single-owner process until the reader thread starves.  This
 lives in its own module so the two transports cannot drift apart — the previous

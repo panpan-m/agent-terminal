@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "agent-terminal"
 version = "0.1.0"
-description = "agent-terminal: shared serial/SSH terminal gateway with MCP and a web terminal"
+description = "agent-terminal: shared serial terminal gateway with MCP and a web terminal"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-2.0-or-later" }
@@ -20,7 +20,6 @@ dependencies = [
   "mcp>=2.3,<3",
   "tomli-w>=1.0",
   "regex>=2024.5",
-  "paramiko>=3.4",
 ]
 
 [project.optional-dependencies]
@@ -29,15 +28,10 @@ dev = [
   "pytest-asyncio>=0.24",
   "pyinstaller>=6.6",
 ]
-desktop = [
-  "pywebview>=6.0",
-  "pythonnet>=3.0; sys_platform == 'win32'",
-]
 
 [project.scripts]
 agent-terminal = "tio_server.cli:main"
 agent-mcp = "tio_mcp_shim.__main__:main"
-agent-desktop = "tio_server.desktop:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tio_server", "src/tio_mcp_shim"]

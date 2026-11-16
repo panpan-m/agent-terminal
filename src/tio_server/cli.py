@@ -150,7 +150,7 @@ def _cmd_version(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agent-terminal", description="Shared serial/SSH terminal gateway")
+    parser = argparse.ArgumentParser(prog="agent-terminal", description="Shared serial terminal gateway")
     parser.add_argument("--version", action="version", version=f"agent-terminal {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 

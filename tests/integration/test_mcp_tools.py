@@ -32,8 +32,7 @@ def _structured(result):
 
 async def test_tools_list_contract(mcp_setup):
     mgr, _, cfg, bindings = mcp_setup
-    bindings.set(ssh_session_id="alpha")
-    mcp = build_mcp_server(mgr, cfg, _FakeSshManager(), bindings=bindings)
+    mcp = build_mcp_server(mgr, cfg, bindings=bindings)
     tools = await mcp.list_tools()
     names = [t.name for t in tools]
     assert names == [
@@ -45,14 +44,6 @@ async def test_tools_list_contract(mcp_setup):
         "serial_break",
         "serial_command",
         "serial_expect",
-        "ssh_sessions",
-        "ssh_host_info",
-        "ssh_status",
-        "ssh_read",
-        "ssh_tail",
-        "ssh_write",
-        "ssh_exec",
-        "ssh_expect",
     ]
     for tool in tools:
         assert tool.output_schema is not None, tool.name
@@ -61,130 +52,8 @@ async def test_tools_list_contract(mcp_setup):
     assert by_name["serial_read"].annotations.read_only_hint is True
     assert by_name["serial_write"].annotations.destructive_hint is True
     assert by_name["serial_write"].annotations.read_only_hint is False
-    assert by_name["ssh_read"].annotations.read_only_hint is True
-    assert by_name["ssh_exec"].annotations.destructive_hint is True
     # no port-management tools are exposed
     assert not any(n in names for n in ("serial_open", "serial_close", "serial_configure"))
-    assert not any(n in names for n in ("ssh_connect", "ssh_disconnect"))
-
-
-async def test_ssh_tools_require_a_bound_session(mcp_setup):
-    _, mcp, _, _ = mcp_setup
-    # no ssh binding: the ssh tools are not even listed, and a stale client
-    # cache gets a clear NO_SESSION error
-    names = [t.name for t in await mcp.list_tools()]
-    assert not any(n.startswith("ssh_") for n in names)
-
-    res = await _call(mcp, "ssh_sessions")
-    assert res.is_error is True
-    assert _structured(res)["error"]["code"] == "NO_SESSION"
-
-    res = await _call(mcp, "ssh_exec", {"command": "true"})
-    assert res.is_error is True
-    assert _structured(res)["error"]["code"] == "NO_SESSION"
-
-
-def _ssh_status(session_id: str) -> dict:
-    return {
-        "session_id": session_id,
-        "host_id": "host",
-        "name": "Host",
-        "host": "127.0.0.1",
-        "port": 22,
-        "username": "root",
-        "auth": "key",
-        "state": "open",
-        "host_key_fingerprint": "SHA256:x",
-        "host_key_type": "ssh-ed25519",
-        "remote_version": "SSH-2.0-test",
-        "cipher": "aes128-ctr",
-        "mac": "hmac-sha2-256",
-        "rx_bytes": 0,
-        "tx_bytes": 0,
-        "rx_start": 0,
-        "rx_head": 0,
-        "buffer_bytes": 1024,
-        "opened_at": None,
-        "last_error": None,
-        "last_error_code": None,
-        "control_owner": "human",
-        "auto_reconnect": True,
-        "reconnect_count": 0,
-    }
-
-
-class _FakeSshSession:
-    def __init__(self, status):
-        self._status = status
-
-    def status(self):
-        return dict(self._status)
-
-
-class _FakeSshManager:
-    def __init__(self):
-        self.sessions = {
-            "alpha": _FakeSshSession(_ssh_status("alpha")),
-            "beta": _FakeSshSession(_ssh_status("beta")),
-        }
-
-    def list(self):
-        return [session.status() for session in self.sessions.values()]
-
-    def get(self, session_id):
-        return self.sessions[session_id]
-
-    def host_info(self, host_id):
-        return {
-            "host_id": host_id,
-            "name": "Host",
-            "description": "data: /srv\nlogs: /var/log",
-            "host": "127.0.0.1",
-            "port": 22,
-            "username": "root",
-            "auth": "key",
-            "term": "xterm-256color",
-            "jump_host_id": None,
-            "auto_reconnect": True,
-            "key_file": "C:/keys/id",
-            "known_hosts": "C:/keys/known_hosts",
-            "has_saved_secrets": False,
-            "saved_fields": [],
-            "open_sessions": ["alpha", "beta"],
-        }
-
-
-async def test_ssh_tools_operate_on_the_bound_session(mcp_setup):
-    mgr, _, cfg, bindings = mcp_setup
-    bindings.set(ssh_session_id="alpha")
-    mcp = build_mcp_server(mgr, cfg, _FakeSshManager(), bindings=bindings)
-
-    # both sessions are listed, the bound one is marked
-    res = await _call(mcp, "ssh_sessions")
-    data = _structured(res)
-    assert {item["session_id"]: item["bound"] for item in data["sessions"]} == {
-        "alpha": True,
-        "beta": False,
-    }
-
-    # a session_id that is not the bound one is refused
-    res = await _call(mcp, "ssh_status", {"session_id": "beta"})
-    assert res.is_error is True
-    assert _structured(res)["error"]["code"] == "INVALID_ARGUMENT"
-
-    # the bound session works with and without an explicit session_id
-    res = await _call(mcp, "ssh_status", {"session_id": "alpha"})
-    assert res.is_error is False
-    assert _structured(res)["session_id"] == "alpha"
-    res = await _call(mcp, "ssh_status", {})
-    assert res.is_error is False
-
-    res = await _call(mcp, "ssh_host_info", {"host_id": "host"})
-    assert res.is_error is False
-    info = _structured(res)
-    assert info["description"] == "data: /srv\nlogs: /var/log"
-    assert info["open_sessions"] == ["alpha", "beta"]
-    assert "key_file" in info and "password" not in info
 
 
 async def test_bindings_gate_the_tool_surface(mcp_setup):
