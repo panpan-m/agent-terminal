@@ -174,5 +174,3 @@ class SerialBackend(Protocol):
     def stats(self, handle: SerialHandle) -> SerialStats: ...
 
 
-def normalise_stopbits(value: float):
-    return 1.5 if float(value) == 1.5 else int(value)

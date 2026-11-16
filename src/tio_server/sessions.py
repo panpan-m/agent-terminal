@@ -41,10 +41,9 @@ from .errors import (
     WRITE_LOCKED,
     ToolFailure,
 )
-from .errors import BUFFER_GAP as BUFFER_GAP_CODE
 from .ring import ReadSlice, RingBuffer
 from .serial import Disconnected, SerialError, SerialHandle, WriteTimeout, make_backend
-from .streaming import StreamSession, Subscriber
+from .streaming import StreamSession
 from .transcript import AuditLog, TranscriptRegistry, TranscriptWriter, now_iso
 
 BUSY = "BUSY"
@@ -52,8 +51,6 @@ BUSY = "BUSY"
 NEWLINE_BYTES = {"none": b"", "lf": b"\n", "cr": b"\r", "crlf": b"\r\n"}
 
 #: Error codes that mean "the device went away"; these trigger a reconnect.
-_DISCONNECT_CODES = {"DISCONNECTED", "PORT_NOT_FOUND", "PORT_BUSY"}
-
 
 class SessionState(str, Enum):
     UNCONFIGURED = "unconfigured"

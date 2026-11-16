@@ -29,11 +29,6 @@ export function isTheme(value: unknown): value is Theme {
   return value === "custom" || value in BUILTIN_THEMES;
 }
 
-export function isLightTheme(theme: Theme): boolean {
-  if (theme === "custom") return resolveThemeSpec("custom", loadCustomTheme()).colorScheme === "light";
-  return BUILTIN_THEMES[theme].colorScheme === "light";
-}
-
 function loadCustomTheme(): ThemeSpec | null {
   try {
     const raw = window.localStorage.getItem(CUSTOM_KEY);

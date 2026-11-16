@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -139,7 +138,3 @@ class ExpectResult(BaseModel):
     truncated: bool = False
 
 
-class ErrorPayload(BaseModel):
-    """Shape used inside ``structuredContent`` for ``isError=true`` results."""
-
-    error: dict[str, Any]

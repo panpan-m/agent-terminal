@@ -90,9 +90,4 @@ class ToolFailure(Exception):
         return _HTTP_STATUS.get(self.code, 500)
 
 
-def invalid_argument(message: str, **details: Any) -> ToolFailure:
-    return ToolFailure(INVALID_ARGUMENT, message, details)
 
-
-def unsupported(message: str, **details: Any) -> ToolFailure:
-    return ToolFailure(UNSUPPORTED_ON_PLATFORM, message, details)

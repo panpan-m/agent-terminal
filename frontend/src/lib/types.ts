@@ -124,13 +124,6 @@ export interface CommandResponse {
   elapsed_ms: number;
 }
 
-export interface ApiError extends Error {
-  code: string;
-  status: number;
-  details?: Record<string, unknown>;
-  retryable?: boolean;
-}
-
 export interface McpToolInfo {
   name: string;
   description: string;

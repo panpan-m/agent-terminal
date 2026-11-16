@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import queue
 
-from tio_server.sessions import Subscriber as SerialSubscriber
-from tio_server.streaming import Subscriber
+from tio_server.sessions import Session
+from tio_server.streaming import StreamSession, Subscriber
 
 
 def test_queue_is_actually_bounded():
@@ -42,7 +42,7 @@ def test_zero_or_negative_maxsize_cannot_mean_unbounded():
 
 
 def test_the_serial_session_uses_the_shared_implementation():
-    assert SerialSubscriber is Subscriber
+    assert issubclass(Session, StreamSession)
 
 
 def test_get_returns_none_on_timeout():

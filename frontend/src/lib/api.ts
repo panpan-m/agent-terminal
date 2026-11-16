@@ -53,20 +53,6 @@ function bootstrapAdminToken(): string | null {
 
 let adminToken: string | null = bootstrapAdminToken();
 
-export function getAdminToken(): string | null {
-  return adminToken;
-}
-
-export function setAdminToken(token: string | null): void {
-  adminToken = token && token.length > 0 ? token : null;
-  try {
-    if (adminToken) window.localStorage.setItem(TOKEN_KEY, adminToken);
-    else window.localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* storage unavailable: keep the in-memory value */
-  }
-}
-
 /** Build a WebSocket URL, carrying the token when one is configured. */
 export function wsUrl(path: string): string {
   const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";

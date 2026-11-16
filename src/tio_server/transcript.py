@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 import threading
-import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -222,5 +220,3 @@ class TranscriptRegistry:
             self._writers.clear()
 
 
-def file_age_seconds(path: Path) -> float:
-    return time.time() - path.stat().st_mtime if path.exists() else 0.0

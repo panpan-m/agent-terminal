@@ -22,13 +22,6 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
-export function formatTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
 export function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const mins = Math.floor(seconds / 60);
@@ -48,32 +41,7 @@ export function decodeBytes(bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
-export function bytesToB64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  bytes.forEach((b) => {
-    binary += String.fromCharCode(b);
-  });
-  return btoa(binary);
-}
-
-const ANSI_RE =
-  // CSI sequences, OSC titles, charset switches and simple two-byte escapes.
-  /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>78]/g;
-
-/**
- * Best-effort terminal text for the read-only RX pane. The raw bytes are still
- * in the ring buffer / transcript; this only makes the live view readable.
- */
-export function cleanTerminalText(text: string): string {
-  return text
-    .replace(ANSI_RE, "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
-}
-
-/** True while a Radix dialog (settings, editor, SFTP…) or a context menu is open. */
+/** True while a Radix dialog (settings, editor…) or a context menu is open. */
 export function isModalOpen(): boolean {
   return document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]') !== null;
 }

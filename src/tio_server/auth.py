@@ -11,7 +11,6 @@ browser cross-site attacks by a Host/Origin allow-list in the web app.
 
 from __future__ import annotations
 
-import hmac
 import os
 import secrets
 from pathlib import Path
@@ -55,12 +54,6 @@ def write_secret_file(path: Path, value: str) -> None:
     except OSError:
         pass
 
-
-def read_secret_file(path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
 
 
 class AuthManager:
