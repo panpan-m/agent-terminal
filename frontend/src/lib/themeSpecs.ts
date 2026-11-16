@@ -11,7 +11,7 @@
 
 import type { ITheme } from "@xterm/xterm";
 
-export type ThemeId = "pixel" | "sheet" | "dark" | "light" | "custom";
+export type ThemeId = "sheet" | "dark" | "light" | "custom";
 
 export interface ThemeSpec {
   id?: string;
@@ -120,108 +120,6 @@ const LIGHT: ThemeSpec = {
   },
 };
 
-/* ----------------------------------------------------------------- pixel */
-const PIXEL: ThemeSpec = {
-  label: "pixel",
-  colorScheme: "dark",
-  vars: {
-    "--app-bg": "#070a07",
-    "--app-fg": "#cfeec0",
-    "--scroll-thumb": "#24351f",
-    "--scroll-thumb-hover": "#3a4f33",
-    "--scroll-border": "#070a07",
-    "--app-font":
-      '"VT323", ui-monospace, "Cascadia Mono", Consolas, "Microsoft YaHei", "PingFang SC", "Noto Sans SC", monospace',
-    "--font-sans":
-      '"Silkscreen", ui-monospace, Consolas, "Microsoft YaHei", "PingFang SC", "Noto Sans SC", monospace',
-    "--font-mono":
-      '"VT323", ui-monospace, "Cascadia Mono", Consolas, "Microsoft YaHei", "PingFang SC", "Noto Sans SC", monospace',
-
-    "--color-zinc-950": "#070a07",
-    "--color-zinc-900": "#0f150e",
-    "--color-zinc-800": "#24351f",
-    "--color-zinc-700": "#35502c",
-    "--color-zinc-600": "#6f9165",
-    "--color-zinc-500": "#7d9b75",
-    "--color-zinc-400": "#a3bf96",
-    "--color-zinc-300": "#c3d9b7",
-    "--color-zinc-200": "#dcf0cf",
-    "--color-zinc-100": "#ecffe0",
-    "--color-zinc-50": "#f6fff0",
-
-    "--color-emerald-200": "#dcffd0",
-    "--color-emerald-300": "#c0ffb0",
-    "--color-emerald-400": "#a4ff96",
-    "--color-emerald-500": "#8bf77e",
-    "--color-emerald-600": "#5fc253",
-    "--color-emerald-700": "#3f8a37",
-
-    "--color-amber-300": "#ffd98c",
-    "--color-amber-400": "#ffc457",
-    "--color-amber-500": "#e0a233",
-    "--color-red-300": "#ffb0a6",
-    "--color-red-400": "#ff8b7e",
-    "--color-red-500": "#ff6f61",
-    "--color-red-600": "#d94f42",
-    "--color-sky-300": "#a8e9f0",
-    "--color-sky-400": "#6fd7e0",
-    "--color-sky-500": "#3fb8c4",
-
-    "--radius-sm": "0px",
-    "--radius-md": "0px",
-    "--radius-lg": "0px",
-    "--radius-xl": "0px",
-    "--radius-2xl": "0px",
-    "--radius-3xl": "0px",
-
-    "--shadow-2xs": "1px 1px 0 #000",
-    "--shadow-xs": "2px 2px 0 #000",
-    "--shadow-sm": "2px 2px 0 #000",
-    "--shadow-md": "3px 3px 0 #000",
-    "--shadow-lg": "4px 4px 0 #000",
-    "--shadow-xl": "5px 5px 0 #000",
-    "--shadow-2xl": "6px 6px 0 #000",
-
-    "--text-xs": "13.5px",
-    "--text-xs--line-height": "1.4",
-    "--text-sm": "15.5px",
-    "--text-sm--line-height": "1.4",
-    "--text-base": "17px",
-    "--text-base--line-height": "1.4",
-    "--text-lg": "19px",
-    "--text-lg--line-height": "1.3",
-    "--text-xl": "23px",
-    "--text-xl--line-height": "1.2",
-    "--text-2xl": "28px",
-    "--text-2xl--line-height": "1.15",
-    "--text-3xl": "34px",
-    "--text-3xl--line-height": "1.1",
-  },
-  term: {
-    background: "#070a07",
-    foreground: "#b9e6a6",
-    cursor: "#8bf77e",
-    cursorAccent: "#070a07",
-    selectionBackground: "#24401c",
-    black: "#0b1009",
-    red: "#ff6f61",
-    green: "#8bf77e",
-    yellow: "#ffc457",
-    blue: "#7fb8ff",
-    magenta: "#d99bff",
-    cyan: "#6fd7e0",
-    white: "#dcf0cf",
-    brightBlack: "#4f6f44",
-    brightRed: "#ff8b7e",
-    brightGreen: "#a4ff96",
-    brightYellow: "#ffd98c",
-    brightBlue: "#a8c8ff",
-    brightMagenta: "#ecc0ff",
-    brightCyan: "#a8e9f0",
-    brightWhite: "#f6fff0",
-  },
-};
-
 /* ----------------------------------------------------------------- sheet */
 const SHEET: ThemeSpec = {
   label: "sheet",
@@ -308,13 +206,12 @@ const SHEET: ThemeSpec = {
 };
 
 export const BUILTIN_THEMES: Record<Exclude<ThemeId, "custom">, ThemeSpec> = {
-  pixel: PIXEL,
   sheet: SHEET,
   dark: DARK,
   light: LIGHT,
 };
 
-export const DEFAULT_THEME_ID: ThemeId = "pixel";
+export const DEFAULT_THEME_ID: ThemeId = "dark";
 
 /** Resolve a spec (merged over the dark baseline) for a theme id. */
 export function resolveThemeSpec(id: ThemeId, custom: ThemeSpec | null): ThemeSpec {

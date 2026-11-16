@@ -2,10 +2,9 @@
 @import "./styles/fonts.css";
 
 /*
- * Four themes live here, selected by <html data-theme="…">:
- *   pixel  — 8-bit phosphor console (default)
+ * Three themes live here, selected by <html data-theme="…">:
+ *   dark   — the original zinc/emerald dark UI (default)
  *   sheet  — paper engineering drawing
- *   dark   — the original zinc/emerald dark UI
  *   light  — the original zinc/emerald light UI
  *
  * Tailwind v4 emits palette, radius, shadow and type-scale utilities as CSS
@@ -26,7 +25,6 @@
   font-family: var(--app-font);
 }
 
-/* ---------------------------------------------------------------- pixel */
 /* ---------------------------------------------------------------- sheet */
 
 html,
@@ -46,139 +44,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-html[data-theme="pixel"] body {
-  background: var(--app-bg);
-}
-
-html[data-theme="pixel"] body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 30;
-  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
-}
-
-html[data-theme="sheet"] body {
-  background-color: #f7f4ed;
-  background-image:
-    linear-gradient(to right, rgba(0, 0, 0, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
-  background-size: 24px 24px;
-}
-
-.font-mono,
-pre,
-code {
-  font-family: var(--font-mono, ui-monospace), SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-/* native select popups follow the active palette (Chromium honours option bg) */
-select option {
-  background-color: var(--color-zinc-900, #18181b);
-  color: var(--color-zinc-100, #f4f4f5);
-}
-
-html[data-theme="pixel"] .rounded-full {
-  border-radius: 2px;
-}
-
-html[data-theme="pixel"] .text-\[10px\],
-html[data-theme="pixel"] .text-\[11px\] {
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-html[data-theme="pixel"] .max-w-6xl {
-  max-width: 1600px;
-}
-
-html[data-theme="pixel"] h1,
-html[data-theme="pixel"] h2,
-html[data-theme="pixel"] h3,
-html[data-theme="pixel"] thead th,
-html[data-theme="pixel"] label {
-  font-family: "Silkscreen", ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
-  font-weight: 400;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-html[data-theme="pixel"] [data-panel] {
-  background: #0f150e;
-  border: 2px solid #24351f;
-  border-radius: 0;
-  box-shadow:
-    inset 2px 2px 0 #1b2a17,
-    inset -2px -2px 0 #060906,
-    4px 4px 0 #000;
-  backdrop-filter: none;
-}
-
-html[data-theme="pixel"] [data-btn] {
-  border-radius: 0;
-  border-width: 2px;
-  box-shadow: 2px 2px 0 #000;
-  font-family: "Silkscreen", ui-monospace, monospace;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-html[data-theme="pixel"] [data-badge] {
-  border-radius: 0;
-  font-family: "Silkscreen", ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-html[data-theme="pixel"] [data-input] {
-  border-radius: 0;
-  border-width: 2px;
-}
-
-html[data-theme="sheet"] [data-panel] {
-  background: #fbf9f4;
-  border: 1px solid #d8d2c3;
-  border-radius: 0;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-html[data-theme="sheet"] [data-btn] {
-  border-radius: 0;
-  box-shadow: none;
-}
-
-html[data-theme="sheet"] [data-badge],
-html[data-theme="sheet"] [data-input] {
-  border-radius: 0;
-}
-
-/* toast: the tone utilities above are the dark baseline; each theme restyles
-   background, border, radius, shadow and the inner text to match. */
-html[data-theme="pixel"] [data-toast] {
-  background: #0f150e;
-  border: 2px solid #24351f;
-  border-radius: 0;
-  box-shadow: 4px 4px 0 #000;
-  backdrop-filter: none;
-  color: #dcf0cf;
-  font-family: "Silkscreen", ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-html[data-theme="pixel"] [data-toast="success"] {
-  border-color: #3f8a37;
-  color: #a4ff96;
-}
-
-html[data-theme="pixel"] [data-toast="error"] {
-  border-color: #d94f42;
-  color: #ff8b7e;
-}
 
 html[data-theme="sheet"] [data-toast] {
   background: #fbf9f4;

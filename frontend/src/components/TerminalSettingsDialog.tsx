@@ -14,9 +14,8 @@ import {
 } from "@/lib/terminal-settings";
 
 const THEME_HINTS: Record<string, string> = {
-  pixel: "8-bit phosphor console (default)",
   sheet: "paper engineering drawing",
-  dark: "classic dark",
+  dark: "classic dark (default)",
   light: "classic light",
   custom: "your JSON theme (edit below)",
 };

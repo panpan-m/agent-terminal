@@ -18,7 +18,7 @@ import {
 } from "@/lib/themeSpecs";
 
 export type Theme = ThemeId;
-export const THEMES: Theme[] = ["pixel", "sheet", "dark", "light", "custom"];
+export const THEMES: Theme[] = ["dark", "sheet", "light", "custom"];
 const STORAGE_KEY = "tio-theme";
 const CUSTOM_KEY = "tio-theme-custom";
 /** Marks that the stored theme was chosen by a build that knows this theme set. */

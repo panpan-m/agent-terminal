@@ -5,7 +5,7 @@ A cross-platform **shared serial terminal gateway**: one long-running
 **xterm.js web terminal**, and agents drive the console with **MCP** tools.
 Nobody else opens the port.
 
-![Serial sessions in the pixel theme](docs/screenshots/25-pixel-sessions.png)
+![Serial sessions](docs/screenshots/32-sessions-dark.png)
 
 > Verified on Windows 10: **142 tests**, plus end-to-end, packaged-binary and
 > live-hardware checks against a real board —
@@ -17,7 +17,7 @@ Nobody else opens the port.
 
 **One terminal workspace.** The tab bar lists the configured serial sessions;
 switching reattaches to the matching xterm view
-([a command in the pixel theme](docs/screenshots/29-terminal-command.png)).
+([the terminal](docs/screenshots/33-terminal-dark.png)).
 Terminals render through a **WebGL renderer** (DOM fallback for RDP/VMs), so
 fast output and deep scrollback stay smooth.
 
@@ -39,10 +39,10 @@ every resize — full-screen TUIs (apt/dpkg) draw correctly instead of wedging
 the screen. A one-click terminal-state reset fixes anything a misbehaving
 TUI leaves behind.
 
-**Themes as data.** **pixel** (8-bit phosphor, the default), **sheet**
-(paper engineering drawing), **dark** and **light** share one layout; a
-**custom** theme can be pasted as JSON and merges over the dark baseline
-([terminal](docs/screenshots/26-pixel-terminal.png),
+**Themes as data.** **dark** (the default), **sheet** (paper engineering
+drawing) and **light** share one layout; a **custom** theme can be pasted as
+JSON and merges over the dark baseline
+([terminal](docs/screenshots/33-terminal-dark.png),
 [sheet](docs/screenshots/27-sheet-sessions.png),
 [light](docs/screenshots/30-terminal-light.png)). The webfonts are
 self-hosted, so the UI renders the same offline.
