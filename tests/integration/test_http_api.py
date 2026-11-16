@@ -22,6 +22,9 @@ def app_bundle(tmp_path):
 
 
 def create_session(client: TestClient, **overrides) -> dict:
+    # ``shared`` control keeps the operator write path open, which is what the
+    # API/console tests below exercise.  The agent-exclusive production default
+    # is covered by test_control_mode.py.
     body = {
         "id": "board-a",
         "name": "Board A",
@@ -29,6 +32,7 @@ def create_session(client: TestClient, **overrides) -> dict:
         "baudrate": 115200,
         "auto_open": True,
         "agent_permissions": ["read", "write", "command"],
+        "control": "shared",
     }
     body.update(overrides)
     r = client.post("/api/sessions", json=body)
@@ -120,6 +124,39 @@ def test_invalid_session_rejected(app_bundle):
 
 def test_mcp_status_endpoint(app_bundle):
     client, _, secrets = app_bundle
+    create_session(client)
+
+    # One serial session: the MCP surface binds it automatically, so an agent
+    # never connects to a server that publishes nothing.
+    r = client.get("/api/mcp")
+    assert r.status_code == 200
+    assert [tool["name"] for tool in r.json()["tools"]] == [
+        "serial_sessions",
+        "serial_status",
+        "serial_read",
+        "serial_tail",
+        "serial_write",
+        "serial_break",
+        "serial_command",
+        "serial_expect",
+    ]
+    r = client.get("/api/mcp/bindings")
+    assert r.status_code == 200
+    assert r.json()["serial_session_id"] == "board-a"
+    assert r.json()["serial_alive"] is True
+
+    # An explicit unbind is honoured: nothing is published until re-bound.
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": None, "ssh_session_id": None})
+    assert r.status_code == 200, r.text
+    assert client.get("/api/mcp").json()["tools"] == []
+
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": "nope", "ssh_session_id": None})
+    assert r.status_code == 404
+
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": "board-a", "ssh_session_id": None})
+    assert r.status_code == 200, r.text
+    assert r.json()["serial_session_id"] == "board-a"
+
     r = client.get("/api/mcp")
     assert r.status_code == 200
     data = r.json()
@@ -139,14 +176,6 @@ def test_mcp_status_endpoint(app_bundle):
         "serial_break",
         "serial_command",
         "serial_expect",
-        "ssh_sessions",
-        "ssh_host_info",
-        "ssh_status",
-        "ssh_read",
-        "ssh_tail",
-        "ssh_write",
-        "ssh_exec",
-        "ssh_expect",
     ]
     assert any(tool["read_only"] for tool in data["tools"])
     assert any(tool["destructive"] for tool in data["tools"])
@@ -174,6 +203,8 @@ def test_mcp_requires_bearer(app_bundle):
 def test_mcp_end_to_end(app_bundle):
     client, _, secrets = app_bundle
     create_session(client)
+    r = client.put("/api/mcp/bindings", json={"serial_session_id": "board-a", "ssh_session_id": None})
+    assert r.status_code == 200
     headers = {
         "Authorization": f"Bearer {secrets['api_token']}",
         "Accept": "application/json, text/event-stream",

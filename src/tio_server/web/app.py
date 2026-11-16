@@ -13,8 +13,8 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
-from urllib.parse import quote, urlparse
+from typing import Any, Callable, Literal
+from urllib.parse import parse_qs, quote, urlparse
 
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -23,16 +23,17 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 
 from ..auth import AuthManager
-from ..config import Config, ResetStep, SessionConfig
-from ..errors import CONFLICT, INVALID_ARGUMENT, UNAUTHORIZED, ToolFailure
+from ..config import CONTROL_MODES, Config, ResetStep, SessionConfig
+from ..errors import CONFLICT, INVALID_ARGUMENT, NOT_FOUND, PERMISSION_DENIED, UNAUTHORIZED, ToolFailure
 from ..mcp import build_mcp_server
 from ..mcp.audit import McpAuditLog
+from ..mcp.bindings import McpBindings
 from ..observability import setup_logging
 from ..sessions import Session, SessionManager
 from ..ssh import SshManager, SshProfileStore, SshSecretStore
 from ..ssh.importers import parse_ssh_config
+from ..ssh.local_open import LocalOpenManager
 from ..transcript import now_iso
-from .pet_models import PetModelStore
 
 __version__ = "0.1.0"
 
@@ -101,43 +102,87 @@ def _allowed_hosts(config: Config) -> set[str]:
 
 
 class _LocalRequestGuard:
-    """Host/Origin allow-list for the unauthenticated ``/api`` and ``/ws`` surface.
+    """Host/Origin allow-list, plus a token gate for a non-loopback bind.
 
-    With no admin sessions there are no ambient credentials to steal, so the
-    remaining browser threat is cross-site abuse: a foreign ``Origin`` header
-    or a DNS-rebinding ``Host``. Both are rejected here. Non-browser local
-    clients (curl, the MCP shim) are unaffected.
+    On loopback there are no ambient credentials to steal, so the remaining
+    browser threat is cross-site abuse: a foreign ``Origin`` header or a
+    DNS-rebinding ``Host``, both rejected here.  Non-browser local clients
+    (curl, the MCP shim) are unaffected.
+
+    The Host check is a browser guard, not authentication: any non-browser
+    client can send whatever ``Host`` it likes.  So as soon as the server leaves
+    loopback (``security.allow_remote_bind``) the ``/api`` and ``/ws`` surface
+    requires the same bearer token as ``/mcp`` — otherwise a single boolean
+    would publish a fully unauthenticated serial control plane on the network.
     """
 
-    def __init__(self, app: Any, *, allowed_hosts: set[str] | None = None,
-                 allowed_origins: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        app: Any,
+        *,
+        allowed_hosts: set[str] | None = None,
+        allowed_origins: set[str] | None = None,
+        require_token: bool = False,
+        token_check: Callable[[str | None], bool] | None = None,
+    ) -> None:
         self.app = app
         self.allowed_hosts = allowed_hosts or set()
         self.allowed_origins = allowed_origins or set()
+        self.require_token = require_token
+        self.token_check = token_check
+
+    @staticmethod
+    def _headers(scope: dict) -> dict[str, str]:
+        return {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+
+    def _authorised(self, headers: dict[str, str], scope: dict) -> bool:
+        if not self.require_token or self.token_check is None:
+            return True
+        token = ""
+        authorization = headers.get("authorization", "")
+        if authorization.lower().startswith("bearer "):
+            token = authorization[7:].strip()
+        if not token:
+            values = parse_qs(scope.get("query_string", b"").decode("latin-1")).get("token") or []
+            token = values[0] if values else ""
+        return self.token_check(token or None)
 
     async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        guarded = (
+            path == "/api"
+            or path.startswith("/api/")
+            or path == "/ws"
+            or path.startswith("/ws/")
+        )
+        if not guarded:
+            await self.app(scope, receive, send)
+            return
+
+        headers = self._headers(scope)
         if scope["type"] == "websocket":
-            path = scope.get("path", "")
-            if path == "/ws" or path.startswith("/ws/"):
-                headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-                origin = headers.get("origin")
-                # Browsers always send Origin on WebSockets, which is what
-                # catches cross-site and DNS-rebinding WS attacks; the Host
-                # check below stays HTTP-only.
-                if origin and origin.rstrip("/") not in self.allowed_origins:
-                    await self._reject(scope, send)
-                    return
-        elif scope["type"] == "http":
-            path = scope.get("path", "")
-            if path == "/api" or path.startswith("/api/") or path == "/ws" or path.startswith("/ws/"):
-                headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-                host = headers.get("host", "")
-                origin = headers.get("origin")
-                if (host and host not in self.allowed_hosts) or (
-                    origin and origin.rstrip("/") not in self.allowed_origins
-                ):
-                    await self._reject(scope, send)
-                    return
+            # Browsers always send Origin on WebSockets, which is what catches
+            # cross-site and DNS-rebinding WS attacks.
+            origin = headers.get("origin")
+            if origin and origin.rstrip("/") not in self.allowed_origins:
+                await self._reject(scope, send)
+                return
+        else:
+            host = headers.get("host", "")
+            origin = headers.get("origin")
+            if (host and host not in self.allowed_hosts) or (
+                origin and origin.rstrip("/") not in self.allowed_origins
+            ):
+                await self._reject(scope, send)
+                return
+
+        if not self._authorised(headers, scope):
+            await self._unauthorized(scope, send)
+            return
+
         await self.app(scope, receive, send)
 
     @staticmethod
@@ -153,6 +198,35 @@ class _LocalRequestGuard:
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    @staticmethod
+    async def _unauthorized(scope, send) -> None:  # type: ignore[no-untyped-def]
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 4401, "reason": "bearer token required"})
+            return
+        body = json.dumps(
+            {
+                "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "this server is bound off loopback: send the API token as "
+                    "'Authorization: Bearer <token>' or '?token=<token>'",
+                    "details": {},
+                    "retryable": False,
+                }
+            }
+        ).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                    (b"www-authenticate", b'Bearer realm="agent-terminal"'),
                 ],
             }
         )
@@ -238,10 +312,17 @@ class SessionBody(BaseModel):
     auto_reconnect: bool = True
     buffer_bytes: int = 8 * 1024 * 1024
     agent_permissions: list[str] = Field(default_factory=lambda: ["read", "write", "command"])
+    control: str = "agent"
     transcript: bool = True
     reset_sequence: list[ResetStepBody] = Field(default_factory=list)
 
     def to_config(self, session_id: str) -> SessionConfig:
+        if self.control not in CONTROL_MODES:
+            raise ToolFailure(
+                INVALID_ARGUMENT,
+                f"control must be one of {list(CONTROL_MODES)}",
+                {"control": self.control},
+            )
         return SessionConfig(
             id=session_id,
             name=self.name or session_id,
@@ -256,6 +337,7 @@ class SessionBody(BaseModel):
             auto_reconnect=self.auto_reconnect,
             buffer_bytes=self.buffer_bytes,
             agent_permissions=list(self.agent_permissions),
+            control=self.control,
             transcript=self.transcript,
             reset_sequence=[ResetStep(**s.model_dump()) for s in self.reset_sequence],
         )
@@ -329,13 +411,23 @@ class SftpPathBody(BaseModel):
     path: str
 
 
+class SftpChmodBody(BaseModel):
+    path: str
+    mode: int = Field(ge=0, le=0o7777)
+
+
+class SshRenameBody(BaseModel):
+    name: str = Field(max_length=120)
+
+
 class SftpRenameBody(BaseModel):
     path: str
     new_path: str
 
 
-class SshAgentBody(BaseModel):
-    enabled: bool
+class McpBindingsBody(BaseModel):
+    serial_session_id: str | None = None
+    ssh_session_id: str | None = None
 
 
 # ------------------------------------------------------------------- app factory
@@ -344,7 +436,6 @@ def create_app(config: Config) -> FastAPI:
     manager = SessionManager(config, on_config_changed=_save_config)
     ssh_profiles = SshProfileStore(config.data_dir)
     ssh_secrets = SshSecretStore(config.data_dir)
-    pet_models = PetModelStore(config.data_dir)
     ssh_manager = SshManager(
         config,
         ssh_profiles,
@@ -355,13 +446,38 @@ def create_app(config: Config) -> FastAPI:
     auth = AuthManager(api_token_hash=config.auth.api_token_hash)
     auth.allowed_origins = _allowed_origins(config)
     started_at = time.time()
+    local_open = LocalOpenManager(audit=manager.audit)
+    mcp_bindings = McpBindings()
+
+    def autobind_single_serial() -> None:
+        """Bind the only serial session so agents see the serial tools at once.
+
+        With exactly one session there is no choice to make, and an unbound
+        server publishes no serial tool at all.  Two or more sessions keep the
+        operator's explicit choice from the MCP tab.
+        """
+        if mcp_bindings.serial_session_id:
+            return
+        ids = list(manager.sessions)
+        if len(ids) == 1:
+            mcp_bindings.set(serial_session_id=ids[0])
+            manager.audit.write("mcp.autobind", session=ids[0], reason="single serial session")
+
+    def drop_binding_if(session_id: str) -> None:
+        if mcp_bindings.serial_session_id == session_id:
+            mcp_bindings.set(serial_session_id=None)
+            manager.audit.write("mcp.unbind", session=session_id, reason="session removed")
 
     def session_payload(sess) -> dict:
         return sess.status()
 
-    mcp_audit = McpAuditLog()
-    mcp_server = build_mcp_server(manager, config, ssh_manager, audit=mcp_audit)
+    mcp_audit = McpAuditLog(durable=manager.audit)
+    mcp_server = build_mcp_server(manager, config, ssh_manager, audit=mcp_audit, bindings=mcp_bindings)
     allowed_hosts = _allowed_hosts(config)
+    # A Host header is not authentication.  The moment the admin surface leaves
+    # loopback it must prove identity with the API token, or a single config
+    # boolean would publish an unauthenticated serial control plane.
+    require_admin_token = config.server.bind not in ("127.0.0.1", "localhost", "::1")
     transport = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=sorted(allowed_hosts),
@@ -376,10 +492,12 @@ def create_app(config: Config) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         manager.start()
+        autobind_single_serial()
         try:
             async with mcp_server.session_manager.run():
                 yield
         finally:
+            local_open.stop()
             ssh_manager.stop()
             manager.stop()
 
@@ -396,14 +514,17 @@ def create_app(config: Config) -> FastAPI:
     app.state.ssh = ssh_manager
     app.state.ssh_profiles = ssh_profiles
     app.state.ssh_secrets = ssh_secrets
-    app.state.pet_models = pet_models
     app.state.auth = auth
     app.state.logger = logger
+    app.state.mcp_server = mcp_server
+    app.state.mcp_bindings = mcp_bindings
     app.add_middleware(_McpPathRewrite)
     app.add_middleware(
         _LocalRequestGuard,
         allowed_hosts=allowed_hosts,
         allowed_origins=auth.allowed_origins,
+        require_token=require_admin_token,
+        token_check=auth.check_api_token,
     )
 
     # ------------------------------------------------------------------ plumbing
@@ -542,13 +663,15 @@ def create_app(config: Config) -> FastAPI:
     async def ssh_get_session(session_id: str):
         return ssh_manager.get(session_id).status()
 
-    @app.post("/api/ssh/sessions/{session_id}/agent")
-    async def ssh_set_agent_visible(
+    @app.post("/api/ssh/sessions/{session_id}/rename")
+    async def ssh_rename_session(
         session_id: str,
-        body: SshAgentBody,
+        body: SshRenameBody,
     ):
-        enabled = await asyncio.to_thread(ssh_manager.set_agent_visible, session_id, body.enabled)
-        return {"enabled": enabled}
+        sess = ssh_manager.get(session_id)
+        name = await asyncio.to_thread(sess.set_label, body.name)
+        manager.audit.write("ssh.rename", session=session_id, name=name)
+        return {"name": name}
 
     @app.get("/api/ssh/sessions/{session_id}/transcript")
     async def ssh_transcript(session_id: str, limit: int = 200):
@@ -677,38 +800,46 @@ def create_app(config: Config) -> FastAPI:
         manager.audit.write("ssh.sftp_rename", session=session_id, old=old, new=new)
         return {"path": new}
 
+    @app.get("/api/ssh/sessions/{session_id}/sftp/stat")
+    async def ssh_sftp_stat(
+        session_id: str,
+        path: str,
+    ):
+        sess = ssh_manager.get(session_id)
+        return await asyncio.to_thread(sess.sftp_stat_full, path)
+
+    @app.post("/api/ssh/sessions/{session_id}/sftp/chmod")
+    async def ssh_sftp_chmod(
+        session_id: str,
+        body: SftpChmodBody,
+    ):
+        sess = ssh_manager.get(session_id)
+        result = await asyncio.to_thread(sess.sftp_chmod, body.path, body.mode)
+        manager.audit.write("ssh.sftp_chmod", session=session_id, path=result["path"], mode=result["mode"])
+        return result
+
+    @app.post("/api/ssh/sessions/{session_id}/sftp/open-local")
+    async def ssh_sftp_open_local(
+        session_id: str,
+        body: SftpPathBody,
+        request: Request,
+    ):
+        # the OS association can only be looked up on the machine the server
+        # runs on, so refuse when the UI reaches us from another host
+        client_host = request.client.host if request.client else ""
+        if client_host not in ("127.0.0.1", "::1", "localhost"):
+            raise ToolFailure(
+                PERMISSION_DENIED,
+                "opening with a local application requires the UI to run on the same machine as the server",
+            )
+        sess = ssh_manager.get(session_id)
+        result = await asyncio.to_thread(local_open.open_remote, sess, body.path)
+        return result
+
     @app.post("/api/ssh/sessions/{session_id}/disconnect")
     async def ssh_disconnect(session_id: str):
         await asyncio.to_thread(ssh_manager.disconnect, session_id)
         return {"ok": True}
-
-    # --------------------------------------------------------------- pet models
-    @app.get("/api/pet/models")
-    async def pet_model_list():
-        return {"models": await asyncio.to_thread(pet_models.list)}
-
-    @app.post("/api/pet/models", status_code=201)
-    async def pet_model_upload(file: UploadFile = File(...)):
-        data = await file.read(64 * 1024 * 1024 + 1)
-        entry = await asyncio.to_thread(pet_models.save, file.filename or "", data)
-        manager.audit.write("pet.model_upload", model=entry["id"], name=entry["name"], bytes=entry["size"])
-        return entry
-
-    @app.get("/api/pet/models/{model_id}/file")
-    async def pet_model_file(model_id: str):
-        path = await asyncio.to_thread(pet_models.path, model_id)
-        return FileResponse(
-            path,
-            media_type="model/gltf-binary",
-            headers={"Cache-Control": "public, max-age=31536000, immutable"},
-        )
-
-    @app.delete("/api/pet/models/{model_id}")
-    async def pet_model_delete(model_id: str):
-        await asyncio.to_thread(pet_models.delete, model_id)
-        manager.audit.write("pet.model_delete", model=model_id)
-        return {"ok": True}
-
 
     # ----------------------------------------------------------------- sessions
     @app.get("/api/sessions")
@@ -726,6 +857,7 @@ def create_app(config: Config) -> FastAPI:
         sess = manager.create_session(body.to_config(body.id))
         if body.auto_open:
             await asyncio.to_thread(sess.open)
+        autobind_single_serial()
         return session_payload(sess)
 
     @app.put("/api/sessions/{session_id}")
@@ -739,6 +871,8 @@ def create_app(config: Config) -> FastAPI:
     @app.delete("/api/sessions/{session_id}")
     async def delete_session(session_id: str):
         await asyncio.to_thread(manager.remove_session, session_id)
+        drop_binding_if(session_id)
+        autobind_single_serial()
         return {"ok": True}
 
     @app.post("/api/sessions/{session_id}/open")
@@ -783,6 +917,7 @@ def create_app(config: Config) -> FastAPI:
     @app.post("/api/sessions/{session_id}/break")
     async def break_now(session_id: str, body: BreakBody):
         sess = manager.get(session_id)
+        manager.limiter.check()
         return await asyncio.to_thread(sess.send_break, body.duration_ms, source="human")
 
     @app.post("/api/sessions/{session_id}/write")
@@ -796,12 +931,15 @@ def create_app(config: Config) -> FastAPI:
                 f"payload larger than {limit} bytes",
                 {"bytes": len(payload), "limit": limit},
             )
+        # The rate limit lives on the session manager; enforcing it only in the
+        # MCP tools left the admin write path unlimited.
+        manager.limiter.check()
         written = await asyncio.to_thread(sess.write_bytes, payload, source="human")
         return {"bytes_written": written, "tx_cursor": sess.ring.head, "control_owner": sess.control_owner}
-
     @app.post("/api/sessions/{session_id}/command")
     async def command_now(session_id: str, body: CommandBody):
         sess = manager.get(session_id)
+        manager.limiter.check()
         result = await asyncio.to_thread(
             sess.command,
             body.command,
@@ -869,6 +1007,30 @@ def create_app(config: Config) -> FastAPI:
             ],
             "health": {"sessions_open": sum(1 for s in manager.sessions.values() if s.is_open)},
         }
+
+    @app.get("/api/mcp/bindings")
+    async def mcp_get_bindings():
+        serial_id = mcp_bindings.serial_session_id
+        ssh_id = mcp_bindings.ssh_session_id
+        return {
+            "serial_session_id": serial_id,
+            "ssh_session_id": ssh_id,
+            "serial_alive": bool(serial_id and serial_id in manager.sessions),
+            "ssh_alive": bool(ssh_id and any(item["session_id"] == ssh_id for item in ssh_manager.list())),
+        }
+
+    @app.put("/api/mcp/bindings")
+    async def mcp_set_bindings(body: McpBindingsBody):
+        if body.serial_session_id is not None and body.serial_session_id not in manager.sessions:
+            raise ToolFailure(NOT_FOUND, f"unknown serial session: {body.serial_session_id}")
+        if body.ssh_session_id is not None:
+            ssh_manager.get(body.ssh_session_id)  # raises NOT_FOUND for stale ids
+        result = mcp_bindings.set(
+            serial_session_id=body.serial_session_id,
+            ssh_session_id=body.ssh_session_id,
+        )
+        manager.audit.write("mcp.bindings", **result)
+        return result
 
     @app.get("/api/mcp")
     async def mcp_status():
@@ -971,9 +1133,11 @@ def create_app(config: Config) -> FastAPI:
                 try:
                     if kind == "write":
                         data = base64.b64decode(msg.get("data_b64", ""))
+                        manager.limiter.check()
                         written = await asyncio.to_thread(sess.write_bytes, data, source="human")
                         await send_json({"type": "ack", "id": req_id, "bytes_written": written})
                     elif kind == "command":
+                        manager.limiter.check()
                         result = await asyncio.to_thread(
                             sess.command,
                             msg.get("command", ""),
@@ -995,6 +1159,9 @@ def create_app(config: Config) -> FastAPI:
                         )
                     elif kind == "set_lines":
                         await asyncio.to_thread(sess.set_lines, msg.get("dtr"), msg.get("rts"))
+                        manager.audit.write(
+                            "session.lines", session=session_id, dtr=msg.get("dtr"), rts=msg.get("rts")
+                        )
                         await send_json({"type": "ack", "id": req_id})
                     elif kind == "ping":
                         await send_json({"type": "pong", "id": req_id})

@@ -39,6 +39,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     import uvicorn
 
+    from .platform.single_instance import SingleInstanceLock
     from .web.app import create_app
 
     path = Path(args.config).expanduser()
@@ -47,17 +48,34 @@ def _cmd_run(args: argparse.Namespace) -> int:
     except ToolFailure as exc:
         print(f"error: {exc.message}", file=sys.stderr)
         return 2
+
+    # One gateway per data directory.  Without this, two instances would both
+    # open the port on Windows (where exclusivity is a driver convention) and
+    # both fight over the admin port and the transcripts.
+    lock = SingleInstanceLock(cfg.data_dir / "agent-terminal.lock")
+    if not lock.acquire():
+        holder = lock.holder() or "unknown pid"
+        print(
+            f"error: another agent-terminal already owns {cfg.data_dir} (pid {holder}); "
+            "stop it, or point this one at a different data dir",
+            file=sys.stderr,
+        )
+        return 3
+
     app = create_app(cfg)
     host = args.host or cfg.server.bind
     port = args.port or cfg.server.port
-    uvicorn.run(
-        app,
-        host=host,
-        port=port,
-        log_level=cfg.server.log_level,
-        access_log=False,
-        log_config=None,
-    )
+    try:
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            log_level=cfg.server.log_level,
+            access_log=False,
+            log_config=None,
+        )
+    finally:
+        lock.release()
     return 0
 
 

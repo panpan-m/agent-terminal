@@ -19,11 +19,10 @@ from __future__ import annotations
 
 import codecs
 import fnmatch
-import queue
 import threading
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Iterator
@@ -36,6 +35,7 @@ from .errors import (
     NO_SESSION,
     RATE_LIMITED,
     READ_DISABLED,
+    READ_ONLY,
     SESSION_NOT_FOUND,
     WRITE_DISABLED,
     WRITE_LOCKED,
@@ -44,6 +44,7 @@ from .errors import (
 from .errors import BUFFER_GAP as BUFFER_GAP_CODE
 from .ring import ReadSlice, RingBuffer
 from .serial import Disconnected, SerialError, SerialHandle, WriteTimeout, make_backend
+from .streaming import StreamSession, Subscriber
 from .transcript import AuditLog, TranscriptRegistry, TranscriptWriter, now_iso
 
 BUSY = "BUSY"
@@ -61,35 +62,6 @@ class SessionState(str, Enum):
     RECONNECTING = "reconnecting"
     ERROR = "error"
     CLOSED = "closed"
-
-
-@dataclass
-class Subscriber:
-    """A bounded stream of session events for one WebSocket client."""
-
-    maxsize: int = 2048
-    q: queue.Queue = field(default_factory=queue.Queue)
-    dropped: int = 0
-    overflowed: bool = False
-
-    def put(self, item: Any) -> None:
-        try:
-            self.q.put_nowait(item)
-            self.overflowed = False
-        except queue.Full:
-            self.dropped += 1
-            if not self.overflowed:
-                self.overflowed = True
-                try:
-                    self.q.put_nowait({"type": "overflow", "dropped": self.dropped})
-                except queue.Full:
-                    pass
-
-    def get(self, timeout: float) -> Any | None:
-        try:
-            return self.q.get(timeout=timeout)
-        except queue.Empty:
-            return None
 
 
 @dataclass
@@ -125,13 +97,16 @@ class RateLimiter:
             self._events.append(now)
 
 
-class Session:
+class Session(StreamSession):
     def __init__(self, cfg: SessionConfig, manager: "SessionManager") -> None:
         self.cfg = cfg
         self.manager = manager
         self.ring = RingBuffer(cfg.buffer_bytes)
         self.state = SessionState.UNCONFIGURED
-        self.control_owner = "human"
+        #: Owner state for ``shared`` control.  In ``agent`` control the owner is
+        #: derived (see :attr:`control_owner`) and this value is inert, so there
+        #: is exactly one writable field for the concept.
+        self._shared_owner = "human"
         self.handle: SerialHandle | None = None
         self.last_error: str | None = None
         self.last_error_code: str | None = None
@@ -146,11 +121,10 @@ class Session:
         self._stop = threading.Event()
         self._reader: threading.Thread | None = None
         self._write_lock = threading.Lock()
-        self._sub_lock = threading.Lock()
-        self._subs: list[Subscriber] = []
         self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self.transcript: TranscriptWriter = manager.transcripts.writer(cfg.id, cfg.transcript)
         self._identity = cfg.port
+        self._init_streaming(ring=self.ring, transcript=self.transcript)
 
     # ------------------------------------------------------------------ naming
     @property
@@ -167,6 +141,36 @@ class Session:
     @property
     def is_open(self) -> bool:
         return self.state is SessionState.OPEN
+
+    @property
+    def human_writable(self) -> bool:
+        """Whether operator console input (write/command/break) is accepted."""
+        return self.cfg.control == "shared" and self.control_owner == "human"
+
+    @property
+    def control_owner(self) -> str:
+        """Who owns the wire right now.
+
+        Derived, never stored: ``agent`` control fixes the owner to the agent, so
+        a second writable field could only drift out of agreement with the mode.
+        """
+        if self.cfg.control == "agent":
+            return "agent"
+        return self._shared_owner
+
+    def _seat_shared_owner(self, owner: str) -> str:
+        """Set the ``shared``-mode owner (the only writable owner state)."""
+        if owner not in ("human", "agent"):
+            raise ToolFailure(INVALID_ARGUMENT, "control_owner must be human or agent")
+        if self.cfg.control == "agent":
+            raise ToolFailure(
+                READ_ONLY,
+                'session control is fixed to the agent; set control = "shared" on the session to hand control around',
+                {"session_id": self.id, "control": self.cfg.control},
+            )
+        previous = self._shared_owner
+        self._shared_owner = owner
+        return previous
 
     # --------------------------------------------------------------- lifecycle
     def open(self) -> None:
@@ -213,8 +217,7 @@ class Session:
         self.ring.close()
         self.transcript.event("close")
         self.manager.audit.write("session.close", session=self.id)
-        for sub in list(self._subs):
-            sub.put({"type": "state", "state": self.state.value})
+        self._broadcast({"type": "state", "state": self.state.value})
 
     def restart(self) -> None:
         was_open = self.state is SessionState.OPEN
@@ -245,15 +248,12 @@ class Session:
             if data:
                 self._ingest(data)
 
+    def _after_append(self, data: bytes, offset: int) -> None:
+        self.rx_bytes += len(data)
+        self.last_rx_at = now_iso()
+
     def _ingest(self, data: bytes) -> None:
-        with self._sub_lock:
-            offset = self.ring.append(data)
-            self.rx_bytes += len(data)
-            self.last_rx_at = now_iso()
-            if self.cfg.transcript:
-                self.transcript.data("rx", offset, data, "device")
-            for sub in list(self._subs):
-                sub.put({"type": "rx", "offset": offset, "data": data})
+        self._append_rx(data, "device", transcript=self.cfg.transcript)
 
     def _on_disconnect(self, message: str) -> None:
         if self._stop.is_set():
@@ -323,43 +323,6 @@ class Session:
         self.last_error = message
         self.last_error_code = code
         self._broadcast_status()
-
-    def _broadcast_status(self) -> None:
-        payload = {"type": "status", "status": self.status()}
-        with self._sub_lock:
-            for sub in list(self._subs):
-                sub.put(payload)
-
-    # -------------------------------------------------------------- subscribers
-    def subscribe(
-        self, replay_bytes: int = 0, maxsize: int = 2048, cursor: int | None = None
-    ) -> Subscriber:
-        sub = Subscriber(maxsize=maxsize)
-        replay = b""
-        offset = self.ring.head
-        dropped = 0
-        with self._sub_lock:
-            if cursor is not None:
-                sl = self.ring.read(cursor=max(0, int(cursor)), max_bytes=1024 * 1024)
-                replay, offset = sl.data, sl.start
-                dropped = sl.lost_bytes if sl.gap else 0
-            elif replay_bytes > 0:
-                sl = self.ring.read(tail_bytes=replay_bytes, max_bytes=replay_bytes)
-                replay, offset = sl.data, sl.start
-            # history must land in the queue before the subscriber goes live,
-            # or a chunk ingested in between would render ahead of the replay
-            if dropped:
-                sub.put({"type": "overflow", "dropped": dropped})
-            if replay:
-                sub.put({"type": "replay", "offset": offset, "data": replay})
-            self._subs.append(sub)
-        sub.put({"type": "status", "status": self.status()})
-        return sub
-
-    def unsubscribe(self, sub: Subscriber) -> None:
-        with self._sub_lock:
-            if sub in self._subs:
-                self._subs.remove(sub)
 
     # --------------------------------------------------------------- read path
     def read(
@@ -441,6 +404,27 @@ class Session:
             raise ToolFailure(DISCONNECTED, "serial device is reconnecting", {"session_id": self.id}, retryable=True)
         if self.state is not SessionState.OPEN:
             raise ToolFailure(DISCONNECTED, f"session is not open (state={self.state.value})", {"session_id": self.id})
+        if source == "admin":
+            # Operator hardware control (DTR/RTS lines, reset sequence) is the
+            # equivalent of pressing the board's reset button: it never injects
+            # bytes into the console stream, so it stays available in both modes
+            # and is recorded as its own audit event.
+            return
+        if self.cfg.control == "agent":
+            if source != "agent":
+                raise ToolFailure(
+                    READ_ONLY,
+                    "this session is under agent control; the operator terminal observes only",
+                    {"session_id": self.id, "control": self.cfg.control},
+                )
+            if need not in self.cfg.agent_permissions:
+                raise ToolFailure(
+                    WRITE_DISABLED,
+                    f"agent {need} permission is disabled",
+                    {"session_id": self.id, "permissions": self.cfg.agent_permissions},
+                )
+            return
+        # shared control: the live control_owner switch arbitrates both sides
         if source == "agent":
             if need not in self.cfg.agent_permissions:
                 raise ToolFailure(
@@ -455,7 +439,7 @@ class Session:
                     {"session_id": self.id, "control_owner": self.control_owner},
                     retryable=True,
                 )
-        else:  # human / admin
+        else:  # human
             if self.control_owner != "human":
                 raise ToolFailure(
                     WRITE_LOCKED,
@@ -537,11 +521,7 @@ class Session:
         self.tx_bytes += total
         self.last_tx_at = now_iso()
         self.last_write_source = source
-        if self.cfg.transcript:
-            self.transcript.data("tx", self.ring.head, data[:total], source)
-        with self._sub_lock:
-            for sub in list(self._subs):
-                sub.put({"type": "tx", "data": data[:total], "source": source})
+        self._fan_tx(data[:total], source, transcript=self.cfg.transcript)
         return total
 
     def command(
@@ -756,6 +736,8 @@ class Session:
                 "open_mode": cfg.open_mode,
             },
             "control_owner": self.control_owner,
+            "control": cfg.control,
+            "human_writable": self.human_writable,
             "agent_permissions": list(cfg.agent_permissions),
             "rx_bytes": self.rx_bytes,
             "tx_bytes": self.tx_bytes,
@@ -874,8 +856,14 @@ class SessionManager:
                 raise ToolFailure(SESSION_NOT_FOUND, f"unknown session: {scfg.id}")
             self.config.validate_session(scfg)
             was_open = old.is_open
+            mode_changed = old.cfg.control != scfg.control
             old.cfg = scfg
             old.config_revision += 1
+            if mode_changed:
+                # Entering ``shared`` control always starts from the operator
+                # side; ``agent`` control derives its owner from the mode, so
+                # there is no second field to keep in sync.
+                old._shared_owner = "human"
             self.config.replace_session(scfg)
         self._persist()
         if reopen and was_open:
@@ -894,15 +882,12 @@ class SessionManager:
         self._persist()
 
     def set_control_owner(self, session_id: str, owner: str) -> str:
-        if owner not in ("human", "agent"):
-            raise ToolFailure(INVALID_ARGUMENT, "control_owner must be human or agent")
         sess = self.get(session_id)
-        previous = sess.control_owner
-        sess.control_owner = owner
+        previous = sess._seat_shared_owner(owner)
         sess.transcript.event("control_owner", previous=previous, owner=owner)
         self.audit.write("session.control_owner", session=session_id, previous=previous, owner=owner)
         sess._broadcast_status()
-        return owner
+        return sess.control_owner
 
     def set_permissions(self, session_id: str, permissions: list[str]) -> list[str]:
         valid = {"read", "write", "command"}

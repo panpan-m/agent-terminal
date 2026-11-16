@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tio_server.config import init_config
+from tio_server.mcp.bindings import McpBindings
 from tio_server.mcp.tools import build_mcp_server
 from tio_server.serial.simulator import wait_until
 from tio_server.sessions import SessionManager
@@ -24,6 +25,13 @@ def secured(tmp_path):
     with TestClient(app, base_url="http://127.0.0.1:8765") as client:
         yield client, cfg, secrets, app
     app.state.manager.stop()
+
+
+def bound_mcp(mgr, cfg):
+    """MCP server with the serial session bound (unbound publishes no tool)."""
+    bindings = McpBindings()
+    bindings.set(serial_session_id="board-a")
+    return build_mcp_server(mgr, cfg, bindings=bindings)
 
 
 def test_api_rejects_foreign_origin(secured):
@@ -87,7 +95,7 @@ async def test_regex_dos_is_bounded(make_config):
     cfg.security.rate_limit_per_second = 1000
     cfg.security.regex_timeout_ms = 200
     mgr = SessionManager(cfg)
-    mcp = build_mcp_server(mgr, cfg)
+    mcp = bound_mcp(mgr, cfg)
     try:
         session = mgr.get("board-a")
         session.open()
@@ -114,7 +122,7 @@ async def test_pattern_length_limit(make_config):
     cfg.security.max_pattern_length = 32
     cfg.security.rate_limit_per_second = 1000
     mgr = SessionManager(cfg)
-    mcp = build_mcp_server(mgr, cfg)
+    mcp = bound_mcp(mgr, cfg)
     try:
         mgr.get("board-a").open()
         result = await mcp.call_tool(

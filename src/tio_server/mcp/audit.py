@@ -1,9 +1,14 @@
-"""In-memory audit trail of MCP tool calls, served to the admin UI.
+"""Audit trail of MCP tool calls: a bounded in-memory view plus a durable record.
 
 Every ``tools/call`` is recorded with the timestamp, the MCP client identity
 (from the ``initialize`` handshake), the session the tool targeted, the raw
-arguments and a snipped view of the result.  Bounded and newest-first; the
-persistent audit file in the session manager keeps the long-term record.
+arguments and a snipped view of the result.
+
+The in-memory ring is what the admin UI pages through; it is capped and lost on
+restart, which is not acceptable for an audit trail.  When a durable
+:class:`~tio_server.transcript.AuditLog` is supplied the same record is also
+appended to the JSONL audit file, redacted by the configured patterns, so
+"which agent ran what, and what came back" survives a restart.
 """
 
 from __future__ import annotations
@@ -12,7 +17,10 @@ import json
 import threading
 from collections import deque
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..transcript import AuditLog
 
 MAX_INPUT_CHARS = 2000
 MAX_OUTPUT_CHARS = 4000
@@ -38,9 +46,10 @@ def _snip_json(value: Any, cap: int) -> str:
 class McpAuditLog:
     """Bounded, thread-safe record of tool invocations, newest first."""
 
-    def __init__(self, capacity: int = MAX_EVENTS) -> None:
+    def __init__(self, capacity: int = MAX_EVENTS, durable: "AuditLog | None" = None) -> None:
         self._lock = threading.Lock()
         self._events: deque[dict[str, Any]] = deque(maxlen=capacity)
+        self._durable = durable
 
     def record(
         self,
@@ -68,6 +77,13 @@ class McpAuditLog:
         }
         with self._lock:
             self._events.appendleft(entry)
+        if self._durable is not None:
+            payload = dict(entry)
+            payload.pop("ts", None)  # AuditLog stamps its own ts
+            try:
+                self._durable.write("mcp.tool_call", **payload)
+            except OSError:  # disk full / file gone: never break the tool call
+                pass
 
     def recent(self, limit: int = 100) -> list[dict[str, Any]]:
         with self._lock:

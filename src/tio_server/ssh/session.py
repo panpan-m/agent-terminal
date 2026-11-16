@@ -14,14 +14,13 @@ import hashlib
 import io
 import os
 import posixpath
-import queue
 import re
 import socket
 import stat as stat_module
 import threading
 import time
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterator
 
@@ -34,7 +33,9 @@ from ..errors import (
 )
 from ..errors import SSH_AUTH_FAILED, SSH_ERROR, SSH_HOST_KEY_CHANGED, SSH_HOST_UNKNOWN, SSH_UNREACHABLE
 from ..ring import ReadSlice, RingBuffer
+from ..streaming import StreamSession, Subscriber
 from ..transcript import TranscriptWriter, now_iso
+from .cwd_track import CwdTracker
 from .profiles import SshHost
 
 
@@ -46,31 +47,9 @@ class SshState(str, Enum):
     ERROR = "error"
 
 
-@dataclass
-class SshSubscriber:
-    maxsize: int = 2048
-    q: queue.Queue = field(default_factory=queue.Queue)
-    dropped: int = 0
-    overflowed: bool = False
-
-    def put(self, item: Any) -> None:
-        try:
-            self.q.put_nowait(item)
-            self.overflowed = False
-        except queue.Full:
-            self.dropped += 1
-            if not self.overflowed:
-                self.overflowed = True
-                try:
-                    self.q.put_nowait({"type": "overflow", "dropped": self.dropped})
-                except queue.Full:
-                    pass
-
-    def get(self, timeout: float) -> Any | None:
-        try:
-            return self.q.get(timeout=timeout)
-        except queue.Empty:
-            return None
+#: SSH fans out through the same bounded stream implementation as serial, so the
+#: backpressure behaviour cannot drift between the two transports.
+SshSubscriber = Subscriber
 
 
 def _fingerprint(key: Any) -> str:
@@ -105,7 +84,7 @@ class _ZipSink(io.RawIOBase):
             yield self.chunks.pop(0)
 
 
-class SshSession:
+class SshSession(StreamSession):
     def __init__(
         self,
         host: SshHost,
@@ -117,9 +96,9 @@ class SshSession:
         self.host = host
         self.manager = manager
         self.session_id = session_id
+        self.label: str | None = None  # UI display-name override (tab rename)
         self.state = SshState.CONNECTING
         self.control_owner = "human"
-        self.agent_visible = False
         self.ring = RingBuffer(8 * 1024 * 1024)
         self.rx_bytes = 0
         self.tx_bytes = 0
@@ -147,12 +126,11 @@ class SshSession:
         self._jump_transport: Any | None = None
         self._sftp: Any | None = None
         self._sftp_lock = threading.Lock()
+        self._cwd_tracker = CwdTracker(host.username or "")
         self._client_factory = client_factory or paramiko.SSHClient
         self._stop = threading.Event()
         self._reader: threading.Thread | None = None
         self._write_lock = threading.Lock()
-        self._sub_lock = threading.Lock()
-        self._subs: list[SshSubscriber] = []
         self._auth_args: dict[str, Any] = {}
         self._reconnecting = False
         self._reconnect_thread: threading.Thread | None = None
@@ -162,6 +140,7 @@ class SshSession:
         self._last_rows = 30
         self.transcript: TranscriptWriter = manager.transcripts.writer(session_id, True)
         self.audit = manager.audit
+        self._init_streaming(ring=self.ring, transcript=self.transcript)
 
     # ------------------------------------------------------------------ props
     @property
@@ -170,7 +149,14 @@ class SshSession:
 
     @property
     def name(self) -> str:
-        return self.host.name or self.host.id
+        return self.label or self.host.name or self.host.id
+
+    def set_label(self, label: str | None) -> str:
+        """Override the display name shown in tabs (empty/None restores the host name)."""
+        cleaned = (label or "").strip() or None
+        self.label = cleaned
+        self._broadcast_status()
+        return self.name
 
     @property
     def is_open(self) -> bool:
@@ -246,12 +232,18 @@ class SshSession:
             return "known", expected
         return "changed", expected
 
+    def _known_hosts_path(self) -> str:
+        """The file connections are validated against (shown in error hints)."""
+        if self.host.known_hosts:
+            return os.path.expanduser(self.host.known_hosts)
+        return os.path.expanduser("~/.ssh/known_hosts")
+
     def _connect_interactive(self, password: str | None, responses: list[str]) -> Any:
         transport = paramiko.Transport((self.host.host, int(self.host.port)))
         try:
             transport.start_client(timeout=int(self.host.connect_timeout_s))
             key = transport.get_remote_server_key()
-            status, _ = self._known_key_status(self.host, key)
+            status, expected = self._known_key_status(self.host, key)
             if status == "unknown":
                 raise ToolFailure(
                     SSH_HOST_UNKNOWN,
@@ -259,7 +251,8 @@ class SshSession:
                     {
                         "host_id": self.host.id,
                         "host": self.host.host,
-                        "port": self.host.port,
+                        "port": int(self.host.port),
+                        "known_hosts_file": self._known_hosts_path(),
                         "fingerprint": _fingerprint(key),
                     },
                 )
@@ -267,7 +260,14 @@ class SshSession:
                 raise ToolFailure(
                     SSH_HOST_KEY_CHANGED,
                     "SSH host key changed; refusing to connect",
-                    {"host_id": self.host.id, "host": self.host.host, "actual_fingerprint": _fingerprint(key)},
+                    {
+                        "host_id": self.host.id,
+                        "host": self.host.host,
+                        "port": int(self.host.port),
+                        "known_hosts_file": self._known_hosts_path(),
+                        "expected_fingerprint": _fingerprint(expected) if expected is not None else None,
+                        "actual_fingerprint": _fingerprint(key),
+                    },
                 )
             answers = list(responses)
             if password:
@@ -413,6 +413,8 @@ class SshSession:
                 {
                     "host_id": self.host.id,
                     "host": self.host.host,
+                    "port": int(self.host.port),
+                    "known_hosts_file": self._known_hosts_path(),
                     "expected_fingerprint": expected,
                     "actual_fingerprint": actual,
                 },
@@ -521,13 +523,17 @@ class SshSession:
                 return
             self._ingest(data)
 
+    def _after_append(self, data: bytes, offset: int) -> None:
+        self.rx_bytes += len(data)
+
     def _ingest(self, data: bytes) -> None:
-        with self._sub_lock:
-            offset = self.ring.append(data)
-            self.rx_bytes += len(data)
-            self.transcript.data("rx", offset, data, "ssh")
-            for sub in list(self._subs):
-                sub.put({"type": "rx", "offset": offset, "data": data})
+        self._append_rx(data, "ssh")
+        try:
+            cwd_changed = self._cwd_tracker.feed(data)
+        except Exception:
+            cwd_changed = False  # tracking must never break the read path
+        if cwd_changed:
+            self._broadcast_status()
 
     def _on_closed(self, message: str) -> None:
         if self._stop.is_set():
@@ -642,43 +648,6 @@ class SshSession:
             pass
         self._broadcast_status()
 
-    # -------------------------------------------------------------- subscribers
-    def subscribe(
-        self, replay_bytes: int = 0, maxsize: int = 2048, cursor: int | None = None
-    ) -> SshSubscriber:
-        sub = SshSubscriber(maxsize=maxsize)
-        replay = b""
-        offset = self.ring.head
-        dropped = 0
-        with self._sub_lock:
-            if cursor is not None:
-                sl = self.ring.read(cursor=max(0, int(cursor)), max_bytes=1024 * 1024)
-                replay, offset = sl.data, sl.start
-                dropped = sl.lost_bytes if sl.gap else 0
-            elif replay_bytes > 0:
-                sl = self.ring.read(tail_bytes=replay_bytes, max_bytes=replay_bytes)
-                replay, offset = sl.data, sl.start
-            # history must land in the queue before the subscriber goes live,
-            # or a chunk ingested in between would render ahead of the replay
-            if dropped:
-                sub.put({"type": "overflow", "dropped": dropped})
-            if replay:
-                sub.put({"type": "replay", "offset": offset, "data": replay})
-            self._subs.append(sub)
-        sub.put({"type": "status", "status": self.status()})
-        return sub
-
-    def unsubscribe(self, sub: SshSubscriber) -> None:
-        with self._sub_lock:
-            if sub in self._subs:
-                self._subs.remove(sub)
-
-    def _broadcast_status(self) -> None:
-        payload = {"type": "status", "status": self.status()}
-        with self._sub_lock:
-            for sub in list(self._subs):
-                sub.put(payload)
-
     # --------------------------------------------------------------- read path
     def read(
         self,
@@ -759,10 +728,7 @@ class SshSession:
                 self._on_closed(str(exc))
                 raise ToolFailure(DISCONNECTED, f"SSH write failed: {exc}") from exc
             self.tx_bytes += len(data)
-            self.transcript.data("tx", self.ring.head, data, source)
-            with self._sub_lock:
-                for sub in list(self._subs):
-                    sub.put({"type": "tx", "data": data, "source": source})
+            self._fan_tx(data, source)
         self._note_tx(source, command=data.decode("utf-8", "replace") if source == "agent" else None)
         return len(data)
 
@@ -799,21 +765,19 @@ class SshSession:
             if elapsed_ms is not None:
                 self.last_exec_elapsed_ms = int(elapsed_ms)
         self._broadcast_status()
-        with self._sub_lock:
-            for sub in list(self._subs):
-                sub.put(
-                    {
-                        "type": "agent",
-                        "action": self.agent_last_action if source == "agent" else action or "write",
-                        "source": source,
-                        "at": self.last_tx_at,
-                        "command": self.agent_last_command if source == "agent" else None,
-                        "output": self.agent_last_output if source == "agent" else None,
-                        "output_truncated": self.agent_last_output_truncated if source == "agent" else False,
-                        "exit_code": self.last_exec_exit_code if source == "agent" else None,
-                        "elapsed_ms": self.last_exec_elapsed_ms if source == "agent" else None,
-                    }
-                )
+        self._broadcast(
+            {
+                "type": "agent",
+                "action": self.agent_last_action if source == "agent" else action or "write",
+                "source": source,
+                "at": self.last_tx_at,
+                "command": self.agent_last_command if source == "agent" else None,
+                "output": self.agent_last_output if source == "agent" else None,
+                "output_truncated": self.agent_last_output_truncated if source == "agent" else False,
+                "exit_code": self.last_exec_exit_code if source == "agent" else None,
+                "elapsed_ms": self.last_exec_elapsed_ms if source == "agent" else None,
+            }
+        )
 
     def _note_exec(
         self,
@@ -953,6 +917,50 @@ class SshSession:
             raise ToolFailure(SSH_ERROR, f"SFTP stat failed: {exc}") from exc
         return {"size": int(st.st_size), "is_dir": stat_module.S_ISDIR(st.st_mode)}
 
+    def sftp_stat_full(self, path: str) -> dict[str, Any]:
+        """Full attributes for the file Properties dialog (lstat, so symlinks show as links)."""
+        remote = self._remote_path(path)
+        try:
+            with self._sftp_lock:
+                st = self._sftp_client().lstat(remote)
+                target = None
+                if stat_module.S_ISLNK(int(st.st_mode or 0)):
+                    try:
+                        target = self._sftp_client().readlink(remote)
+                    except Exception:
+                        target = None
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP stat failed: {exc}") from exc
+        mode = int(st.st_mode or 0)
+        return {
+            "path": remote,
+            "name": posixpath.basename(remote) or remote,
+            "size": int(st.st_size or 0),
+            "mode": oct(mode & 0o7777),
+            "is_dir": stat_module.S_ISDIR(mode),
+            "is_link": stat_module.S_ISLNK(mode),
+            "link_target": target,
+            "uid": st.st_uid,
+            "gid": st.st_gid,
+            "atime": int(st.st_atime or 0),
+            "mtime": int(st.st_mtime or 0),
+        }
+
+    def sftp_chmod(self, path: str, mode: int) -> dict[str, Any]:
+        remote = self._remote_path(path)
+        if not 0 <= int(mode) <= 0o7777:
+            raise ToolFailure(INVALID_ARGUMENT, "mode must be an octal permission value (0..0o7777)")
+        try:
+            with self._sftp_lock:
+                self._sftp_client().chmod(remote, int(mode))
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP chmod failed: {exc}") from exc
+        return {"path": remote, "mode": oct(int(mode))}
+
     def sftp_stream(self, path: str, chunk_size: int = 262144):
         """Stream a remote file in chunks for downloads.  The sftp lock is held
         per chunk, not for the whole transfer, so panel operations (list,
@@ -1078,6 +1086,58 @@ class SshSession:
             raise ToolFailure(SSH_ERROR, f"SFTP upload failed: {exc}") from exc
         return len(data)
 
+    def sftp_fetch(self, path: str, local_path: str, chunk_size: int = 262144) -> int:
+        """Stream a remote file straight to a local path; returns bytes written."""
+        remote = self._remote_path(path)
+        handle = None
+        total = 0
+        try:
+            with self._sftp_lock:
+                handle = self._sftp_client().open(remote, "rb")
+            with open(local_path, "wb") as out:
+                while True:
+                    with self._sftp_lock:
+                        chunk = handle.read(chunk_size)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    total += len(chunk)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP download failed: {exc}") from exc
+        finally:
+            if handle is not None:
+                with self._sftp_lock:
+                    handle.close()
+        return total
+
+    def sftp_put(self, local_path: str, path: str, chunk_size: int = 262144) -> int:
+        """Stream a local file to a remote path; returns bytes written."""
+        remote = self._remote_path(path)
+        handle = None
+        total = 0
+        try:
+            with self._sftp_lock:
+                handle = self._sftp_client().open(remote, "wb")
+            with open(local_path, "rb") as src:
+                while True:
+                    chunk = src.read(chunk_size)
+                    if not chunk:
+                        break
+                    with self._sftp_lock:
+                        handle.write(chunk)
+                    total += len(chunk)
+        except ToolFailure:
+            raise
+        except Exception as exc:
+            raise ToolFailure(SSH_ERROR, f"SFTP upload failed: {exc}") from exc
+        finally:
+            if handle is not None:
+                with self._sftp_lock:
+                    handle.close()
+        return total
+
     def sftp_mkdir(self, path: str) -> str:
         remote = self._remote_path(path)
         try:
@@ -1178,6 +1238,7 @@ class SshSession:
             "username": self.host.username,
             "auth": self.host.auth,
             "state": self.state.value,
+            "terminal_cwd": self._cwd_tracker.cwd,
             "host_key_fingerprint": self.host_key_fingerprint,
             "host_key_type": self.host_key_type,
             "remote_version": self.remote_version,
@@ -1192,7 +1253,6 @@ class SshSession:
             "last_error": self.last_error,
             "last_error_code": self.last_error_code,
             "control_owner": self.control_owner,
-            "agent_visible": self.agent_visible,
             "last_write_source": self.last_write_source,
             "last_tx_at": self.last_tx_at,
             "agent_last_action": self.agent_last_action,

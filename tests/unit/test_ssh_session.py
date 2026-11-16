@@ -184,26 +184,19 @@ def test_agent_auth_uses_the_ssh_agent(ssh_bundle):
 
 
 class _HostInfoSession:
-    def __init__(self, host, session_id, visible):
+    def __init__(self, host, session_id):
         self.host = host
         self.session_id = session_id
-        self.agent_visible = visible
 
 
-def test_host_info_requires_agent_visible_session(ssh_bundle):
+def test_host_info_lists_open_sessions(ssh_bundle):
     manager, profiles, _transcripts, _audit = ssh_bundle
     host = profiles.get("test")
-    session = _HostInfoSession(host, "ssh-info", False)
-    manager._sessions["ssh-info"] = session
+    manager._sessions["ssh-info"] = _HostInfoSession(host, "ssh-info")
 
-    with pytest.raises(Exception) as exc:
-        manager.host_info("test")
-    assert getattr(exc.value, "code", None) == "PERMISSION_DENIED"
-
-    session.agent_visible = True
     info = manager.host_info("test")
     assert info["description"] == "data in /srv, logs in /var/log"
-    assert info["visible_sessions"] == ["ssh-info"]
+    assert info["open_sessions"] == ["ssh-info"]
     assert info["has_saved_secrets"] is False
 
 

@@ -15,6 +15,7 @@ class SessionSummary(BaseModel):
     baudrate: int
     control_owner: str
     agent_permissions: list[str]
+    bound: bool = Field(default=False, description="True for the session the operator bound to MCP.")
 
 
 class SessionsResult(BaseModel):
@@ -153,6 +154,7 @@ class SshSessionSummary(BaseModel):
     username: str
     state: str = Field(description="connecting|open|closed|error")
     host_key_fingerprint: str | None = None
+    bound: bool = Field(default=False, description="True for the session the operator bound to MCP.")
 
 
 class SshSessionsResult(BaseModel):
@@ -185,7 +187,6 @@ class SshStatusResult(BaseModel):
     last_error: str | None = None
     last_error_code: str | None = None
     control_owner: str
-    agent_visible: bool = False
     last_write_source: str | None = None
     last_tx_at: str | None = None
     agent_last_action: str | None = None
@@ -224,7 +225,7 @@ class SshHostInfoResult(BaseModel):
     known_hosts: str = ""
     has_saved_secrets: bool = False
     saved_fields: list[str] = Field(default_factory=list)
-    visible_sessions: list[str] = Field(
+    open_sessions: list[str] = Field(
         default_factory=list,
-        description="Agent-visible sessions currently open for this host.",
+        description="Sessions currently open for this host.",
     )

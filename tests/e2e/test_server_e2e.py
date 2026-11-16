@@ -67,7 +67,9 @@ def server(tmp_path_factory):
     while time.time() < deadline:
         if proc.poll() is not None:
             log.close()
-            raise RuntimeError(f"server exited: {(tmp / 'server.out').read_text(errors='replace')[-3000:]}")
+            raise RuntimeError(
+                f"server exited: {(tmp / 'server.out').read_text(encoding='utf-8', errors='replace')[-3000:]}"
+            )
         try:
             if httpx.get(base + "/healthz", timeout=0.5).status_code == 200:
                 break
@@ -90,7 +92,7 @@ def admin_client(server) -> httpx.Client:
 
 
 def create_session(client: httpx.Client, **overrides) -> dict:
-    body = {"id": "board-a", "port": "sim://board-a", "auto_open": True}
+    body = {"id": "board-a", "port": "sim://board-a", "auto_open": True, "control": "shared"}
     body.update(overrides)
     r = client.post("/api/sessions", json=body)
     assert r.status_code == 201, r.text
@@ -139,6 +141,10 @@ def test_mcp_over_stdio_shim(server):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        # Never inherit the console code page (GBK on zh-CN Windows): the shim
+        # speaks UTF-8 JSON.
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
     reader = LineReader(shim)
@@ -191,6 +197,8 @@ def test_mcp_shim_reports_server_down(tmp_path):
         [PY, "-m", "tio_mcp_shim", "--token-file", str(tmp_path / "missing")],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(ROOT),
     )
     assert missing.returncode == 2
@@ -205,6 +213,8 @@ def test_mcp_shim_reports_server_down(tmp_path):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
     reader = LineReader(proc)

@@ -21,8 +21,19 @@ def make_config(tmp_path):
         cfg.security.allow_dev_ports = True
         for key, value in security.items():
             setattr(cfg.security, key, value)
+        # The default session runs in ``shared`` control so the operator and the
+        # agent can both drive it in one test: most of this suite exercises the
+        # hand-over machinery.  The production default (``agent`` exclusive,
+        # operator observes only) has its own coverage in
+        # tests/integration/test_control_mode.py.
         cfg.sessions = sessions or [
-            SessionConfig(id="board-a", name="Board A", port="sim://board-a", auto_open=False)
+            SessionConfig(
+                id="board-a",
+                name="Board A",
+                port="sim://board-a",
+                auto_open=False,
+                control="shared",
+            )
         ]
         return cfg
 

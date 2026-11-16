@@ -47,6 +47,12 @@ class RingBuffer:
         self._start = 0
         self._head = 0
         self._chunks: deque[tuple[int, int, float]] = deque()  # (start, end, ts_ms)
+        # Chunk metadata is proportional to append *count*, not to bytes, so a
+        # trickling console (one byte per read) could otherwise hold millions of
+        # tuples for a few MiB of data.  Oldest neighbours are merged once the
+        # cap is reached: memory stays bounded, and the only cost is coarser
+        # per-chunk timestamps under extreme fragmentation.
+        self._max_chunks = max(64, self._capacity // 4096)
         self._cond = threading.Condition()
         self._closed = False
 
@@ -111,6 +117,11 @@ class RingBuffer:
     def _prune_locked(self) -> None:
         while self._chunks and self._chunks[0][1] <= self._start:
             self._chunks.popleft()
+        while len(self._chunks) > self._max_chunks:
+            oldest = self._chunks.popleft()
+            newer = self._chunks.popleft()
+            # Merge neighbours: the surviving span keeps the oldest timestamp.
+            self._chunks.appendleft((oldest[0], newer[1], oldest[2]))
 
     # ------------------------------------------------------------------- read
     def read(

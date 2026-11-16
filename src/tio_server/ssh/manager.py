@@ -10,7 +10,7 @@ from typing import Any
 import paramiko
 
 from ..config import Config
-from ..errors import CONFLICT, NOT_FOUND, PERMISSION_DENIED, SSH_UNREACHABLE, ToolFailure
+from ..errors import CONFLICT, NOT_FOUND, SSH_UNREACHABLE, ToolFailure
 from ..transcript import AuditLog, TranscriptRegistry
 from .profiles import SshHost, SshProfileStore
 from .secrets import SshSecretStore
@@ -164,13 +164,6 @@ class SshManager:
         host = self.profiles.get(host_id)
         with self._lock:
             sessions = [session for session in self._sessions.values() if session.host.id == host_id]
-        visible = [session for session in sessions if session.agent_visible]
-        if not visible:
-            raise ToolFailure(
-                PERMISSION_DENIED,
-                "this SSH host has no agent-visible session",
-                {"host_id": host_id},
-            )
         fields = self.secrets.fields(host_id)
         return {
             "host_id": host.id,
@@ -187,7 +180,7 @@ class SshManager:
             "known_hosts": host.known_hosts,
             "has_saved_secrets": bool(fields),
             "saved_fields": fields,
-            "visible_sessions": [session.session_id for session in visible],
+            "open_sessions": [session.session_id for session in sessions],
         }
 
     def disconnect(self, session_id: str) -> None:
@@ -195,24 +188,6 @@ class SshManager:
         session.close()
         with self._lock:
             self._sessions.pop(session_id, None)
-
-    def set_agent_visible(self, session_id: str, enabled: bool) -> bool:
-        session = self.get(session_id)
-        previous = session.agent_visible
-        session.agent_visible = bool(enabled)
-        try:
-            session.transcript.event("agent_visibility", previous=previous, enabled=session.agent_visible)
-            self.audit.write(
-                "ssh.agent_visibility",
-                session=session_id,
-                host_id=session.host.id,
-                previous=previous,
-                enabled=session.agent_visible,
-            )
-            session._broadcast_status()
-        except Exception:
-            pass
-        return session.agent_visible
 
     def stop(self) -> None:
         with self._lock:

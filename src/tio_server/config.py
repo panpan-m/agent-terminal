@@ -30,6 +30,9 @@ STOPBITS = (1, 1.5, 2)
 FLOWS = ("none", "hard", "soft")
 OPEN_MODES = ("preserve", "assert", "deassert")
 PERMISSIONS = ("read", "write", "command")
+#: ``agent``: the agent owns the wire; the operator observes and audits only.
+#: ``shared``: legacy arbitration through the live ``control_owner`` switch.
+CONTROL_MODES = ("agent", "shared")
 
 MIN_BUFFER = 1 * 1024 * 1024
 MAX_BUFFER = 64 * 1024 * 1024
@@ -114,6 +117,10 @@ class SessionConfig:
     auto_reconnect: bool = True
     buffer_bytes: int = 8 * 1024 * 1024
     agent_permissions: list[str] = field(default_factory=lambda: ["read", "write", "command"])
+    #: Who drives the wire.  ``agent`` (default) gives the agent sole write
+    #: access and turns the operator's terminal into an observe-only audit view;
+    #: ``shared`` restores the ``control_owner`` hand-off.
+    control: str = "agent"
     replay_bytes: int = 4096
     transcript: bool = True
     reset_sequence: list[ResetStep] = field(default_factory=list)
@@ -303,6 +310,11 @@ class Config:
         bad = [p for p in sess.agent_permissions if p not in PERMISSIONS]
         if bad:
             raise _fail(f"session {sess.id}: unknown permissions {bad}", session=sess.id)
+        if sess.control not in CONTROL_MODES:
+            raise _fail(
+                f"session {sess.id}: control must be one of {CONTROL_MODES}",
+                session=sess.id,
+            )
         if len(sess.reset_sequence) > 8:
             raise _fail(f"session {sess.id}: reset_sequence has too many steps", session=sess.id)
         for step in sess.reset_sequence:
