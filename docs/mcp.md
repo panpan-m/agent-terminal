@@ -199,6 +199,24 @@ Every `tools/call` is recorded twice, on purpose:
 The durable record is what answers "which agent ran what command, and what came
 back". The transcript holds the raw bytes; the audit holds the intent.
 
+## Per-client view
+
+Both records carry the client that produced them, so the Logs tab can be
+narrowed to one agent:
+
+| Source | Field | Endpoint |
+|---|---|---|
+| audit, tool calls | `agent` | `GET /api/audit?client=…` |
+| audit, lease events | `owner` / `by` | same |
+| transcript, writes | `owner` (absent on device RX) | `GET /api/sessions/{id}/transcript?client=…` |
+| in-memory MCP audit | `agent` | `GET /api/mcp/audit?client=…` |
+
+`GET /api/audit/clients` lists the client names the audit file has seen, which
+is what the Logs page puts in its dropdown. Filtering happens in the store, so
+it searches the whole file rather than only the lines the page would have
+loaded. `session.control_owner` events also carry an `owner` field, but there it
+is a *role* (`human`/`agent`), not a client, and those rows are not attributed.
+
 ## Exclusive agent lease
 
 Several agents may connect at once, but only one drives the console. The lease
