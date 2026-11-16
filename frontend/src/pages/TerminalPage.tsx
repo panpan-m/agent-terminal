@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   Circle,
   Download,
+  Eye,
   Keyboard,
   PanelRight,
   Power,
@@ -24,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { StatusPanel } from "@/components/StatusPanel";
 import { TerminalSearchBar } from "@/components/TerminalSearchBar";
 import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
-import { api } from "@/lib/api";
+import { api, consoleUrl, wsUrl } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { terminalTheme } from "@/lib/termTheme";
 import {
@@ -36,7 +37,6 @@ import {
   type Enhancements,
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
-import { petNoteLink, petNoteOutput, petNoteTyping } from "@/lib/pet-events";
 import { b64ToBytes, cn, formatBytes, isModalOpen } from "@/lib/utils";
 import type { SessionStatus } from "@/lib/types";
 
@@ -101,7 +101,7 @@ export function TerminalPage({
   themeRef.current = theme;
 
   sessionRef.current = session;
-  const canType = Boolean(session && session.state === "open" && session.control_owner === "human");
+  const canType = Boolean(session && session.state === "open" && session.human_writable);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -128,11 +128,10 @@ export function TerminalPage({
 
     const send = (data: string) => {
       const current = sessionRef.current;
-      if (!current || current.state !== "open" || current.control_owner !== "human") {
-        setLastError("agent owns control - take control to type");
+      if (!current || current.state !== "open" || !current.human_writable) {
+        setLastError("observe-only: the agent owns this serial port");
         return;
       }
-      petNoteTyping();
       queueRef.current = queueRef.current
         .then(() => api.write(current.session_id, { text: data }))
         .catch((error) => {
@@ -147,16 +146,16 @@ export function TerminalPage({
     let disposed = false;
     let retry: number | undefined;
     const connect = () => {
-      const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
       const cursor = cursorRef.current;
-      const query = cursor == null ? "?replay=65536" : `?cursor=${cursor}`;
-      const url = `${scheme}//${window.location.host}/ws/console/${encodeURIComponent(session.session_id)}${query}`;
+      const url =
+        cursor == null
+          ? consoleUrl(session.session_id, 65536)
+          : wsUrl(`/ws/console/${encodeURIComponent(session.session_id)}?cursor=${cursor}`);
       const socket = new WebSocket(url);
       socketRef.current = socket;
       socket.onopen = () => {
         if (!disposed) {
           setConnected(true);
-          petNoteLink(true);
           setLastError(null);
           if (activeRef.current) {
             fit.fit();
@@ -167,7 +166,6 @@ export function TerminalPage({
       socket.onclose = () => {
         if (disposed) return;
         setConnected(false);
-        petNoteLink(false);
         retry = window.setTimeout(connect, 1500);
       };
       socket.onmessage = (event) => {
@@ -189,7 +187,6 @@ export function TerminalPage({
             const bytes = b64ToBytes(message.data_b64);
             term.write(bytes);
             bytesRef.current += bytes.length;
-            if (message.type === "rx") petNoteOutput(bytes.length);
             if (autoScrollRef.current) term.scrollToBottom();
             cursorRef.current =
               typeof message.offset === "number"
@@ -250,12 +247,12 @@ export function TerminalPage({
   // Serial links carry no window-size negotiation (no SIGWINCH), so the device
   // tty keeps a stale rows/cols and full-screen TUIs (apt/dpkg) misdraw or
   // wedge the screen.  Sync on open and after every resize, best effort via
-  // the human write path (skipped while the agent owns control).
+  // the operator write path (skipped unless the operator may write at all).
   const syncStty = useCallback(() => {
     if (!getTerminalSettings().sttySync) return;
     const term = termRef.current;
     const current = sessionRef.current;
-    if (!term || !current || current.state !== "open" || current.control_owner !== "human") return;
+    if (!term || !current || current.state !== "open" || !current.human_writable) return;
     const sig = `${current.session_id}:${term.rows}x${term.cols}`;
     if (sttySigRef.current === sig) return;
     sttySigRef.current = sig;
@@ -344,14 +341,26 @@ export function TerminalPage({
                 {session.config.baudrate} {session.config.bytesize}
                 {session.config.parity[0].toUpperCase()}
                 {session.config.stopbits} ·{" "}
-                {session.control_owner === "agent" ? "agent owns control" : "operator control"}
+                {session.control === "agent"
+                  ? "agent control"
+                  : session.control_owner === "agent"
+                    ? "agent owns control"
+                    : "operator control"}
               </span>
+            ) : null}
+            {session && session.control === "agent" ? (
+              <Badge tone="accent" title="the agent drives this port; the terminal is a read-only audit view">
+                <span className="inline-flex items-center gap-1">
+                  <Eye className="h-3 w-3" />
+                  observe only
+                </span>
+              </Badge>
             ) : null}
           </>
         ) : null}
 
         <div className="ml-auto flex items-center gap-1">
-          {session && session.control_owner === "agent" ? (
+          {session && session.control === "shared" && session.control_owner === "agent" ? (
             <Button
               size="sm"
               variant="primary"
@@ -455,7 +464,7 @@ export function TerminalPage({
           >
             <PanelRight className="h-3.5 w-3.5" />
           </Button>
-          <TerminalSettingsDialog notify={notify} />
+          <TerminalSettingsDialog />
         </div>
       </header>
 

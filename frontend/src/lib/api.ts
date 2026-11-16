@@ -1,14 +1,15 @@
 import type {
   CommandResponse,
   McpAuditEvent,
+  McpBindings,
   McpStatus,
-  PetModel,
   PortInfo,
   SessionInput,
   SessionStatus,
   SshConnectInput,
   SshConfigCandidate,
   SshFileList,
+  SshFileStat,
   SshHost,
   SshHostInput,
   SshSessionStatus,
@@ -33,10 +34,63 @@ export class ApiFailure extends Error {
   }
 }
 
+const TOKEN_KEY = "agent-terminal-admin-token";
+
+/**
+ * Admin token, needed only when the server is bound off loopback.
+ *
+ * On loopback the server keeps the no-login local-trust model.  Off loopback it
+ * demands the API token on `/api` and `/ws`; the operator passes it once as
+ * `?token=…`, we keep it and strip it from the address bar.
+ */
+function bootstrapAdminToken(): string | null {
+  try {
+    const url = new URL(window.location.href);
+    const fromQuery = url.searchParams.get("token");
+    if (fromQuery) {
+      window.localStorage.setItem(TOKEN_KEY, fromQuery);
+      url.searchParams.delete("token");
+      window.history.replaceState({}, "", url.toString());
+      return fromQuery;
+    }
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+let adminToken: string | null = bootstrapAdminToken();
+
+export function getAdminToken(): string | null {
+  return adminToken;
+}
+
+export function setAdminToken(token: string | null): void {
+  adminToken = token && token.length > 0 ? token : null;
+  try {
+    if (adminToken) window.localStorage.setItem(TOKEN_KEY, adminToken);
+    else window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage unavailable: keep the in-memory value */
+  }
+}
+
+/** Build a WebSocket URL, carrying the token when one is configured. */
+export function wsUrl(path: string): string {
+  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const url = new URL(`${scheme}//${window.location.host}${path}`);
+  if (adminToken) url.searchParams.set("token", adminToken);
+  return url.toString();
+}
+
+/** Build a console WebSocket URL, carrying the token when one is configured. */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
+  }
+  if (adminToken) {
+    headers.set("Authorization", `Bearer ${adminToken}`);
   }
   const response = await fetch(path, {
     ...init,
@@ -176,6 +230,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path, new_path: newPath }),
     }),
+  sshSftpStat: (sessionId: string, path: string) =>
+    request<SshFileStat>(
+      `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/stat?path=${encodeURIComponent(path)}`,
+    ),
+  /** `mode` is the numeric permission value, e.g. 0o755 = 493. */
+  sshSftpChmod: (sessionId: string, path: string, mode: number) =>
+    request<{ path: string; mode: string }>(`/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/chmod`, {
+      method: "POST",
+      body: JSON.stringify({ path, mode }),
+    }),
+  /** Download the file to a server-side temp dir and open it with the OS
+   *  default application; the server watches the file and uploads saves back. */
+  sshSftpOpenLocal: (sessionId: string, path: string) =>
+    request<{ path: string; local: string; bytes: number; reused: boolean }>(
+      `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/open-local`,
+      { method: "POST", body: JSON.stringify({ path }) },
+    ),
   /** Streaming single-file download path (GET, has Content-Length). */
   sshSftpDownloadPath: (sessionId: string, path: string) =>
     `/api/ssh/sessions/${encodeURIComponent(sessionId)}/sftp/download?path=${encodeURIComponent(path)}`,
@@ -193,31 +264,27 @@ export const api = {
     request<{ ok: boolean }>(`/api/ssh/sessions/${encodeURIComponent(id)}/disconnect`, {
       method: "POST",
     }),
-  sshSetAgentVisible: (id: string, enabled: boolean) =>
-    request<{ enabled: boolean }>(`/api/ssh/sessions/${encodeURIComponent(id)}/agent`, {
+  sshRenameSession: (id: string, name: string) =>
+    request<{ name: string }>(`/api/ssh/sessions/${encodeURIComponent(id)}/rename`, {
       method: "POST",
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ name }),
     }),
-  petModels: () => request<{ models: PetModel[] }>("/api/pet/models"),
-  petModelUpload: (file: File) => {
-    const form = new FormData();
-    form.append("file", file);
-    return request<PetModel>("/api/pet/models", { method: "POST", body: form });
-  },
-  petModelDelete: (id: string) =>
-    request<{ ok: boolean }>(`/api/pet/models/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Which sessions the MCP serial/ssh tools are bound to (null = unbound, tools hidden). */
+  mcpBindings: () =>
+    request<McpBindings>("/api/mcp/bindings"),
+  setMcpBindings: (body: { serial_session_id: string | null; ssh_session_id: string | null }) =>
+    request<{ serial_session_id: string | null; ssh_session_id: string | null }>("/api/mcp/bindings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 };
 
-export function petModelFileUrl(id: string): string {
-  return `/api/pet/models/${encodeURIComponent(id)}/file`;
-}
-
 export function sshConsoleUrl(sessionId: string, replay = 65536): string {
-  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${window.location.host}/ws/ssh/${encodeURIComponent(sessionId)}?replay=${replay}`;
+  const query = replay > 0 ? `?replay=${replay}` : "";
+  return wsUrl(`/ws/ssh/${encodeURIComponent(sessionId)}${query}`);
 }
 
 export function consoleUrl(sessionId: string, replay = 65536): string {
-  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${window.location.host}/ws/console/${encodeURIComponent(sessionId)}?replay=${replay}`;
+  const query = replay > 0 ? `?replay=${replay}` : "";
+  return wsUrl(`/ws/console/${encodeURIComponent(sessionId)}${query}`);
 }

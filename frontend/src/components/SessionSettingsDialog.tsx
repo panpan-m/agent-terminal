@@ -26,6 +26,7 @@ function fromSession(session: SessionStatus): SessionInput {
     auto_reconnect: session.auto_reconnect,
     buffer_bytes: session.buffer_bytes,
     agent_permissions: [...session.agent_permissions],
+    control: session.control,
     transcript: true,
   };
 }
@@ -195,6 +196,18 @@ export function SessionSettingsDialog({
                 ))}
               </Select>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500">Control</span>
+            <Select
+              value={form.control ?? "agent"}
+              onChange={(event) => update("control", event.target.value as "agent" | "shared")}
+              className="h-7 w-64"
+            >
+              <option value="agent">agent only · operator observes</option>
+              <option value="shared">shared · hand control over</option>
+            </Select>
           </div>
 
           <div className="flex flex-wrap gap-5 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">

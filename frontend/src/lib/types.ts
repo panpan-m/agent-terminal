@@ -31,6 +31,8 @@ export interface SessionStatus {
   port: string;
   config: SerialConfig;
   control_owner: "human" | "agent";
+  control: "agent" | "shared";
+  human_writable: boolean;
   agent_permissions: string[];
   rx_bytes: number;
   tx_bytes: number;
@@ -79,6 +81,7 @@ export interface SessionInput {
   auto_reconnect?: boolean;
   buffer_bytes?: number;
   agent_permissions?: string[];
+  control?: "agent" | "shared";
   transcript?: boolean;
   reset_sequence?: { dtr: boolean | null; rts: boolean | null; delay_ms: number }[];
 }
@@ -147,6 +150,14 @@ export interface McpAuditEvent {
   output: string;
 }
 
+/** Sessions the MCP serial/ssh tools are bound to; null = unbound (tools hidden). */
+export interface McpBindings {
+  serial_session_id: string | null;
+  ssh_session_id: string | null;
+  serial_alive: boolean;
+  ssh_alive: boolean;
+}
+
 export interface McpStatus {
   status: string;
   transport: string;
@@ -207,6 +218,8 @@ export interface SshSessionStatus {
   username: string;
   auth: SshAuth;
   state: SshState;
+  /** Remote cwd parsed from OSC 7 / shell title; null until one is seen. */
+  terminal_cwd: string | null;
   jump_host_id?: string | null;
   host_key_fingerprint: string | null;
   host_key_type: string | null;
@@ -222,7 +235,6 @@ export interface SshSessionStatus {
   last_error: string | null;
   last_error_code: string | null;
   control_owner: string;
-  agent_visible?: boolean;
   last_write_source?: string | null;
   last_tx_at?: string | null;
   agent_last_action?: string | null;
@@ -276,6 +288,22 @@ export interface SshFileList {
   entries: SshFileEntry[];
 }
 
+/** Full lstat attributes from the sftp/stat endpoint (Properties dialog). */
+export interface SshFileStat {
+  path: string;
+  name: string;
+  size: number;
+  /** Octal string with leading 0, e.g. "0o755". */
+  mode: string;
+  is_dir: boolean;
+  is_link: boolean;
+  link_target: string | null;
+  uid: number;
+  gid: number;
+  atime: number;
+  mtime: number;
+}
+
 export interface SshConfigCandidate {
   id: string;
   name: string;
@@ -285,12 +313,4 @@ export interface SshConfigCandidate {
   auth: SshAuth;
   key_file: string;
   proxy_jump: string;
-}
-
-/** A user-uploaded desktop-pet VRM model (server-side store). */
-export interface PetModel {
-  id: string;
-  name: string;
-  size: number;
-  created_at: string;
 }

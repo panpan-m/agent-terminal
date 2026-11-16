@@ -74,7 +74,7 @@ async function readClipboardText(): Promise<string> {
   }
 }
 
-async function writeClipboardText(text: string): Promise<void> {
+export async function writeClipboardText(text: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
   } catch (error) {

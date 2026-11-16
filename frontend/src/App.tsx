@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Shell, type Page } from "@/components/Shell";
-import { DesktopPet } from "@/components/DesktopPet";
 import { TerminalWorkspacePage } from "@/pages/TerminalWorkspacePage";
 import { McpPage } from "@/pages/McpPage";
 import { SessionsPage } from "@/pages/SessionsPage";
@@ -190,8 +189,6 @@ export default function App() {
           />
         ) : null}
       </Shell>
-
-      <DesktopPet onNotice={notify} />
 
       {toast ? (
         <div

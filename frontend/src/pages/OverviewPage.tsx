@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Cable,
   CircleSlash,
+  Eye,
   Monitor,
   Pencil,
   Plus,
@@ -51,7 +52,7 @@ export function OverviewPage({
   onReset: (id: string) => Promise<boolean>;
 }) {
   const openCount = sessions.filter((session) => session.state === "open").length;
-  const agentOwned = sessions.filter((session) => session.control_owner === "agent").length;
+  const agentOwned = sessions.filter((session) => session.control === "agent" || session.control_owner === "agent").length;
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-6">
@@ -134,7 +135,7 @@ function SessionCard({
 }) {
   const [busy, setBusy] = useState(false);
   const isOpen = session.state === "open";
-  const agentOwns = session.control_owner === "agent";
+  const agentOwns = session.control === "agent" || session.control_owner === "agent";
 
   const run = async (action: () => Promise<boolean>) => {
     setBusy(true);
@@ -195,7 +196,14 @@ function SessionCard({
             {session.config.stopbits}
           </Badge>
           {session.config.flow !== "none" ? <Badge>{session.config.flow} flow</Badge> : null}
-          <Badge tone={agentOwns ? "accent" : "default"} title={`control: ${session.control_owner}`}>
+          <Badge
+            tone={agentOwns ? "accent" : "default"}
+            title={
+              session.control === "agent"
+                ? "control: agent only (operator terminal observes)"
+                : `control: ${session.control_owner}`
+            }
+          >
             <UserRound className="h-3 w-3" />
           </Badge>
           {session.lost_bytes > 0 ? <Badge tone="warn">{formatBytes(session.lost_bytes)} lost</Badge> : null}
@@ -228,14 +236,21 @@ function SessionCard({
         <Button size="sm" variant="primary" onClick={onTerminal} disabled={!isOpen} title="open the interactive terminal tab" aria-label="Terminal">
           <Monitor className="h-3.5 w-3.5" />
         </Button>
-        <Button
-          size="sm"
-          variant={agentOwns ? "outline" : "primary"}
-          disabled={busy || !isOpen}
-          onClick={() => run(() => onControl(session.session_id, agentOwns ? "human" : "agent"))}
-        >
-          {agentOwns ? "Take control" : "Hand to agent"}
-        </Button>
+        {session.control === "shared" ? (
+          <Button
+            size="sm"
+            variant={agentOwns ? "outline" : "primary"}
+            disabled={busy || !isOpen}
+            onClick={() => run(() => onControl(session.session_id, agentOwns ? "human" : "agent"))}
+          >
+            {agentOwns ? "Take control" : "Hand to agent"}
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled title="the agent owns this port; the operator terminal observes only">
+            <Eye className="h-3.5 w-3.5" />
+            Observe
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"

@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Copy, History, Loader2, Plug, RefreshCw } from "lucide-react";
+import { Cable, Check, Copy, History, Loader2, Plug, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { McpAuditEvent, McpStatus } from "@/lib/types";
+import type {
+  McpAuditEvent,
+  McpBindings,
+  McpStatus,
+  SessionStatus,
+  SshSessionStatus,
+} from "@/lib/types";
 
 function buildPrompt(status: McpStatus): string {
   const toolNames = status.tools.map((tool) => tool.name).join(", ");
@@ -42,8 +49,8 @@ Steps:
          - '${status.api_token_file}'
        toolCallTimeoutMs: 70000
 3. Restart or reload the client if its configuration requires it.
-4. Verify that the tools above are listed, then call serial_sessions with {} and
-   ssh_sessions with {} and show me the serial and SSH sessions.
+4. Verify that the tools above are listed, then call serial_sessions and/or
+   ssh_sessions with {} (whichever are listed) and show me the bound session(s).
 
 The token file is a secret: read it at runtime, never print its contents.`;
 }
@@ -63,6 +70,10 @@ export function McpPage({
   const [copied, setCopied] = useState<string | null>(null);
   const [audit, setAudit] = useState<McpAuditEvent[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [bindings, setBindings] = useState<McpBindings | null>(null);
+  const [serialSessions, setSerialSessions] = useState<SessionStatus[]>([]);
+  const [sshSessions, setSshSessions] = useState<SshSessionStatus[]>([]);
+  const [bindingBusy, setBindingBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +109,52 @@ export function McpPage({
       window.clearInterval(timer);
     };
   }, []);
+
+  // bindings + session lists feed the two dropdowns; cheap enough to poll
+  useEffect(() => {
+    let alive = true;
+    const pull = async () => {
+      try {
+        const [nextBindings, serial, ssh] = await Promise.all([
+          api.mcpBindings(),
+          api.sessions(),
+          api.sshSessions(),
+        ]);
+        if (alive) {
+          setBindings(nextBindings);
+          setSerialSessions(serial.sessions);
+          setSshSessions(ssh.sessions);
+        }
+      } catch {
+        /* keep the last known state */
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const applyBinding = async (patch: Partial<Pick<McpBindings, "serial_session_id" | "ssh_session_id">>) => {
+    if (!bindings) return;
+    setBindingBusy(true);
+    try {
+      await api.setMcpBindings({
+        serial_session_id: patch.serial_session_id !== undefined ? patch.serial_session_id : bindings.serial_session_id,
+        ssh_session_id: patch.ssh_session_id !== undefined ? patch.ssh_session_id : bindings.ssh_session_id,
+      });
+      await Promise.all([api.mcpBindings().then(setBindings), load()]);
+    } catch (error) {
+      notify(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`, "error");
+    } finally {
+      setBindingBusy(false);
+    }
+  };
+
+  const serialToolCount = status?.tools.filter((tool) => tool.name.startsWith("serial_")).length ?? 0;
+  const sshToolCount = status?.tools.filter((tool) => tool.name.startsWith("ssh_")).length ?? 0;
 
   const prompt = useMemo(() => (status ? buildPrompt(status) : null), [status]);
   const command = useMemo(() => (status ? stdioCommand(status) : null), [status]);
@@ -172,6 +229,84 @@ export function McpPage({
               </CardContent>
             </Card>
           </div>
+
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Cable className="h-4 w-4 text-emerald-400" /> Session bindings
+              </CardTitle>
+              <CardDescription>
+                Bind the serial and SSH tool groups to one open session each. An unbound group publishes no
+                tools; agents pick the change up on their next tools/list or reconnect.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400">
+                  serial tools → session
+                  <span className="ml-2 font-mono text-[10px] text-zinc-500">{serialToolCount} tools</span>
+                </label>
+                <Select
+                  value={bindings?.serial_session_id ?? ""}
+                  disabled={bindingBusy}
+                  onChange={(event) =>
+                    void applyBinding({ serial_session_id: event.target.value || null })
+                  }
+                >
+                  <option value="">not bound — serial tools hidden</option>
+                  {serialSessions.map((session) => (
+                    <option key={session.session_id} value={session.session_id}>
+                      {session.name} · {session.port} · {session.state}
+                    </option>
+                  ))}
+                </Select>
+                {bindings?.serial_session_id ? (
+                  bindings.serial_alive ? (
+                    <p className="text-[11px] text-zinc-500">
+                      serial tools operate on this session only; the bound=true entry in serial_sessions marks it.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-300">
+                      bound session no longer exists — serial tools are hidden until you rebind.
+                    </p>
+                  )
+                ) : (
+                  <p className="text-[11px] text-zinc-500">open a serial session in the workspace, then pick it here.</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-400">
+                  ssh tools → session
+                  <span className="ml-2 font-mono text-[10px] text-zinc-500">{sshToolCount} tools</span>
+                </label>
+                <Select
+                  value={bindings?.ssh_session_id ?? ""}
+                  disabled={bindingBusy}
+                  onChange={(event) => void applyBinding({ ssh_session_id: event.target.value || null })}
+                >
+                  <option value="">not bound — ssh tools hidden</option>
+                  {sshSessions.map((session) => (
+                    <option key={session.session_id} value={session.session_id}>
+                      {session.name} · {session.username}@{session.host} · {session.state}
+                    </option>
+                  ))}
+                </Select>
+                {bindings?.ssh_session_id ? (
+                  bindings.ssh_alive ? (
+                    <p className="text-[11px] text-zinc-500">
+                      ssh tools operate on this session only; the bound=true entry in ssh_sessions marks it.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-300">
+                      bound session disconnected — ssh tools are hidden until you rebind.
+                    </p>
+                  )
+                ) : (
+                  <p className="text-[11px] text-zinc-500">open an SSH connection first, then pick it here.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
           <Card className="mb-4">
             <CardHeader className="flex-row items-center justify-between">

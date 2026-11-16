@@ -2,12 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Download,
-  Eye,
-  EyeOff,
   FolderOpen,
   Info,
   Keyboard,
-  Loader2,
   Power,
   RefreshCw,
   Search,
@@ -22,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { SshFilesPanel } from "@/components/SshFilesPanel";
 import { TerminalSearchBar } from "@/components/TerminalSearchBar";
 import { TerminalSettingsDialog } from "@/components/TerminalSettingsDialog";
-import { api, sshConsoleUrl } from "@/lib/api";
+import { api, sshConsoleUrl, wsUrl } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { terminalTheme } from "@/lib/termTheme";
 import {
@@ -34,7 +31,6 @@ import {
   type Enhancements,
 } from "@/lib/terminal-setup";
 import { getTerminalSettings, subscribeTerminalSettings } from "@/lib/terminal-settings";
-import { petNoteCommandExit, petNoteLink, petNoteOutput, petNoteTyping } from "@/lib/pet-events";
 import { b64ToBytes, bytesToB64, cn, formatBytes, isModalOpen } from "@/lib/utils";
 import type { SshSessionStatus } from "@/lib/types";
 
@@ -76,7 +72,6 @@ export function SshTerminalPage({
   const [generation, setGeneration] = useState(0);
   /** Right-hand panel: starts collapsed; the toolbar buttons open it. */
   const [panel, setPanel] = useState<"files" | "details" | null>(null);
-  const [agentBusy, setAgentBusy] = useState(false);
   const [agentPulse, setAgentPulse] = useState<{
     action: string;
     source: string;
@@ -107,6 +102,19 @@ export function SshTerminalPage({
     }
   }, [sessionId]);
 
+  /** Types text straight into the remote shell (used by the files panel). */
+  const sendToTerminal = useCallback(
+    (text: string) => {
+      const socket = socketRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        notify("terminal link is down — try again when live", "error");
+        return;
+      }
+      socket.send(JSON.stringify({ type: "input", data_b64: bytesToB64(text) }));
+    },
+    [notify],
+  );
+
   useEffect(() => {
     void refreshStatus();
     const timer = window.setInterval(() => void refreshStatus(), 2500);
@@ -130,7 +138,6 @@ export function SshTerminalPage({
     const sendInput = (data: string) => {
       const socket = socketRef.current;
       if (!socket || socket.readyState !== WebSocket.OPEN) return;
-      petNoteTyping();
       socket.send(JSON.stringify({ type: "input", data_b64: bytesToB64(data) }));
     };
     const disposable = term.onData(sendInput);
@@ -217,13 +224,12 @@ export function SshTerminalPage({
       const url =
         cursor == null
           ? sshConsoleUrl(sessionId, 65536)
-          : `${sshConsoleUrl(sessionId, 0).split("?")[0]}?cursor=${cursor}`;
+          : wsUrl(`/ws/ssh/${encodeURIComponent(sessionId)}?cursor=${cursor}`);
       const socket = new WebSocket(url);
       socketRef.current = socket;
       socket.onopen = () => {
         if (closed) return;
         setConnected(true);
-        petNoteLink(true);
         setLastError(null);
         const term = termRef.current;
         if (term) socket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
@@ -231,7 +237,6 @@ export function SshTerminalPage({
       socket.onclose = () => {
         if (closed) return;
         setConnected(false);
-        petNoteLink(false);
         retry = window.setTimeout(connect, 1500);
       };
       socket.onmessage = (event) => {
@@ -259,7 +264,6 @@ export function SshTerminalPage({
           }
           if (message.type === "agent" && message.action && message.source === "agent") {
             if (message.action === "command" && message.exit_code !== null && message.exit_code !== undefined) {
-              petNoteCommandExit(message.exit_code);
             }
             setAgentPulse({
               action: message.action,
@@ -291,7 +295,6 @@ export function SshTerminalPage({
             const term = termRef.current;
             if (!term) return;
             term.write(bytes);
-            if (message.type === "rx") petNoteOutput(bytes.length);
             if (autoScrollRef.current) term.scrollToBottom();
             cursorRef.current =
               typeof message.offset === "number"
@@ -320,23 +323,6 @@ export function SshTerminalPage({
       onBack();
     } catch (error) {
       notify(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`, "error");
-    }
-  };
-
-  const toggleAgent = async () => {
-    setAgentBusy(true);
-    try {
-      const enabled = !(status?.agent_visible ?? false);
-      await api.sshSetAgentVisible(sessionId, enabled);
-      await refreshStatus();
-      notify(
-        enabled ? "SSH session is now visible to agents" : "SSH session hidden from agents",
-        "success",
-      );
-    } catch (error) {
-      notify(`${(error as { code?: string }).code ?? "ERROR"}: ${(error as Error).message}`, "error");
-    } finally {
-      setAgentBusy(false);
     }
   };
 
@@ -397,26 +383,6 @@ export function SshTerminalPage({
           </Button>
           <Button
             size="sm"
-            variant={status?.agent_visible ? "outline" : "ghost"}
-            onClick={() => void toggleAgent()}
-            disabled={agentBusy}
-            title={
-              status?.agent_visible
-                ? "visible in MCP ssh_sessions; click to hide from agents"
-                : "hidden from agents; click to allow MCP access"
-            }
-          >
-            {agentBusy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : status?.agent_visible ? (
-              <Eye className="h-3.5 w-3.5 text-emerald-300" />
-            ) : (
-              <EyeOff className="h-3.5 w-3.5" />
-            )}
-            {status?.agent_visible ? "Agent" : "Private"}
-          </Button>
-          <Button
-            size="sm"
             variant="ghost"
             onClick={() => void disconnectSession()}
             title="disconnect this session: closes the remote shell, SFTP and the SSH transport"
@@ -447,7 +413,7 @@ export function SshTerminalPage({
           >
             <Keyboard className="h-3.5 w-3.5" />
           </Button>
-          <TerminalSettingsDialog notify={notify} />
+          <TerminalSettingsDialog />
         </div>
       </header>
 
@@ -625,7 +591,13 @@ export function SshTerminalPage({
           </div>
           {panel === "files" ? (
             <div className="min-h-0 flex-1">
-              <SshFilesPanel sessionId={sessionId} username={status?.username} notify={notify} />
+              <SshFilesPanel
+                sessionId={sessionId}
+                username={status?.username}
+                terminalCwd={status?.terminal_cwd ?? null}
+                notify={notify}
+                sendToTerminal={sendToTerminal}
+              />
             </div>
           ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">

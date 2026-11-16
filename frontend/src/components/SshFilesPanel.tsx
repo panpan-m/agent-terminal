@@ -1,24 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronUp,
+  ClipboardCopy,
   Download,
+  ExternalLink,
   File as FileIcon,
   FolderOpen,
   FolderPlus,
+  FolderSync,
+  Info,
   Loader2,
+  Lock,
   Pencil,
   RefreshCw,
+  Terminal as TerminalIcon,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ContextMenu, type ContextMenuEntry } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { pywebviewApi } from "@/lib/terminal-setup";
+import { pywebviewApi, writeClipboardText } from "@/lib/terminal-setup";
 import { cn, formatBytes } from "@/lib/utils";
-import type { SshFileEntry, SshFileList } from "@/lib/types";
+import type { SshFileEntry, SshFileList, SshFileStat } from "@/lib/types";
 
 const joinPath = (base: string, name: string) =>
   base === "/" ? `/${name}` : `${base.replace(/\/+$/, "")}/${name}`;
@@ -30,6 +37,18 @@ const parentPath = (path: string) => {
   parts.pop();
   return parts.join("/") || "/";
 };
+
+/** "0o755" (backend octal string) → 0o755 numeric. */
+const parseMode = (mode: string) => parseInt(mode.replace(/^0o/, ""), 8) || 0;
+
+const symbolicPerms = (bits: number) => {
+  const triple = (value: number) =>
+    `${value & 4 ? "r" : "-"}${value & 2 ? "w" : "-"}${value & 1 ? "x" : "-"}`;
+  return `${triple((bits >> 6) & 7)}${triple((bits >> 3) & 7)}${triple(bits & 7)}`;
+};
+
+/** Quote a path so it survives being typed into a shell command line. */
+const shellQuote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
 
 interface DroppedFile {
   /** Path relative to the drop root, e.g. "src/main.py". */
@@ -108,11 +127,17 @@ async function collectDroppedFiles(items: DataTransferItemList): Promise<Dropped
 export function SshFilesPanel({
   sessionId,
   username,
+  terminalCwd,
   notify,
+  sendToTerminal,
 }: {
   sessionId: string;
   username?: string;
+  /** Live remote cwd from session status (OSC 7 / shell title); null until one is seen. */
+  terminalCwd?: string | null;
   notify: (message: string, tone?: "info" | "error" | "success") => void;
+  /** Types text into the owning session's terminal (Paste path to terminal). */
+  sendToTerminal?: (text: string) => void;
 }) {
   const [path, setPath] = useState(username === "root" ? "/root" : `/home/${username || "root"}`);
   const [draft, setDraft] = useState(path);
@@ -123,6 +148,27 @@ export function SshFilesPanel({
   const [dragOver, setDragOver] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloads, setDownloads] = useState<DownloadTask[]>([]);
+  const [openBusy, setOpenBusy] = useState<Set<string>>(new Set());
+  const [followCwd, setFollowCwd] = useState(() => {
+    try {
+      return window.localStorage.getItem("ssh-follow-cwd") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const appliedCwd = useRef<string | null>(null);
+  const [fileMenu, setFileMenu] = useState<{
+    x: number;
+    y: number;
+    target: SshFileEntry;
+    selection: SshFileEntry[];
+  } | null>(null);
+  const [statTarget, setStatTarget] = useState<SshFileEntry | null>(null);
+  const [statInfo, setStatInfo] = useState<SshFileStat | null>(null);
+  const [statError, setStatError] = useState<string | null>(null);
+  const [permTarget, setPermTarget] = useState<SshFileEntry | null>(null);
+  const [permBits, setPermBits] = useState(0);
+  const [permBusy, setPermBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragDepth = useRef(0);
   const downloadSeq = useRef(0);
@@ -153,6 +199,13 @@ export function SshFilesPanel({
     void load(path);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // follow mode: jump to the terminal's remote cwd whenever it changes
+  useEffect(() => {
+    if (!followCwd || !terminalCwd || terminalCwd === appliedCwd.current) return;
+    appliedCwd.current = terminalCwd;
+    void load(terminalCwd);
+  }, [followCwd, terminalCwd, load]);
 
   const ensureDirectory = async (dir: string) => {
     if (dir === "/" || !dir) return;
@@ -339,6 +392,29 @@ export function SshFilesPanel({
     setSelected(new Set());
   };
 
+  /** Download to the server's temp dir, open with the OS default app; the
+   *  server watches the file and uploads saves back automatically. */
+  const openLocal = async (entry: SshFileEntry) => {
+    if (entry.is_dir) {
+      void load(entry.path);
+      return;
+    }
+    if (openBusy.has(entry.path)) return;
+    setOpenBusy((prev) => new Set(prev).add(entry.path));
+    try {
+      await api.sshSftpOpenLocal(sessionId, entry.path);
+      notify(`opened ${entry.name} with local app — saves upload back automatically`, "info");
+    } catch (exc) {
+      notify(`${(exc as { code?: string }).code ?? "ERROR"}: ${(exc as Error).message}`, "error");
+    } finally {
+      setOpenBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.path);
+        return next;
+      });
+    }
+  };
+
   const mkdir = async () => {
     const name = window.prompt("New directory name");
     if (!name) return;
@@ -368,6 +444,87 @@ export function SshFilesPanel({
       await load(path);
     } catch (exc) {
       setError(`${(exc as { code?: string }).code ?? "ERROR"}: ${(exc as Error).message}`);
+    }
+  };
+
+  /** Context-menu delete: one entry keeps its confirm, many confirm once. */
+  const removeEntries = async (items: SshFileEntry[]) => {
+    if (items.length === 1) {
+      await remove(items[0].path, items[0].name);
+      return;
+    }
+    if (!window.confirm(`Delete ${items.length} entries?`)) return;
+    const failures: string[] = [];
+    for (const item of items) {
+      try {
+        await api.sshSftpDelete(sessionId, item.path);
+      } catch {
+        failures.push(item.name);
+      }
+    }
+    if (failures.length > 0) {
+      setError(`failed to delete: ${failures.slice(0, 3).join(", ")}${failures.length > 3 ? " …" : ""}`);
+    }
+    await load(path);
+  };
+
+  const copyPaths = async (items: SshFileEntry[]) => {
+    try {
+      await writeClipboardText(items.map((item) => item.path).join("\n"));
+      notify(items.length === 1 ? "path copied" : `${items.length} paths copied`, "success");
+    } catch {
+      notify("clipboard unavailable", "error");
+    }
+  };
+
+  // fetch the full attributes whenever the Properties dialog opens
+  useEffect(() => {
+    if (!statTarget) {
+      setStatInfo(null);
+      setStatError(null);
+      return;
+    }
+    let cancelled = false;
+    setStatInfo(null);
+    setStatError(null);
+    api
+      .sshSftpStat(sessionId, statTarget.path)
+      .then((info) => {
+        if (!cancelled) setStatInfo(info);
+      })
+      .catch((exc) => {
+        if (!cancelled) setStatError(`${(exc as { code?: string }).code ?? "ERROR"}: ${(exc as Error).message}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [statTarget, sessionId]);
+
+  // Escape closes the Properties / Permissions dialogs
+  useEffect(() => {
+    if (!statTarget && !permTarget) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setStatTarget(null);
+        setPermTarget(null);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [statTarget, permTarget]);
+
+  const applyPermissions = async () => {
+    if (!permTarget) return;
+    setPermBusy(true);
+    try {
+      await api.sshSftpChmod(sessionId, permTarget.path, permBits);
+      notify(`permissions set to 0${permBits.toString(8).padStart(3, "0")}`, "success");
+      setPermTarget(null);
+      await load(path);
+    } catch (exc) {
+      notify(`${(exc as { code?: string }).code ?? "ERROR"}: ${(exc as Error).message}`, "error");
+    } finally {
+      setPermBusy(false);
     }
   };
 
@@ -427,6 +584,31 @@ export function SshFilesPanel({
         <Button size="sm" variant="ghost" title="reload" aria-label="Reload" onClick={() => void load(path)}>
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          title={
+            followCwd
+              ? "following the terminal's current directory — click to stop"
+              : "follow the terminal's current directory (OSC 7 / shell title)"
+          }
+          aria-label="Follow terminal directory"
+          aria-pressed={followCwd}
+          onClick={() =>
+            setFollowCwd((prev) => {
+              const next = !prev;
+              try {
+                if (next) window.localStorage.setItem("ssh-follow-cwd", "1");
+                else window.localStorage.removeItem("ssh-follow-cwd");
+              } catch {
+                /* preference persistence is best-effort */
+              }
+              return next;
+            })
+          }
+        >
+          <FolderSync className={cn("h-3.5 w-3.5", followCwd ? "text-emerald-400" : "text-zinc-500")} />
+        </Button>
         <Button size="sm" variant="ghost" title="new folder" aria-label="New folder" onClick={() => void mkdir()}>
           <FolderPlus className="h-3.5 w-3.5" />
         </Button>
@@ -485,7 +667,17 @@ export function SshFilesPanel({
         {entries.map((entry) => (
           <div
             key={entry.path}
-            className="group flex items-center gap-2 border-b border-zinc-800/40 px-2 py-1.5 hover:bg-zinc-900/60"
+            className={cn(
+              "group flex items-center gap-2 border-b border-zinc-800/40 px-2 py-1.5 hover:bg-zinc-900/60",
+              selected.has(entry.path) && "bg-zinc-900/40",
+            )}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              // act on the whole selection when the row belongs to it
+              const selection = selected.has(entry.path) ? selectedEntries : [entry];
+              if (!selected.has(entry.path)) setSelected(new Set([entry.path]));
+              setFileMenu({ x: event.clientX, y: event.clientY, target: entry, selection });
+            }}
           >
             <input
               type="checkbox"
@@ -504,10 +696,11 @@ export function SshFilesPanel({
             <button
               type="button"
               className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              title={entry.path}
+              title={entry.is_dir ? entry.path : `${entry.path}\ndouble-click: open with local app`}
               onClick={() => {
                 if (entry.is_dir) void load(entry.path);
               }}
+              onDoubleClick={() => void openLocal(entry)}
             >
               {entry.is_dir ? (
                 <FolderOpen className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
@@ -520,7 +713,11 @@ export function SshFilesPanel({
               {entry.is_link ? <span className="shrink-0 text-[10px] text-amber-300">link</span> : null}
             </button>
             {!entry.is_dir ? (
-              <span className="shrink-0 font-mono text-[10px] text-zinc-500">{formatBytes(entry.size)}</span>
+              openBusy.has(entry.path) ? (
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin text-emerald-400" />
+              ) : (
+                <span className="shrink-0 font-mono text-[10px] text-zinc-500">{formatBytes(entry.size)}</span>
+              )
             ) : null}
             <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               <Button
@@ -614,8 +811,240 @@ export function SshFilesPanel({
           dragOver ? "text-emerald-300" : "text-zinc-600",
         )}
       >
-        {dragOver ? `drop to upload to ${path}` : "drop files here to upload"}
+        {dragOver ? `drop to upload to ${path}` : "drop to upload · double-click opens files in a local app"}
       </p>
+
+      {fileMenu ? (
+        <ContextMenu
+          x={fileMenu.x}
+          y={fileMenu.y}
+          width={236}
+          onClose={() => setFileMenu(null)}
+          entries={
+            [
+              fileMenu.selection.length === 1
+                ? fileMenu.target.is_dir
+                  ? {
+                      key: "open",
+                      label: "Open",
+                      icon: <FolderOpen className="h-3.5 w-3.5" />,
+                      onSelect: () => void load(fileMenu.target.path),
+                    }
+                  : {
+                      key: "open-local",
+                      label: "Open with local app",
+                      icon: <ExternalLink className="h-3.5 w-3.5" />,
+                      onSelect: () => void openLocal(fileMenu.target),
+                    }
+                : null,
+              {
+                key: "download",
+                label:
+                  fileMenu.selection.length > 1
+                    ? `Download ${fileMenu.selection.length} selected`
+                    : "Download",
+                icon: <Download className="h-3.5 w-3.5" />,
+                onSelect: () => downloadEntries(fileMenu.selection),
+              },
+              { key: "sep-actions", separator: true },
+              fileMenu.selection.length === 1
+                ? {
+                    key: "rename",
+                    label: "Rename",
+                    icon: <Pencil className="h-3.5 w-3.5" />,
+                    onSelect: () => void rename(fileMenu.target.path, fileMenu.target.name),
+                  }
+                : null,
+              {
+                key: "delete",
+                label: fileMenu.selection.length > 1 ? `Delete ${fileMenu.selection.length} selected` : "Delete",
+                icon: <Trash2 className="h-3.5 w-3.5" />,
+                danger: true,
+                onSelect: () => void removeEntries(fileMenu.selection),
+              },
+              { key: "sep-clipboard", separator: true },
+              {
+                key: "copy-path",
+                label: fileMenu.selection.length > 1 ? `Copy ${fileMenu.selection.length} paths` : "Copy full path",
+                icon: <ClipboardCopy className="h-3.5 w-3.5" />,
+                onSelect: () => void copyPaths(fileMenu.selection),
+              },
+              fileMenu.selection.length === 1 && sendToTerminal
+                ? {
+                    key: "paste-to-terminal",
+                    label: "Paste path to terminal",
+                    icon: <TerminalIcon className="h-3.5 w-3.5" />,
+                    onSelect: () => sendToTerminal(shellQuote(fileMenu.target.path)),
+                  }
+                : null,
+              { key: "sep-info", separator: true },
+              fileMenu.selection.length === 1
+                ? {
+                    key: "properties",
+                    label: "Properties",
+                    icon: <Info className="h-3.5 w-3.5" />,
+                    onSelect: () => setStatTarget(fileMenu.target),
+                  }
+                : null,
+              fileMenu.selection.length === 1
+                ? {
+                    key: "permissions",
+                    label: "Permissions",
+                    icon: <Lock className="h-3.5 w-3.5" />,
+                    onSelect: () => {
+                      setPermBits(parseMode(fileMenu.target.mode) & 0o777);
+                      setPermTarget(fileMenu.target);
+                    },
+                  }
+                : null,
+            ].filter(Boolean) as ContextMenuEntry[]
+          }
+        />
+      ) : null}
+
+      {statTarget ? (
+        <div
+          role="dialog"
+          data-state="open"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={() => setStatTarget(null)}
+        >
+          <div
+            className="w-[24rem] rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start gap-2">
+              {statTarget.is_dir ? (
+                <FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+              ) : (
+                <FileIcon className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" />
+              )}
+              <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">{statTarget.name}</p>
+              <Button size="sm" variant="ghost" aria-label="Close" onClick={() => setStatTarget(null)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{statTarget.path}</p>
+            {statError ? <p className="mt-3 text-[11px] text-red-400">{statError}</p> : null}
+            {!statError && !statInfo ? (
+              <p className="py-4 text-center text-xs text-zinc-500">
+                <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              </p>
+            ) : null}
+            {statInfo ? (
+              <dl className="mt-3 space-y-1.5 text-[11px]">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">type</dt>
+                  <dd className="font-mono text-zinc-300">
+                    {statInfo.is_dir ? "directory" : statInfo.is_link ? "symlink" : "file"}
+                  </dd>
+                </div>
+                {statInfo.is_link ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-zinc-500">links to</dt>
+                    <dd className="max-w-[60%] truncate font-mono text-amber-300" title={statInfo.link_target ?? ""}>
+                      {statInfo.link_target ?? "—"}
+                    </dd>
+                  </div>
+                ) : null}
+                {!statInfo.is_dir ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-zinc-500">size</dt>
+                    <dd className="font-mono text-zinc-300">
+                      {statInfo.size.toLocaleString()} bytes ({formatBytes(statInfo.size)})
+                    </dd>
+                  </div>
+                ) : null}
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">permissions</dt>
+                  <dd className="font-mono text-zinc-300">
+                    {symbolicPerms(parseMode(statInfo.mode) & 0o777)} · 0
+                    {(parseMode(statInfo.mode) & 0o777).toString(8).padStart(3, "0")}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">owner / group</dt>
+                  <dd className="font-mono text-zinc-300">
+                    {statInfo.uid} / {statInfo.gid}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">modified</dt>
+                  <dd className="font-mono text-zinc-300">{new Date(statInfo.mtime * 1000).toLocaleString()}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">accessed</dt>
+                  <dd className="font-mono text-zinc-300">{new Date(statInfo.atime * 1000).toLocaleString()}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {permTarget ? (
+        <div
+          role="dialog"
+          data-state="open"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={() => setPermTarget(null)}
+        >
+          <div
+            className="w-[22rem] rounded-lg border border-zinc-700 bg-zinc-900 p-4 shadow-2xl"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p className="text-sm font-semibold text-zinc-100">Permissions</p>
+            <p className="mt-0.5 break-all font-mono text-[10px] text-zinc-500" title={permTarget.path}>
+              {permTarget.path}
+            </p>
+            <table className="mt-3 w-full text-[11px]">
+              <thead>
+                <tr className="text-zinc-500">
+                  <th />
+                  <th className="font-medium">read</th>
+                  <th className="font-medium">write</th>
+                  <th className="font-medium">exec</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(["owner", "group", "others"] as const).map((role, rowIndex) => (
+                  <tr key={role}>
+                    <td className="py-1 pr-2 text-zinc-400">{role}</td>
+                    {[4, 2, 1].map((bit, colIndex) => {
+                      const shift = 6 - rowIndex * 3;
+                      const checked = (permBits >> shift & bit) !== 0;
+                      return (
+                        <td key={bit} className="py-1 text-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`${role} ${["read", "write", "execute"][colIndex]}`}
+                            className="h-3 w-3 accent-emerald-500"
+                            checked={checked}
+                            onChange={() => setPermBits((prev) => prev ^ (bit << shift))}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-3 text-center font-mono text-[13px] text-emerald-300">
+              0{permBits.toString(8).padStart(3, "0")}
+              <span className="ml-2 text-zinc-500">{symbolicPerms(permBits)}</span>
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setPermTarget(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" disabled={permBusy} onClick={() => void applyPermissions()}>
+                {permBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                Apply
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

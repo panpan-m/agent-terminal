@@ -73,7 +73,7 @@ export function cleanTerminalText(text: string): string {
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
 }
 
-/** True while a Radix dialog (settings, editor, SFTP…) is open. */
+/** True while a Radix dialog (settings, editor, SFTP…) or a context menu is open. */
 export function isModalOpen(): boolean {
-  return document.querySelector('[role="dialog"][data-state="open"]') !== null;
+  return document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]') !== null;
 }

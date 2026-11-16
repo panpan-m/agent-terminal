@@ -28,12 +28,6 @@ export interface TerminalSettings {
   ctrlVPaste: boolean;
   /** Right-click in the terminal pastes (PuTTY-style). */
   rightClickPaste: boolean;
-  /** Desktop pet rendered in the corner of the app. */
-  petEnabled: boolean;
-  /** Pet canvas size in CSS pixels. */
-  petSize: number;
-  /** Active pet model: "builtin" or an uploaded model id. */
-  petModelId: string;
 }
 
 const STORAGE_KEY = "tio-terminal-settings";
@@ -53,17 +47,12 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   clipboardShortcuts: true,
   ctrlVPaste: true,
   rightClickPaste: true,
-  petEnabled: true,
-  petSize: 168,
-  petModelId: "builtin",
 };
 
 export function clampSettings(value: Partial<TerminalSettings>): Partial<TerminalSettings> {
   const out: Partial<TerminalSettings> = { ...value };
   if (out.fontSize !== undefined) out.fontSize = Math.min(72, Math.max(8, Math.round(out.fontSize)));
   if (out.scrollback !== undefined) out.scrollback = Math.min(200_000, Math.max(1, Math.round(out.scrollback)));
-  if (out.petSize !== undefined) out.petSize = Math.min(288, Math.max(96, Math.round(out.petSize)));
-  if (out.petModelId !== undefined) out.petModelId = String(out.petModelId).slice(0, 64) || "builtin";
   return out;
 }
 

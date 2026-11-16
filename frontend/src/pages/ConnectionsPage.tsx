@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
-  Eye,
-  EyeOff,
   FileInput,
   KeyRound,
   Loader2,
@@ -20,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, Switch } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
+import { HostKeyHelp } from "@/components/HostKeyHelp";
 import { ApiFailure, api } from "@/lib/api";
 import type { SshConfigCandidate, SshHost, SshHostInput, SshSessionStatus, SshTestResult } from "@/lib/types";
 import { formatBytes, formatTime } from "@/lib/utils";
@@ -264,19 +263,6 @@ export function ConnectionsPage({
     }
   };
 
-  const toggleAgentVisibility = async (session: SshSessionStatus) => {
-    try {
-      await api.sshSetAgentVisible(session.session_id, !session.agent_visible);
-      notify(
-        session.agent_visible ? "SSH session hidden from agents" : "SSH session visible to agents",
-        "success",
-      );
-      await load();
-    } catch (error) {
-      notify(`${(error as ApiFailure).code ?? "ERROR"}: ${(error as ApiFailure).message}`, "error");
-    }
-  };
-
   const openImport = async () => {
     setImportOpen(true);
     setImportError(null);
@@ -464,7 +450,6 @@ export function ConnectionsPage({
                 <tr>
                   <th className="px-3 py-2">Host</th>
                   <th className="px-3 py-2">State</th>
-                  <th className="px-3 py-2">Agent</th>
                   <th className="px-3 py-2">RX/TX</th>
                   <th className="px-3 py-2">Opened</th>
                   <th className="px-3 py-2" />
@@ -484,25 +469,6 @@ export function ConnectionsPage({
                       {session.last_error ? (
                         <div className="max-w-xs truncate text-[10px] text-red-400">{session.last_error}</div>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => void toggleAgentVisibility(session)}
-                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ring-1 ring-inset ${
-                          session.agent_visible
-                            ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
-                            : "bg-zinc-800/60 text-zinc-400 ring-zinc-700"
-                        }`}
-                        title={
-                          session.agent_visible
-                            ? "visible in MCP ssh_sessions; click to hide"
-                            : "hidden from agents; click to allow MCP access"
-                        }
-                      >
-                        {session.agent_visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                        {session.agent_visible ? "visible" : "private"}
-                      </button>
                     </td>
                     <td className="px-3 py-2 font-mono text-[10px] text-zinc-400">
                       {formatBytes(session.rx_bytes)} / {formatBytes(session.tx_bytes)}
@@ -827,6 +793,15 @@ export function ConnectionsPage({
                   <p className="break-all">actual: {String(connectDetails.actual_fingerprint)}</p>
                 </div>
               ) : null}
+              {connectDetails?.expected_fingerprint && connectDetails?.actual_fingerprint ? (
+                <HostKeyHelp
+                  host={String(connectDetails.host ?? connectTarget.host)}
+                  port={Number(connectDetails.port ?? connectTarget.port ?? 22)}
+                  knownHostsFile={
+                    connectDetails.known_hosts_file ? String(connectDetails.known_hosts_file) : undefined
+                  }
+                />
+              ) : null}
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="ghost" onClick={() => setConnectTarget(null)}>
                   Cancel
@@ -949,7 +924,13 @@ export function ConnectionsPage({
                   </dd>
                 </div>
               </dl>
-              {testResult.known_hosts_status !== "known" ? (
+              {testResult.known_hosts_status === "changed" ? (
+                <HostKeyHelp
+                  host={testResult.host}
+                  port={testResult.port}
+                  knownHostsFile={testResult.known_hosts}
+                />
+              ) : testResult.known_hosts_status === "unknown" ? (
                 <div className="space-y-2">
                   <p className="text-[11px] text-zinc-400">
                     Verify the fingerprint out of band, then add it to{" "}
